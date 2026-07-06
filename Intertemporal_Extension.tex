@@ -1,0 +1,432 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools,booktabs}
+\usepackage[dvipsnames]{xcolor}
+
+\newcommand{\R}{\mathcal{R}}
+\newcommand{\T}{\mathcal{T}}
+\newcommand{\PP}{\mathcal{P}}
+\newcommand{\Tminus}{\mathcal{T}^{-}}
+\newcommand{\tmin}{t_{0}}
+\newcommand{\tmax}{t^{*}}
+\newcommand{\tnext}{t^{+}}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\begin{document}
+
+\begin{center}
+{\Large\bfseries Intertemporal EPEC Model --- Mathematical Specification}
+\end{center}
+
+%======================================================================
+\section{Sets and Indices}
+%======================================================================
+
+\begin{align*}
+  \R          &\quad\text{regions (exporters and importers)}  \\
+  \PP\subseteq\R &\quad\text{strategic players}                \\
+  \T          &\quad\text{time periods}                       \\
+  \Tminus = \T\setminus\{\tmax\}
+              &\quad\text{periods with capacity decisions}    \\
+  \tmin = \min\T,\quad \tmax = \max\T
+              &\quad\text{first / last period}
+\end{align*}
+
+Indices: $e\in\R$ (exporter), $i,j\in\R$ (importer/market),
+$t\in\T$, $r\in\PP$ (active player in the upper level).
+
+%======================================================================
+\section{Parameters}
+%======================================================================
+
+\subsection*{Demand and market structure}
+
+\begin{alignat*}{2}
+  a_{i,t}         &\;[\text{USD/kW}]
+    &&\quad\text{inverse-demand intercept}          \\
+  b_{i,t}         &\;[\text{USD/(kW$\cdot$GW)}]
+    &&\quad\text{inverse-demand slope}               \\
+  D^{\max}_{i,t}  &\;[\text{GW}]
+    &&\quad\text{demand cap}
+\end{alignat*}
+
+\subsection*{Costs and capacity}
+
+\begin{alignat*}{2}
+  K^{0}_i           &\;[\text{GW}]
+    &&\quad\text{initial installed capacity}           \\
+  c^{\mathrm{man}}_{i,t} &\;[\text{USD/kW}]
+    &&\quad\text{manufacturing cost (exogenous LBD schedule)} \\
+  c^{\mathrm{ship}}_{e,i} &\;[\text{USD/kW}]
+    &&\quad\text{shipping cost}                        \\
+  \bar{p}_{e,i}     &\;[\text{USD/kW}]
+    &&\quad\text{offer-price upper bound}              \\
+  g^{\mathrm{exp}}_i &\;[\text{GW/yr or 1/yr}]
+    &&\quad\text{expansion rate limit}                 \\
+  g^{\mathrm{dec}}_i &\;[\text{1/yr}]
+    &&\quad\text{decommission rate limit}              \\
+  f^{\mathrm{hold}}_i &\;[\text{mUSD/(GW$\cdot$yr)}]
+    &&\quad\text{capacity holding cost}                \\
+  c^{\mathrm{inv}}_i  &\;[\text{mUSD/(GW$\cdot$yr)}]
+    &&\quad\text{investment cost}
+\end{alignat*}
+
+\subsection*{Discounting and time}
+
+\begin{alignat*}{2}
+  \beta_t &\;[-]
+    &&\quad\text{NPV discount factor: }
+      \beta_t = (1+\delta)^{-(t-\tmin)}        \\
+  y_t     &\;[\text{yr}]
+    &&\quad\text{years represented by block } t
+\end{alignat*}
+
+\subsection*{Regularisation and penalty weights}
+
+\begin{alignat*}{2}
+  \epsilon_x     &\;[\text{USD/(kW$\cdot$GW)}]
+    &&\quad\text{trade-flow convexification}     \\
+  \epsilon_c     &\;[-]
+    &&\quad\text{complementarity relaxation}     \\[4pt]
+  c^{\mathrm{pen}}_Q,\;c^{\mathrm{pen}}_p,\;c^{\mathrm{pen}}_a
+                  &\;[-]
+    &&\quad\text{proximal penalty weights (algorithmic)} \\
+  c^{\mathrm{quad}}_Q,\;c^{\mathrm{quad}}_p,\;c^{\mathrm{quad}}_a
+                  &\;[-]
+    &&\quad\text{economic quadratic penalty weights}
+\end{alignat*}
+
+\subsection*{Capacity-policy coefficients}
+
+\begin{alignat*}{2}
+  \rho^{\mathrm{keep}} &\;[-]
+    &&\quad\text{capacity retention reward}      \\
+  \rho^{\mathrm{sub}}  &\;[-]
+    &&\quad\text{capex subsidy}                  \\
+  \rho^{\mathrm{term}} &\;[-]
+    &&\quad\text{terminal capacity value}        \\
+  \rho^{\mathrm{dec}}  &\;[-]
+    &&\quad\text{decommission penalty}
+\end{alignat*}
+
+%======================================================================
+\section{Lower-Level Problem (LLP)}
+%======================================================================
+
+The lower-level problem is a convex QP that clears the market in each
+period given the upper-level strategies
+$(Q_{e,t},\,p_{e,i,t},\,a^{\mathrm{bid}}_{i,t})$.
+
+\subsection{Primal}
+
+\begin{equation}\label{eq:llp-obj}
+\min_{x,\,x^{\mathrm{dem}}} \quad
+z^{\mathrm{LLP}}
+= \underbrace{
+    \sum_{t}\sum_{e}\sum_{i}
+    \bigl(p_{e,i,t}+c^{\mathrm{ship}}_{e,i}\bigr)\,x_{e,i,t}
+    + \sum_{t}\sum_{e}\sum_{i}
+    \frac{\epsilon_x}{2}\,x_{e,i,t}^{2}
+  }_{\text{procurement cost + regularisation}}
+  \;-\;
+  \underbrace{
+    \sum_{t}\sum_{i}
+    \Bigl(
+      a^{\mathrm{bid}}_{i,t}\,x^{\mathrm{dem}}_{i,t}
+      - \frac{b_{i,t}}{2}\,(x^{\mathrm{dem}}_{i,t})^{2}
+    \Bigr)
+  }_{\text{gross surplus (bid-based)}}
+\end{equation}
+
+subject to:
+
+\begin{alignat}{3}
+  &\text{Demand balance:}
+    &\quad \sum_{e} x_{e,i,t} - x^{\mathrm{dem}}_{i,t} &= 0
+    &&\quad \forall\,i,t
+    \qquad \{\lambda_{i,t}\}
+  \label{eq:bal}\\[4pt]
+  &\text{Offer capacity:}
+    &\quad Q_{e,t} - \sum_{i} x_{e,i,t} &\ge 0
+    &&\quad \forall\,e,t
+    \qquad \{\mu^{\mathrm{offer}}_{e,t}\ge0\}
+  \label{eq:cap}\\[4pt]
+  &\text{Demand ceiling:}
+    &\quad D^{\max}_{i,t} - x^{\mathrm{dem}}_{i,t} &\ge 0
+    &&\quad \forall\,i,t
+    \qquad \{\beta^{\mathrm{dem}}_{i,t}\ge0\}
+  \label{eq:dem-up}\\[4pt]
+  &\text{Demand floor:}
+    &\quad x^{\mathrm{dem}}_{i,t} &\ge 0
+    &&\quad \forall\,i,t
+    \qquad \{\psi_{i,t}\ge0\}
+  \label{eq:dem-lo}\\[4pt]
+  &\text{Trade non-negativity:}
+    &\quad x_{e,i,t} &\ge 0
+    &&\quad \forall\,e,i,t
+    \qquad \{\gamma_{e,i,t}\ge0\}
+  \label{eq:x-lo}
+\end{alignat}
+
+%----------------------------------------------------------------------
+\subsection{KKT Conditions}
+%----------------------------------------------------------------------
+
+\subsubsection*{Stationarity}
+
+\begin{align}
+  \label{eq:stat-x}
+  \bigl(p_{e,i,t}+c^{\mathrm{ship}}_{e,i}\bigr)
+  + \epsilon_x\,x_{e,i,t}
+  - \lambda_{i,t}
+  + \mu^{\mathrm{offer}}_{e,t}
+  - \gamma_{e,i,t}
+  &= 0
+  && \forall\,e,i,t \\[6pt]
+  \label{eq:stat-dem}
+  -\bigl(a^{\mathrm{bid}}_{i,t} - b_{i,t}\,x^{\mathrm{dem}}_{i,t}\bigr)
+  + \lambda_{i,t}
+  + \beta^{\mathrm{dem}}_{i,t}
+  - \psi_{i,t}
+  &= 0
+  && \forall\,i,t
+\end{align}
+
+\subsubsection*{Complementarity}
+
+\begin{alignat}{2}
+  \label{eq:comp-mu}
+  0 \le \mu^{\mathrm{offer}}_{e,t}
+    &\;\perp\;
+    Q_{e,t} - \textstyle\sum_{i} x_{e,i,t} \ge 0
+    &&\qquad \forall\,e,t \\[3pt]
+  \label{eq:comp-gamma}
+  0 \le \gamma_{e,i,t}
+    &\;\perp\;
+    x_{e,i,t} \ge 0
+    &&\qquad \forall\,e,i,t \\[3pt]
+  \label{eq:comp-beta}
+  0 \le \beta^{\mathrm{dem}}_{i,t}
+    &\;\perp\;
+    D^{\max}_{i,t} - x^{\mathrm{dem}}_{i,t} \ge 0
+    &&\qquad \forall\,i,t \\[3pt]
+  \label{eq:comp-psi}
+  0 \le \psi_{i,t}
+    &\;\perp\;
+    x^{\mathrm{dem}}_{i,t} \ge 0
+    &&\qquad \forall\,i,t
+\end{alignat}
+
+\subsubsection*{Relaxed complementarity (implementation)}
+
+Each exact complementarity $0 \le u \perp v \ge 0$ is relaxed to
+$u\,v \le \epsilon_c$ with $\epsilon_c \ge 0$:
+\begin{align}
+  \mu^{\mathrm{offer}}_{e,t}
+    \Bigl(Q_{e,t}-\textstyle\sum_{i}x_{e,i,t}\Bigr)
+    &\le \epsilon_c
+    && \forall\,e,t \\
+  \gamma_{e,i,t}\,x_{e,i,t}
+    &\le \epsilon_c
+    && \forall\,e,i,t \\
+  \beta^{\mathrm{dem}}_{i,t}
+    \bigl(D^{\max}_{i,t}-x^{\mathrm{dem}}_{i,t}\bigr)
+    &\le \epsilon_c
+    && \forall\,i,t \\
+  \psi_{i,t}\,x^{\mathrm{dem}}_{i,t}
+    &\le \epsilon_c
+    && \forall\,i,t
+\end{align}
+
+%======================================================================
+\section{Upper-Level Problem (ULP)}
+%======================================================================
+
+Each strategic player $r\in\PP$ solves the following MPEC, taking
+other players' strategies as fixed (Gauss--Seidel iteration).
+
+\subsection{Objective}
+
+\begin{equation}\label{eq:ulp-obj}
+  \max \quad \Pi_r
+  \;=\;
+  \underbrace{\Pi^{\mathrm{econ}}_r\vphantom{\big|}}_{\text{economic welfare}}
+  \;+\;
+  \underbrace{\Pi^{\mathrm{policy}}_r\vphantom{\big|}}_{\text{capacity policy}}
+  \;+\;
+  \underbrace{\Pi^{\mathrm{quad}}_r\vphantom{\big|}}_{\text{economic penalties}}
+  \;+\;
+  \underbrace{\Pi^{\mathrm{prox}}_r\vphantom{\big|}}_{\text{proximal penalties}}
+\end{equation}
+
+\subsubsection*{Economic welfare}
+
+\begin{equation}\label{eq:ulp-econ}
+\boxed{
+\begin{aligned}
+  \Pi^{\mathrm{econ}}_r
+  \;=\;
+  \sum_{t\in\T}\beta_t\,y_t\,\Bigg[
+    &\underbrace{
+      a_{r,t}\,x^{\mathrm{dem}}_{r,t}
+      - \tfrac{b_{r,t}}{2}\,(x^{\mathrm{dem}}_{r,t})^{2}
+      - \lambda_{r,t}\,x^{\mathrm{dem}}_{r,t}
+    }_{\text{consumer surplus}}
+    \\[6pt]
+    +\;&\underbrace{
+      \sum_{j\in\R}
+      \bigl(\lambda_{j,t} - c^{\mathrm{man}}_{r,t} - c^{\mathrm{ship}}_{r,j}\bigr)
+      \,x_{r,j,t}
+    }_{\text{producer surplus}}
+    \\[6pt]
+    -\;&\underbrace{
+      f^{\mathrm{hold}}_r\,K_{r,t}
+      \;+\;
+      c^{\mathrm{inv}}_r\,I^{+}_{r,t}
+    }_{\text{capacity costs}}
+  \;\Bigg]
+\end{aligned}
+}
+\end{equation}
+
+Note: consumer surplus uses the \emph{true} demand intercept $a_{r,t}$,
+while the LLP clears on the declared bid $a^{\mathrm{bid}}_{r,t}$.
+
+\subsubsection*{Capacity-policy incentives}
+
+\begin{equation}\label{eq:ulp-policy}
+  \Pi^{\mathrm{policy}}_r
+  \;=\;
+  \sum_{t\in\T}\beta_t\,y_t\,\Bigl[
+    \rho^{\mathrm{keep}}\,K_{r,t}
+    + \rho^{\mathrm{sub}}\,I^{+}_{r,t}
+    - \rho^{\mathrm{dec}}\,D^{-}_{r,t}
+  \Bigr]
+  \;+\;
+  \beta_{\tmax}\,\rho^{\mathrm{term}}\,c^{\mathrm{inv}}_r
+  \sum_{t\in\T}y_t\,I^{+}_{r,t}
+\end{equation}
+
+\subsubsection*{Economic quadratic penalties}
+
+These convex costs penalise deviations from ``natural'' operating points:
+
+\begin{equation}\label{eq:ulp-quad}
+  \Pi^{\mathrm{quad}}_r
+  \;=\;
+  -\sum_{t\in\T}\beta_t\,y_t\,\Biggl[
+    \frac{c^{\mathrm{quad}}_Q}{2}
+      \bigl(Q_{r,t}-K_{r,t}\bigr)^{2}
+    + \frac{c^{\mathrm{quad}}_p}{2}
+      \sum_{j\in\R}\bigl(p_{r,j,t}-c^{\mathrm{man}}_{r,t}\bigr)^{2}
+    + \frac{c^{\mathrm{quad}}_a}{2}
+      \bigl(a_{r,t}-a^{\mathrm{bid}}_{r,t}\bigr)^{2}
+  \Biggr]
+\end{equation}
+
+\subsubsection*{Proximal penalties (algorithmic stabilisation)}
+
+Updated each Gauss--Seidel sweep; superscript ``last'' denotes
+the previous iterate:
+
+\begin{equation}\label{eq:ulp-prox}
+  \Pi^{\mathrm{prox}}_r
+  \;=\;
+  -\sum_{t\in\T}\beta_t\,y_t\,\Biggl[
+    \frac{c^{\mathrm{pen}}_Q}{2}
+      \bigl(Q_{r,t}-Q^{\mathrm{last}}_{r,t}\bigr)^{2}
+    + \frac{c^{\mathrm{pen}}_p}{2}
+      \sum_{j\in\R}\bigl(p_{r,j,t}-p^{\mathrm{last}}_{r,j,t}\bigr)^{2}
+    + \frac{c^{\mathrm{pen}}_a}{2}
+      \bigl(a^{\mathrm{bid}}_{r,t}-a^{\mathrm{last}}_{r,t}\bigr)^{2}
+  \Biggr]
+\end{equation}
+
+%----------------------------------------------------------------------
+\subsection{Constraints}
+%----------------------------------------------------------------------
+
+\subsubsection*{Capacity dynamics}
+
+\begin{alignat}{2}
+  \label{eq:kcap-init}
+  K_{i,\tmin} &= K^{0}_i
+    &&\qquad \forall\,i \\[4pt]
+  \label{eq:kcap-trans}
+  K_{i,\tnext} &= K_{i,t} + y_t\bigl(I^{+}_{i,t} - D^{-}_{i,t}\bigr)
+    &&\qquad \forall\,i,\; t\in\Tminus
+\end{alignat}
+
+\subsubsection*{Rate limits}
+
+\begin{alignat}{2}
+  \label{eq:icap-ub-abs}
+  0 \le I^{+}_{i,t} &\le g^{\mathrm{exp}}_i
+    &&\qquad \forall\,i,\; t\in\Tminus
+    \quad\text{(absolute mode)} \\[3pt]
+  \label{eq:icap-ub-prop}
+  0 \le I^{+}_{i,t} &\le g^{\mathrm{exp}}_i\,K_{i,t}
+    &&\qquad \forall\,i,\; t\in\Tminus
+    \quad\text{(proportional mode)} \\[3pt]
+  \label{eq:dcap-ub}
+  0 \le D^{-}_{i,t} &\le g^{\mathrm{dec}}_i\,K_{i,t}
+    &&\qquad \forall\,i,\; t\in\Tminus \\[3pt]
+  \label{eq:terminal-zero}
+  I^{+}_{i,\tmax} &= D^{-}_{i,\tmax} = 0
+    &&\qquad \forall\,i
+\end{alignat}
+
+\subsubsection*{Offer and bidding bounds}
+
+\begin{alignat}{2}
+  \label{eq:q-cap}
+  0 \le Q_{i,t} &\le K_{i,t}
+    &&\qquad \forall\,i,t
+    \quad\bigl(\text{or } Q_{i,t}=K_{i,t}
+    \text{ if quantity withholding is disabled}\bigr) \\[3pt]
+  \label{eq:self-offer}
+  p_{i,i,t} &= c^{\mathrm{man}}_{i,t}
+    &&\qquad \forall\,i,t \\[3pt]
+  \label{eq:p-bounds}
+  0 \le p_{e,j,t} &\le \bar{p}_{e,j}
+    &&\qquad \forall\,e,j,t \\[3pt]
+  \label{eq:a-bounds}
+  0 \le a^{\mathrm{bid}}_{i,t} &\le a_{i,t}
+    &&\qquad \forall\,i,t
+    \quad\bigl(\text{or } a^{\mathrm{bid}}_{i,t}=a_{i,t}
+    \text{ if demand withholding is disabled}\bigr)
+\end{alignat}
+
+\subsubsection*{Equilibrium constraints}
+
+The LLP KKT conditions
+\eqref{eq:stat-x}--\eqref{eq:comp-psi}
+are imposed as constraints of each player's MPEC.
+
+%======================================================================
+\section{Solution Method}
+%======================================================================
+
+The multi-player EPEC is solved by Gauss--Seidel (best-response)
+iteration with damping factor $\omega\in(0,1]$.  At each sweep,
+player~$r$ solves their MPEC while all other players' strategies are
+fixed.  Updated strategies are damped:
+\[
+  \theta^{(k+1)} = (1-\omega)\,\theta^{(k)} + \omega\,\theta^{\mathrm{BR}},
+\]
+where $\theta$ is any of $\{Q,\,\Delta K,\,p,\,a^{\mathrm{bid}}\}$.
+
+Convergence is declared when the maximum scaled change
+$r^{\mathrm{strat}} \le \tau$ is sustained for a configurable number
+of consecutive sweeps.
+
+
+
+
+
+
+
+
+\end{document}

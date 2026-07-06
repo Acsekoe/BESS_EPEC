@@ -1,0 +1,362 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Encoding / language ----------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+
+% ---------- Layout ----------
+\usepackage[margin=2.5cm]{geometry}
+\setlength{\parindent}{0pt}
+
+% ---------- Math ----------
+\usepackage{amsmath,amssymb,amsfonts,mathtools}
+\usepackage{bm}
+
+% ---------- Optional formatting ----------
+\usepackage[hidelinks]{hyperref}
+\usepackage[noabbrev,capitalise]{cleveref}
+\allowdisplaybreaks
+
+% ---------- Handy commands ----------
+\newcommand{\R}{\mathbb{R}}
+
+\title{IEW Draft EPEC Formulation\\
+Global Solar PV Module Supply Chain Model}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Model formulation}
+
+\subsection{Sets}
+\[
+r,e,i \in R
+\]
+where \(R\) denotes the set of regions.
+
+\subsection{Parameters}
+\[
+a_i > 0
+\qquad\text{Demand intercept in region } i
+\]
+\[
+b_i > 0
+\qquad\text{Demand slope in region } i
+\]
+\[
+D_i^{\max}
+\qquad\text{Maximum feasible demand in region } i
+\]
+\[
+c_e^{man}
+\qquad\text{Marginal manufacturing cost in region } e
+\]
+\[
+c_{ei}^{ship}
+\qquad\text{Shipping cost from region } e \text{ to region } i
+\]
+\[
+Qcap_e^{exist}
+\qquad\text{Installed manufacturing capacity in region } e
+\]
+\[
+\tau_r^{imp,\max}
+\qquad\text{Upper bound on import tariffs chosen by region } r
+\]
+\[
+\tau_r^{exp,\max}
+\qquad\text{Upper bound on export wedges chosen by region } r
+\]
+\[
+\rho_r^{imp} \ge 0
+\qquad\text{Quadratic penalty coefficient on import tariffs}
+\]
+\[
+\rho_r^{exp} \ge 0
+\qquad\text{Quadratic penalty coefficient on export wedges}
+\]
+\[
+\kappa_r^Q \ge 0
+\qquad\text{Quadratic penalty coefficient on offered capacity}
+\]
+
+\subsection{Variables}
+
+\textbf{Upper-level variables of region \(r\)}
+\[
+Q_r^{offer} \in [0,Qcap_r^{exist}]
+\]
+\[
+\tau_{er}^{imp} \in [0,\tau_r^{imp,\max}]
+\qquad \forall e \in R\setminus\{r\}
+\]
+\[
+\tau_{ri}^{exp} \in [0,\tau_r^{exp,\max}]
+\qquad \forall i \in R\setminus\{r\}
+\]
+with
+\[
+\tau_{rr}^{imp}=0,\qquad \tau_{rr}^{exp}=0
+\]
+
+\textbf{Lower-level variables}
+\[
+x_{ei}\ge 0
+\qquad\text{Trade flow from region } e \text{ to region } i
+\]
+\[
+x_e^{man}\ge 0
+\qquad\text{Production in region } e
+\]
+\[
+x_i^{dem}\in [0,D_i^{\max}]
+\qquad\text{Demand in region } i
+\]
+
+\subsection{Lower-level problem (LLP)}
+\begin{align}
+\min_{x,\,x^{man},\,x^{dem}} \quad
+\mathcal{Z}_{LL}
+&=
+\sum_{e\in R} c_e^{man}\,x_e^{man}
++
+\sum_{e\in R}\sum_{i\in R}
+\left(
+c_{ei}^{ship}+\tau_{ei}^{imp}+\tau_{ei}^{exp}
+\right)x_{ei}
+\nonumber\\
+&\quad
+-
+\sum_{i\in R}
+\left(
+a_i x_i^{dem}-\frac12 b_i (x_i^{dem})^2
+\right)
+\label{eq:llp_obj}
+\end{align}
+subject to
+\begin{align}
+x_e^{man}-\sum_{i\in R}x_{ei} &= 0
+&& \forall e\in R
+\label{eq:llp_prod_balance}
+\\
+\sum_{e\in R}x_{ei}-x_i^{dem} &= 0
+&& \forall i\in R
+\label{eq:llp_dem_balance}
+\\
+0 \le x_e^{man} \le Q_e^{offer}
+&& \forall e\in R
+\label{eq:llp_prod_bound}
+\\
+0 \le x_i^{dem} \le D_i^{\max}
+&& \forall i\in R
+\label{eq:llp_dem_bound}
+\\
+x_{ei} &\ge 0
+&& \forall e,i\in R
+\label{eq:llp_flow_nonneg}
+\end{align}
+
+\subsection{Upper-level problem (ULP) of region \(r\)}
+
+Consumer surplus in region \(r\) is
+\[
+\left(
+a_r x_r^{dem}-\frac12 b_r (x_r^{dem})^2
+\right)-\lambda_r x_r^{dem}.
+\]
+
+Producer surplus of region \(r\) is
+\[
+\sum_{i\in R}
+\left(
+\lambda_i-c_{ri}^{ship}-\tau_{ri}^{imp}-\tau_{ri}^{exp}
+\right)x_{ri}
+-c_r^{man}x_r^{man}.
+\]
+
+Import tariff revenue collected by region \(r\) is
+\[
+\sum_{e\in R\setminus\{r\}}\tau_{er}^{imp}\,x_{er}.
+\]
+
+The ULP of region \(r\) is therefore
+\begin{align}
+\max_{Q_r^{offer},\,\tau_{\cdot r}^{imp},\,\tau_{r\cdot}^{exp}} \quad
+\mathcal{W}_r
+&=
+\left(
+a_r x_r^{dem}-\frac12 b_r (x_r^{dem})^2
+\right)-\lambda_r x_r^{dem}
+\nonumber\\
+&\quad
++
+\sum_{i\in R}
+\left(
+\lambda_i-c_{ri}^{ship}-\tau_{ri}^{imp}-\tau_{ri}^{exp}
+\right)x_{ri}
+-c_r^{man}x_r^{man}
+\nonumber\\
+&\quad
++
+\sum_{e\in R\setminus\{r\}}\tau_{er}^{imp}\,x_{er}
+\nonumber\\
+&\quad
+-\rho_r^{imp}\sum_{e\in R\setminus\{r\}}\left(\tau_{er}^{imp}\right)^2
+-\rho_r^{exp}\sum_{i\in R\setminus\{r\}}\left(\tau_{ri}^{exp}\right)^2
+-\kappa_r^Q\left(Q_r^{offer}\right)^2
+\label{eq:ulp_obj}
+\end{align}
+subject to
+\begin{align}
+0 \le Q_r^{offer} \le Qcap_r^{exist}
+\label{eq:ulp_Q}
+\\
+0 \le \tau_{er}^{imp} \le \tau_r^{imp,\max}
+&& \forall e \in R\setminus\{r\}
+\label{eq:ulp_tauimp}
+\\
+0 \le \tau_{ri}^{exp} \le \tau_r^{exp,\max}
+&& \forall i \in R\setminus\{r\}
+\label{eq:ulp_tauexp}
+\\
+\tau_{rr}^{imp}=0,\qquad \tau_{rr}^{exp}=0
+\label{eq:ulp_diag}
+\\
+(x,x^{man},x^{dem},\pi,\lambda,\alpha,\beta)\text{ satisfy the KKT conditions of the LLP.}
+\label{eq:ulp_llp_link}
+\end{align}
+
+\subsection{KKT conditions of the lower-level problem}
+
+We associate dual variables \(\pi_e\) and \(\lambda_i\) with the equality constraints, and
+\(\alpha_e \ge 0\) and \(\beta_i \ge 0\) with the upper-bound constraints.
+
+\textbf{1. Lagrangian}
+\begin{align}
+\mathcal{L}
+&=
+\sum_{e\in R} c_e^{man}\,x_e^{man}
++
+\sum_{e\in R}\sum_{i\in R}
+\left(
+c_{ei}^{ship}+\tau_{ei}^{imp}+\tau_{ei}^{exp}
+\right)x_{ei}
+-
+\sum_{i\in R}
+\left(
+a_i x_i^{dem}-\frac12 b_i (x_i^{dem})^2
+\right)
+\nonumber\\
+&\quad
++
+\sum_{e\in R}\pi_e\left(\sum_{i\in R}x_{ei}-x_e^{man}\right)
++
+\sum_{i\in R}\lambda_i\left(x_i^{dem}-\sum_{e\in R}x_{ei}\right)
+\nonumber\\
+&\quad
++
+\sum_{e\in R}\alpha_e\left(x_e^{man}-Q_e^{offer}\right)
++
+\sum_{i\in R}\beta_i\left(x_i^{dem}-D_i^{\max}\right)
+\label{eq:kkt_lagrangian}
+\end{align}
+
+\textbf{2. Primal feasibility}
+\begin{align}
+\sum_{i\in R}x_{ei}-x_e^{man} &= 0
+&& (\pi_e)
+&& \forall e\in R
+\label{eq:kkt_primal_prod_bal}
+\\
+x_i^{dem}-\sum_{e\in R}x_{ei} &= 0
+&& (\lambda_i)
+&& \forall i\in R
+\label{eq:kkt_primal_dem_bal}
+\\
+Q_e^{offer}-x_e^{man} &\ge 0
+&& (\alpha_e)
+&& \forall e\in R
+\label{eq:kkt_primal_prod_bound}
+\\
+D_i^{\max}-x_i^{dem} &\ge 0
+&& (\beta_i)
+&& \forall i\in R
+\label{eq:kkt_primal_dem_bound}
+\\
+x_e^{man},\,x_{ei},\,x_i^{dem} &\ge 0
+&&
+&& \forall e,i\in R
+\label{eq:kkt_primal_nonneg}
+\end{align}
+
+\textbf{3. Dual feasibility}
+\begin{align}
+\alpha_e &\ge 0
+&& \forall e\in R
+\label{eq:kkt_dual_prod}
+\\
+\beta_i &\ge 0
+&& \forall i\in R
+\label{eq:kkt_dual_dem}
+\end{align}
+\textit{Note: \(\pi_e\) and \(\lambda_i\) are free variables because they are associated with equality constraints.}
+
+\textbf{4. Stationarity}
+\begin{align}
+\frac{\partial \mathcal{L}}{\partial x_e^{man}}
+&=
+c_e^{man}-\pi_e+\alpha_e \ge 0
+&& \forall e\in R
+\label{eq:kkt_stat_prod}
+\\
+\frac{\partial \mathcal{L}}{\partial x_{ei}}
+&=
+c_{ei}^{ship}+\tau_{ei}^{imp}+\tau_{ei}^{exp}+\pi_e-\lambda_i \ge 0
+&& \forall e,i\in R
+\label{eq:kkt_stat_trade}
+\\
+\frac{\partial \mathcal{L}}{\partial x_i^{dem}}
+&=
+-a_i+b_i x_i^{dem}+\lambda_i+\beta_i \ge 0
+&& \forall i\in R
+\label{eq:kkt_stat_dem}
+\end{align}
+
+\textbf{5. Complementarity}
+\begin{align}
+0 \le x_e^{man}
+&\perp
+\left(c_e^{man}-\pi_e+\alpha_e\right)\ge 0
+&& \forall e\in R
+\label{eq:kkt_comp_stat_prod}
+\\
+0 \le x_{ei}
+&\perp
+\left(c_{ei}^{ship}+\tau_{ei}^{imp}+\tau_{ei}^{exp}+\pi_e-\lambda_i\right)\ge 0
+&& \forall e,i\in R
+\label{eq:kkt_comp_stat_trade}
+\\
+0 \le x_i^{dem}
+&\perp
+\left(-a_i+b_i x_i^{dem}+\lambda_i+\beta_i\right)\ge 0
+&& \forall i\in R
+\label{eq:kkt_comp_stat_dem}
+\\
+0 \le \alpha_e
+&\perp
+\left(Q_e^{offer}-x_e^{man}\right)\ge 0
+&& \forall e\in R
+\label{eq:kkt_comp_bound_prod}
+\\
+0 \le \beta_i
+&\perp
+\left(D_i^{\max}-x_i^{dem}\right)\ge 0
+&& \forall i\in R
+\label{eq:kkt_comp_bound_dem}
+\end{align}
+
+\end{document}

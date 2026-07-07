@@ -1,0 +1,73 @@
+%% Time-stamp: <2013-02-07 11:51:00 vk>
+%%%% === Disclaimer: =======================================================
+%% created by
+%%      Karl Voit
+%%
+%% edited by 
+%%  	Andreas Fleischhacker
+
+\usepackage{siunitx}
+\usepackage{amsmath,amssymb,amsfonts}
+\graphicspath{{figures/}}
+
+\newcommand{\myfig}[6]{
+\begin{figure}[#6]
+  \begin{center}
+     \includegraphics[keepaspectratio,#2]{figures/#1}
+     \caption[#4]{#3}
+     \label{#5} %% NOTE: always label *after* caption!
+  \end{center}
+\end{figure}
+}
+
+
+
+\newcommand{\myfigpdftex}[6]{
+\begin{figure}[#6]
+  \def\svgwidth{#2\textwidth}
+  \begin{center}
+    \input{figures/#1.pdf_tex}
+    \caption[#4]{#3}
+    \label{#5} %% NOTE: always label *after* caption!
+  \end{center}
+\end{figure}
+}
+% example:
+%\myfigpdftex{}%% filename in figures folder
+%       {}%% maximum height, aspect ratio will be kept
+%       {}%% caption
+%       {}%% optional (short) caption for list of figures
+%       {}%% label
+%       {}%% figure position
+
+\newcommand{\vect}[1]{\mathbf{#1}} % vector symbol: bold
+\newcommand{\mat}[1]{\mathbf{#1}}  % matrix symbol: bold
+\newcommand{\esym}[1]{\textit{#1}} % symbols without a kursiv font
+\newcommand{\Epsilon}{\mathcal{E}} % big epsilon
+\newcommand{\underconsideration}[2]{\left.#1\right\vert_{#2}}
+\newcommand{\germanword}[1]{\foreignlanguage{ngerman}{#1}}
+\newcommand{\germanwordQM}[1]{\glqq\foreignlanguage{ngerman}{#1}\grqq}
+\newcommand{\myeqitem}[2]{#1 & -- &  #2 \\}
+\newenvironment{myquote}{\begin{quote} \small}{\end{quote}}
+%\newenvironment{myeqdes}
+%	{\tabularx{\textwidth}{lcX}}
+%	{\endtabularx}
+	
+
+
+
+% Using \myclone[42]{foobar} results the text foobar printed 42 times.
+% But you can not only repeat text output with myclone. 
+%
+% Default argument
+% for the optional parameter number of times (like 42 in the example above) 
+% is set to two.
+% 
+%% \myclone[x]{text}
+\newcounter{myclonecnt}
+\newcommand{\myclone}[2][2]{%
+  \setcounter{myclonecnt}{#1}%
+  \whiledo{\value{myclonecnt}>0}{#2\addtocounter{myclonecnt}{-1}}%
+}
+
+

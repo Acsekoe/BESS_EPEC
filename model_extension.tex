@@ -1,0 +1,214 @@
+\documentclass[11pt,a4paper,fleqn]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{array,longtable}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor} % package required for highlighted aFRR additions
+
+\setlength{\mathindent}{0pt}
+
+\title{Title}
+\author{Author}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Notation}
+
+\noindent The symbols below distinguish upper-level strategic decisions from lower-level ISO-cleared decisions. Scenario probabilities are denoted by \(\omega_s\) throughout the model to avoid using \(\pi\), which is commonly reserved for prices or profits in related market models.
+
+\begingroup
+\renewcommand{\arraystretch}{1.15}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\begin{longtable}{@{}p{0.22\textwidth}
+                  @{\hspace{0.015\textwidth}}p{0.55\textwidth}
+                  @{\hspace{0.015\textwidth}}p{0.18\textwidth}@{}}
+\hline
+\textbf{Symbol} & \textbf{Description} & \textbf{Unit} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Symbol} & \textbf{Description} & \textbf{Unit} \\
+\hline
+\endhead
+\hline
+\endfoot
+\multicolumn{3}{@{}l}{\textbf{Sets and Indices}} \\
+\hline
+\(s \in \mathcal{S}\) & Activation scenario index and set. & -- \\
+\(t \in \mathcal{T}\) & Time-period index and set. & -- \\
+\(g \in \mathcal{G}\) & Generator index and set. & -- \\
+\(n \in \mathcal{N}\) & Network node index and set. & -- \\
+\(G_n\) & Set of generators located at node \(n\). & -- \\
+\(i \in \mathcal{I}\) & BESS investment or storage-unit index and set. & -- \\
+\(b \in \mathcal{B}\) & aFRR market block index and set. & -- \\
+\(l \in \mathcal{L}\) & Transmission-line index and set. & -- \\
+\(t \in b\) & Time periods contained in aFRR block \(b\). & -- \\
+\hline
+\multicolumn{3}{@{}l}{\textbf{Upper-Level Decision Variables}} \\
+\hline
+\(X^{power}_{i,n}\) & Installed BESS power capacity chosen by the upper-level strategic investor. & MW \\
+\(X^{energy}_{i,n}\) & Installed BESS energy capacity chosen by the upper-level strategic investor. & MWh \\
+\(R^{offer}_{i,n,b}\) & Strategic aFRR reserve capacity offered by BESS \(i\) at node \(n\) in block \(b\). & MW \\
+\hline
+\multicolumn{3}{@{}l}{\textbf{Lower-Level Decision Variables}} \\
+\hline
+\(P_{g,t,s}\) & Dispatch of generator \(g\) in time period \(t\) and scenario \(s\). & MW \\
+\(P^{shed}_{n,t,s}\) & Load shedding at node \(n\), time \(t\), and scenario \(s\). & MW \\
+\(P^{aFRR,def}_{b}\) & Unserved aFRR reserve demand in block \(b\). & MW \\
+\(NetInjection_{n,t,s}\) & Net nodal injection used in the DC network representation. & MW \\
+\(R^{aFRR}_{i,n,b}\) & ISO-cleared aFRR reserve capacity from BESS \(i\) at node \(n\) in block \(b\). & MW \\
+\(P^{charge}_{i,n,t,s}\) & BESS charging power. & MW \\
+\(P^{discharge}_{i,n,t,s}\) & BESS discharging power. & MW \\
+\(P^{aFRR,up}_{i,n,t,s}\) & Upward aFRR activation energy represented as power withdrawal or injection adjustment.\textsuperscript{a} & MW \\
+\(P^{aFRR,down}_{i,n,t,s}\) & Downward aFRR activation energy represented as power withdrawal or injection adjustment.\textsuperscript{a} & MW \\
+\(SOC_{i,n,t,s}\) & State of charge of BESS \(i\) at node \(n\), time \(t\), and scenario \(s\). & MWh \\
+\hline
+\multicolumn{3}{@{}l}{\textbf{Dual Variables}} \\
+\hline
+\(\lambda_{n,t,s}\) & Dual variable of nodal power balance; nodal energy price. & \texteuro{}/MWh \\
+\(\lambda_{sys,t,s}\) & Dual variable of system-wide power balance. & \texteuro{}/MWh \\
+\(\lambda_{aFRR,b}\) & Dual variable of the aFRR reserve-capacity clearing constraint; aFRR capacity price.\textsuperscript{b} & \texteuro{}/MW \\
+\(\nu^-_{g,t,s},\nu^+_{g,t,s}\) & Dual variables of the lower and upper generator dispatch bounds. & \texteuro{}/MWh \\
+\(\mu^-_{l,t,s},\mu^+_{l,t,s}\) & Dual variables of the lower and upper transmission-flow bounds. & \texteuro{}/MWh \\
+\(\rho^-_{i,n,t,s},\rho^+_{i,n,t,s}\) & Dual variables of the BESS charging-side power-headroom bounds. & \texteuro{}/MWh \\
+\(\sigma^-_{i,n,t,s},\sigma^+_{i,n,t,s}\) & Dual variables of the BESS discharging-side power-headroom bounds. & \texteuro{}/MWh \\
+\(\gamma_{i,n,t,s}\) & Dual variable of the SOC transition equation. & \texteuro{}/MWh \\
+\(\delta^-_{i,n,t,s},\delta^+_{i,n,t,s}\) & Dual variables of the lower and upper SOC energy bounds. & \texteuro{}/MWh \\
+\(\xi^-_{n,t,s},\xi^+_{n,t,s}\) & Dual variables of the lower and upper load-shedding bounds. & \texteuro{}/MWh \\
+\hline
+\multicolumn{3}{@{}l}{\textbf{Parameters}} \\
+\hline
+\(\omega_s\) & Probability weight of activation scenario \(s\), with \(\sum_s \omega_s = 1\). & dimensionless \\
+\(\alpha^{up}_{t,s}\) & Realized upward aFRR activation factor in time period \(t\) and scenario \(s\), with \(0 \leq \alpha^{up}_{t,s} \leq 1\). & dimensionless \\
+\(\alpha^{down}_{t,s}\) & Realized downward aFRR activation factor in time period \(t\) and scenario \(s\), with \(0 \leq \alpha^{down}_{t,s} \leq 1\). & dimensionless \\
+\(C_g\) & Marginal generation cost of generator \(g\). & \texteuro{}/MWh \\
+\(VOLL\) & Value of lost load for electricity demand. & \texteuro{}/MWh \\
+\(VOLL^{aFRR}\) & Penalty value for unserved aFRR reserve demand. & \texteuro{}/MW \\
+\(D^{aFRR}_{b}\) & aFRR reserve demand in block \(b\).\textsuperscript{a} & MW \\
+\(P^{max}_{g,t}\) & Maximum available dispatch of generator \(g\) in time period \(t\). & MW \\
+\(Limit_l\) & Transmission capacity limit on line \(l\). & MW \\
+\(PTDF_{l,n}\) & Power transfer distribution factor from node \(n\) to line \(l\). & dimensionless \\
+\(D^{el}_{n,t}\) & Electricity demand at node \(n\) and time \(t\).\textsuperscript{a} & MW \\
+\(\eta\) & One-way BESS charging and discharging efficiency, \(0 \leq \eta \leq 1\). & dimensionless \\
+\end{longtable}
+\endgroup
+
+\noindent\textsuperscript{a} Renamed relative to the original thesis notation for traceability: \(A_{up}\) is written as \(P^{aFRR,up}\), \(A_{down}\) as \(P^{aFRR,down}\), \(Demand_b\) as \(D^{aFRR}_b\), and \(D_{n,t}\) as \(D^{el}_{n,t}\).
+
+\noindent\textsuperscript{b} The unit of \(\lambda_{aFRR,b}\) is \texteuro{}/MW because it prices reserve capacity. This differs from \(\lambda_{n,t,s}\), which prices energy or power balance in \texteuro{}/MWh.
+
+\section{Introduction}
+
+\subsection*{Lower-Level Problem --- Co-Optimized Spot + aFRR Market Clearing}
+
+\paragraph{Objective}
+\begin{align*}
+\min \quad
+&\textcolor{blue}{\sum_s \omega_s}
+\left[
+\sum_{t,g} C_g \cdot P_{g,t\textcolor{blue}{,s}}
+\;+\;
+\sum_{n,t} VOLL \cdot P^{shed}_{n,t\textcolor{blue}{,s}}
+\right] \\
+&\textcolor{blue}{\;+\; \sum_b VOLL^{aFRR} \cdot P^{aFRR,def}_{b}}
+\end{align*}
+\nopagebreak[4]
+% Expected system cost across activation scenarios, now with the blue aFRR deficit penalty added so the reserve demand constraint can never make the LLP infeasible.
+
+\paragraph{Subject to}
+\begin{align*}
+&\sum_{g \in G_n} P_{g,t,s}
+  + \sum_i \big(P^{discharge}_{i,n,t,s} - P^{charge}_{i,n,t,s}
+  \textcolor{blue}{\;-\;P^{aFRR,up}_{i,n,t,s} + P^{aFRR,down}_{i,n,t,s}}\big) \notag\\
+&\qquad
+  + P^{shed}_{n,t,s} - D^{el}_{n,t} = NetInjection_{n,t,s},
+  \qquad \forall n,t,s \quad (\lambda_{n,t,s}) \\
+\intertext{This defines nodal net injections from generation, storage dispatch, activated aFRR energy, and load shedding in each scenario.}
+&\sum_{n} NetInjection_{n,t,s} = 0,
+  \qquad \forall t,s \quad (\lambda_{sys,t,s}) \\
+\intertext{This enforces system-wide power balance by requiring total net injection to be zero in every time period and scenario.}
+&\textcolor{blue}{\sum_{i,n} R^{aFRR}_{i,n,b} + P^{aFRR,def}_{b} \geq D^{aFRR}_{b},
+  \qquad \forall b \quad (\lambda_{aFRR,b})} \\
+\intertext{This clears enough aFRR reserve capacity to meet block-level reserve demand, with deficit slack preserving feasibility.}
+&\textcolor{blue}{0 \leq R^{aFRR}_{i,n,b} \leq R^{offer}_{i,n,b},
+  \qquad \forall i,n,b} \\
+\intertext{This limits cleared aFRR capacity by the reserve volume offered by each storage unit.}
+&0 \le P_{g,t,s} \le P^{max}_{g,t},
+  \qquad \forall g,t,s \quad (\nu^-_{g,t,s}, \nu^+_{g,t,s}) \\
+\intertext{This keeps conventional and renewable generation within available capacity.}
+&-Limit_l \le \sum_n PTDF_{l,n} \cdot NetInjection_{n,t,s} \le Limit_l,
+  \qquad \forall l,t,s \notag\\
+&\qquad(\mu^-_{l,t,s}, \mu^+_{l,t,s}) \\
+\intertext{This represents network feasibility through PTDF-based transmission limits.}
+&0 \le P^{charge}_{i,n,t,s} \textcolor{blue}{+\, R^{aFRR}_{i,n,b}} \le X^{power}_{i,n},
+  \qquad \forall i,n,t\in b,s \notag\\
+&\qquad(\rho^-_{i,n,t,s}, \rho^+_{i,n,t,s}) \\
+\intertext{This reserves charging-side power headroom for aFRR while respecting the BESS power rating.}
+&0 \le P^{discharge}_{i,n,t,s} \textcolor{blue}{+\, R^{aFRR}_{i,n,b}} \le X^{power}_{i,n},
+  \qquad \forall i,n,t\in b,s \notag\\
+&\qquad(\sigma^-_{i,n,t,s}, \sigma^+_{i,n,t,s}) \\
+\intertext{This reserves discharging-side power headroom for aFRR while respecting the BESS power rating.}
+&\textcolor{blue}{P^{aFRR,up}_{i,n,t,s} = \alpha^{up}_{t,s} R^{aFRR}_{i,n,b},
+  \qquad \forall i,n,t\in b,s} \\
+\intertext{This fixes upward aFRR activation to the realized scenario activation factor times cleared reserve capacity.}
+&\textcolor{blue}{P^{aFRR,down}_{i,n,t,s} = \alpha^{down}_{t,s} R^{aFRR}_{i,n,b},
+  \qquad \forall i,n,t\in b,s} \\
+\intertext{This fixes downward aFRR activation to the realized scenario activation factor times cleared reserve capacity.}
+&SOC_{i,n,t,s} = SOC_{i,n,t-1,s}
+  + \eta \big(P^{charge}_{i,n,t,s}
+  \textcolor{blue}{+ P^{aFRR,down}_{i,n,t,s}}\big) \notag\\
+&\qquad
+  - \frac{1}{\eta} \big(P^{discharge}_{i,n,t,s}
+  \textcolor{blue}{+ P^{aFRR,up}_{i,n,t,s}}\big),
+  \qquad \forall i,n,t,s \quad (\gamma_{i,n,t,s}) \\
+\intertext{This updates the BESS state of charge after market dispatch and upward or downward aFRR activation.}
+&0 \le SOC_{i,n,t,s} \le X^{energy}_{i,n},
+  \qquad \forall i,n,t,s \quad (\delta^-_{i,n,t,s}, \delta^+_{i,n,t,s}) \\
+\intertext{This keeps stored energy within the installed BESS energy capacity.}
+&SOC_{i,n,0,s} = SOC_{i,n,24,s},
+  \qquad \forall i,n,s \\
+\intertext{This imposes daily SOC consistency by requiring the terminal SOC to match the initial SOC.}
+&0 \le P^{shed}_{n,t,s} \le D^{el}_{n,t},
+  \qquad \forall n,t,s \quad (\xi^-_{n,t,s}, \xi^+_{n,t,s}) \\
+\intertext{This caps involuntary load shedding by the local electricity demand.}
+&\textcolor{blue}{0 \leq P^{aFRR,def}_{b} \leq D^{aFRR}_{b},
+  \qquad \forall b}
+\intertext{This caps the aFRR deficit variable by total reserve demand in each block.}
+\end{align*}
+
+% Nodal power balance (dual = nodal LMP); activated reserve energy (blue terms) now physically injects/withdraws power just like real dispatch.
+% System closure, unchanged, now simply carried per scenario.
+% NEW --- the genuine lower-level reserve market clearing constraint (system-wide price, per confirmed market design); its dual lambda_aFRR,b is a true endogenous capacity price, and the deficit slack behaves like VOLL for reserves.
+% NEW --- splits the strategic offer (upper level, investor-controlled) from the cleared quantity (lower level, ISO-controlled); this is what makes lambda_aFRR,b a real dual instead of a shadow price on a parameter-only constraint.
+% Generator limits incl. RES availability, unchanged, now scenario-indexed.
+% PTDF line-flow limits, unchanged, now scenario-indexed.
+% BESS charge power limit: cleared reserve capacity now physically crowds out spot charge headroom, so the arbitrage-reserve trade-off emerges from this shared limit rather than an external assumption.
+% BESS discharge power limit: same opportunity-cost mechanism on the discharge side.
+% NEW --- upward activation is scenario-driven and proportional to the capacity cleared for that block, linking the market outcome to real-time physical delivery.
+% NEW --- same scenario-driven linkage for downward activation.
+% SOC dynamics: activation now actually drains/fills the battery, so aFRR commitments have a real physical consequence for SOC and, ultimately, optimal sizing.
+% SOC bounds, unchanged, now scenario-indexed; this is where the battery has to buy real activation buffer with X^energy.
+% SOC periodicity, unchanged, enforced per scenario.
+% Load shedding bounds, unchanged, renamed to D^{el} for clarity against the new D^{aFRR}.
+% NEW --- caps the reserve deficit slack at total demand, mirroring the load-shedding bound's role in guaranteeing feasibility at every diagonalization iteration.
+
+\bigskip
+\noindent\textit{Exogenous parameters (fixed from upper level or given):}
+\begin{align*}
+&X^{power}_{i,n},\; X^{energy}_{i,n},\; \textcolor{blue}{R^{offer}_{i,n,b}},\; C_g,\;
+P^{max}_{g,t},\; D^{el}_{n,t},\; \textcolor{blue}{D^{aFRR}_{b}}, \\
+&Limit_l,\; PTDF_{l,n},\; \eta,\; VOLL,\; \textcolor{blue}{VOLL^{aFRR}},\;
+\textcolor{blue}{\alpha^{up}_{t,s}},\; \textcolor{blue}{\alpha^{down}_{t,s}},\;
+\textcolor{blue}{\omega_s}
+\end{align*}
+% Everything the co-optimized LLP takes as given each iteration; R^{offer} is now the only aFRR-related quantity coming from the upper level --- R^{aFRR} is a genuine lower-level decision.
+
+\end{document}

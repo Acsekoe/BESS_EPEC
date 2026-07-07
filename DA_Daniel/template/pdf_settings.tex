@@ -1,0 +1,43 @@
+%%%% Time-stamp: <2014-03-23 13:40:59 vk>
+%%%% === Disclaimer: =======================================================
+%% created by
+%%      Karl Voit
+%%
+%% edited by 
+%%  	Andreas Fleischhacker
+%%      Antonia Golab
+%%      Christoph Loschan
+
+\pdfcompresslevel=9
+
+\usepackage[%
+unicode=true, % loads with unicode support
+%a4paper=true, %
+,%pdftex=true, %
+backref, %
+pagebackref=false, % creates backward references too
+bookmarks=false, %
+bookmarksopen=false, % when starting with AcrobatReader, the Bookmarkcolumn is opened
+pdfpagemode=UseNone,% None, UseOutlines, UseThumbs, FullScreen
+plainpages=false, % correct, if pdflatex complains: ``destination with same identifier already exists''
+%% colors: https://secure.wikimedia.org/wikibooks/en/wiki/LaTeX/Colors
+urlcolor=DispositionColor, %%
+linkcolor=DispositionColor, %%
+,%pagecolor=DispositionColor, %%
+citecolor=DispositionColor, %%
+anchorcolor=DispositionColor, %%
+colorlinks=\mycolorlinks, % turn on/off colored links (on: better for
+                          % on-screen reading; off: better for printout versions)
+]{hyperref}
+
+%% all strings need to be loaded after hyperref was loaded with unicode support
+%% if not the field is garbled in the output for characters like ČŽĆŠĐ
+\hypersetup{
+pdftitle={\mytitle}, %
+pdfauthor={\myauthor}, %
+pdfsubject={\mysubject}, %
+pdfcreator={Accomplished with: pdfLaTeX, biber, and hyperref-package. No animals, MS-EULA or BSA-rules were harmed.},
+pdfproducer={\myauthor},
+pdfkeywords={\mykeywords}
+}
+

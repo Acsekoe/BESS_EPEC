@@ -1,0 +1,116 @@
+--- Parameter Konfiguration ---
+
+CALCULATE_AFRR = True          # False = Nur Arbitrage, True = Arbitrage + aFRR
+ENABLE_CURTAILMENT = True       # True = Erlaubt Abregelung von RES bei Spotpreis <= 0
+
+# --- Algorithmus Tuning ---
+MAX_ITER = 40           # Etwas mehr Iterationen, da Dämpfung stärker ist
+TOLERANCE = 0.5        # Toleranz
+DAMPING_FACTOR = 0.25   # WICHTIG: Nur 25% Mix aus Neu, 75% Alt -> Verhindert Oszillation!
+COMPL_RELAX = 10      # Relaxation factor for KKT complementarity to avoid Ipopt infeasibility
+GAUSS_JACOBI = True     # True = Parallel (Jacobi), False = Sequenziell (Gauß-Seidel). Parallel nutzt CPU besser, ändert aber Konvergenzpfad.
+CONVERGENCE_CRITERIA = 'Power' # 'Power', 'Energy', 'PowerAndEnergy' - User switch
+
+# -- Wirtschaftsdaten --
+BESS_COST_POWER = 6600
+BESS_COST_ENERGY = 18800
+LIFETIME = 15  # Jahre
+DAYS_PER_YEAR = 365.25
+OBJ_SCALE = 1e-6
+DEGRADATION_COST = 15.0
+EP_RATIO = 2.0 # minimale EP Ratio
+MC_BASE = 40
+MC_PEAK = 80
+
+-------------------------------
+1. Visualisiere Inputs...
+
+============================================================
+SZENARIO ÜBERSICHT (Simulationsdauer: 24 h)
+============================================================
+
+--- Netz-Restriktionen (Leitungen) ---
+Line  Limit (MW)
+ L12         400
+ L14         400
+ L15         400
+ L23         400
+ L34         240
+ L45         240
+
+--- Shared Constraints (Anschluss-Limits) ---
+Node  MaxSharedCap (MW)
+  N1                100
+  N2                100
+  N3                100
+  N4                100
+  N5                100
+============================================================
+
+Start EPEC v14 (Stabilized). Iter: 40, Damping: 0.25
+
+--- Iteration 1 ---
+  Inv I1: optimal. Max Delta: 23.491 (Def: 0.00)
+  Inv I2: optimal. Max Delta: 23.298 (Def: 0.00)
+  Inv I3: optimal. Max Delta: 23.332 (Def: 0.00)
+  Inv I4: optimal. Max Delta: 23.456 (Def: 0.00)
+
+--- Iteration 2 ---
+  Inv I1: optimal. Max Delta: 0.722 (Def: 0.00)
+  Inv I2: optimal. Max Delta: 0.611 (Def: 0.00)
+  Inv I3: optimal. Max Delta: 0.599 (Def: 0.00)
+  Inv I4: optimal. Max Delta: 0.584 (Def: 0.00)
+
+--- Iteration 3 ---
+  Inv I1: optimal. Max Delta: 0.170 (Def: 0.00)
+  Inv I2: optimal. Max Delta: 0.013 (Def: 0.00)
+  Inv I3: optimal. Max Delta: 0.030 (Def: 0.00)
+  Inv I4: optimal. Max Delta: 0.052 (Def: 0.00)
+
+KONVERGENZ! Delta < 0.5
+
+============================================================
+EPEC ENDERGEBNISSE
+============================================================
+
+--- Investitionen (MW) ---
+                   I1          I2          I3          I4  Total_Node
+N1          24.981041    24.68171   24.793607   24.914962    99.37132
+N2          24.978126    24.79442    24.80612   24.915239   99.493904
+N3          24.984743   24.760572   24.804272   24.914936   99.464523
+N4          24.983634   24.700732    24.79496   24.912497   99.391823
+N5          24.971653   24.684867   24.793804   24.913763   99.364088
+Total_Inv  124.899197  123.622301  123.992763  124.571396  497.085657
+
+--- Auslastung Shared Limits ---
+  N1:  99.37 / 100 MW ( 99.4%)
+  N2:  99.49 / 100 MW ( 99.5%)
+  N3:  99.46 / 100 MW ( 99.5%)
+  N4:  99.39 / 100 MW ( 99.4%)
+  N5:  99.36 / 100 MW ( 99.4%)
+Extrahiere Ergebnisse für CSV und Plots...
+Ergebnisse gespeichert in output/results_final.csv
+
+Erstelle System-Gesamtbilanz...
+Berechne System-Aggregation...
+
+Erstelle Knoten-Analysen...
+
+Erstelle aFRR-Analysen (Knoten-Ebene)...
+
+Zeige Konvergenz-Historie...
+
+Zeige Investment Bar Chart...
+
+Zeige Line Loading Congestion Heatmap...
+
+Zeige aFRR Gesamtbereitstellung...
+
+============================================================
+FINANCE & DESIGN STATISTICS
+============================================================
+Investor  Rate (%)  Total MW  Total MWh  Actual E/P  Arbitrage €    aFRR €  Profit % Arb  Profit % aFRR
+      I1       8.0    124.90    2648.58       21.21     -2574.26 332852.44         -0.78         100.78
+      I2      12.0    123.62     291.13        2.35      4521.00 292986.68          1.52          98.48
+      I3      15.0    123.99     716.09        5.78      3759.11 293034.14          1.27          98.73
+      I4      20.0    124.57     625.89        5.02      3532.13 293041.04          1.19          98.81

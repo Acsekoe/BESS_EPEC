@@ -1,0 +1,1409 @@
+{
+    "metadata":  {
+                     "source_workbook":  "data\\input\\bess_epec_inputs.xlsx",
+                     "description":  "Prepared deterministic spot-market BESS EPEC benchmark data.",
+                     "slack_node":  "N3",
+                     "experiment":  "Baseline demand from market_data.json with all BESS power and energy capacities set to zero."
+                 },
+    "nodes":  [
+                  "N1",
+                  "N2",
+                  "N3",
+                  "N4",
+                  "N5"
+              ],
+    "generators":  [
+                       "G_Base",
+                       "G_Peak",
+                       "RES_Wind_N1",
+                       "RES_PV_N3"
+                   ],
+    "storage_units":  [
+                          "BESS_1"
+                      ],
+    "times":  [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22,
+                  23,
+                  24
+              ],
+    "soc_times":  [
+                      0,
+                      1,
+                      2,
+                      3,
+                      4,
+                      5,
+                      6,
+                      7,
+                      8,
+                      9,
+                      10,
+                      11,
+                      12,
+                      13,
+                      14,
+                      15,
+                      16,
+                      17,
+                      18,
+                      19,
+                      20,
+                      21,
+                      22,
+                      23,
+                      24
+                  ],
+    "lines":  [
+                  "L12",
+                  "L14",
+                  "L15",
+                  "L23",
+                  "L34",
+                  "L45"
+              ],
+    "generators_at_node":  {
+                               "N1":  [
+                                          "G_Base",
+                                          "RES_Wind_N1"
+                                      ],
+                               "N2":  [
+
+                                      ],
+                               "N3":  [
+                                          "RES_PV_N3"
+                                      ],
+                               "N4":  [
+
+                                      ],
+                               "N5":  [
+                                          "G_Peak"
+                                      ]
+                           },
+    "generation_cost":  {
+                            "G_Base":  40.0,
+                            "G_Peak":  80.0,
+                            "RES_Wind_N1":  0.0,
+                            "RES_PV_N3":  0.0
+                        },
+    "generation_capacity":  [
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  1,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  2,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  3,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  4,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  5,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  6,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  7,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  8,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  9,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  10,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  11,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  12,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  13,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  14,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  15,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  16,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  17,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  18,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  19,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  20,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  21,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  22,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  23,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Base",
+                                    "hour":  24,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  1,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  2,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  3,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  4,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  5,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  6,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  7,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  8,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  9,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  10,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  11,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  12,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  13,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  14,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  15,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  16,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  17,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  18,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  19,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  20,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  21,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  22,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  23,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "G_Peak",
+                                    "hour":  24,
+                                    "capacity_mw":  600.0
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  1,
+                                    "capacity_mw":  280.83
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  2,
+                                    "capacity_mw":  325.6
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  3,
+                                    "capacity_mw":  370.0
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  4,
+                                    "capacity_mw":  354.83
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  5,
+                                    "capacity_mw":  367.41
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  6,
+                                    "capacity_mw":  320.42
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  7,
+                                    "capacity_mw":  278.24
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  8,
+                                    "capacity_mw":  214.23
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  9,
+                                    "capacity_mw":  160.58
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  10,
+                                    "capacity_mw":  76.22
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  11,
+                                    "capacity_mw":  42.18
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  12,
+                                    "capacity_mw":  25.16
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  13,
+                                    "capacity_mw":  18.13
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  14,
+                                    "capacity_mw":  10.36
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  15,
+                                    "capacity_mw":  9.99
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  16,
+                                    "capacity_mw":  11.1
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  17,
+                                    "capacity_mw":  11.1
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  18,
+                                    "capacity_mw":  15.54
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  19,
+                                    "capacity_mw":  9.99
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  20,
+                                    "capacity_mw":  11.47
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  21,
+                                    "capacity_mw":  15.54
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  22,
+                                    "capacity_mw":  10.73
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  23,
+                                    "capacity_mw":  12.95
+                                },
+                                {
+                                    "generator":  "RES_Wind_N1",
+                                    "hour":  24,
+                                    "capacity_mw":  26.64
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  1,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  2,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  3,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  4,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  5,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  6,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  7,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  8,
+                                    "capacity_mw":  15.05
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  9,
+                                    "capacity_mw":  88.58
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  10,
+                                    "capacity_mw":  188.34
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  11,
+                                    "capacity_mw":  295.41
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  12,
+                                    "capacity_mw":  377.97
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  13,
+                                    "capacity_mw":  428.28
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  14,
+                                    "capacity_mw":  430.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  15,
+                                    "capacity_mw":  393.02
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  16,
+                                    "capacity_mw":  322.07
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  17,
+                                    "capacity_mw":  222.74
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  18,
+                                    "capacity_mw":  103.2
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  19,
+                                    "capacity_mw":  13.76
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  20,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  21,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  22,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  23,
+                                    "capacity_mw":  0.0
+                                },
+                                {
+                                    "generator":  "RES_PV_N3",
+                                    "hour":  24,
+                                    "capacity_mw":  0.0
+                                }
+                            ],
+    "demand_el":  [
+                      {
+                          "node":  "N1",
+                          "hour":  1,
+                          "demand_mw":  41.94
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  2,
+                          "demand_mw":  40.44
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  3,
+                          "demand_mw":  39.54
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  4,
+                          "demand_mw":  37.8
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  5,
+                          "demand_mw":  38.58
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  6,
+                          "demand_mw":  42.36
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  7,
+                          "demand_mw":  51.9
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  8,
+                          "demand_mw":  59.7
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  9,
+                          "demand_mw":  60.0
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  10,
+                          "demand_mw":  54.36
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  11,
+                          "demand_mw":  48.18
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  12,
+                          "demand_mw":  45.9
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  13,
+                          "demand_mw":  44.94
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  14,
+                          "demand_mw":  44.46
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  15,
+                          "demand_mw":  43.86
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  16,
+                          "demand_mw":  45.48
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  17,
+                          "demand_mw":  48.66
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  18,
+                          "demand_mw":  50.04
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  19,
+                          "demand_mw":  50.52
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  20,
+                          "demand_mw":  55.62
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  21,
+                          "demand_mw":  53.88
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  22,
+                          "demand_mw":  42.23999999999999
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  23,
+                          "demand_mw":  37.14
+                      },
+                      {
+                          "node":  "N1",
+                          "hour":  24,
+                          "demand_mw":  34.38
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  1,
+                          "demand_mw":  251.64
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  2,
+                          "demand_mw":  242.64
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  3,
+                          "demand_mw":  237.24
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  4,
+                          "demand_mw":  226.8
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  5,
+                          "demand_mw":  231.48
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  6,
+                          "demand_mw":  254.16
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  7,
+                          "demand_mw":  311.4
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  8,
+                          "demand_mw":  358.2
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  9,
+                          "demand_mw":  360.0
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  10,
+                          "demand_mw":  326.16
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  11,
+                          "demand_mw":  289.08
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  12,
+                          "demand_mw":  275.4
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  13,
+                          "demand_mw":  269.64
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  14,
+                          "demand_mw":  266.76
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  15,
+                          "demand_mw":  263.16
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  16,
+                          "demand_mw":  272.88
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  17,
+                          "demand_mw":  291.96
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  18,
+                          "demand_mw":  300.24
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  19,
+                          "demand_mw":  303.12
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  20,
+                          "demand_mw":  333.72
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  21,
+                          "demand_mw":  323.28
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  22,
+                          "demand_mw":  253.44
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  23,
+                          "demand_mw":  222.84
+                      },
+                      {
+                          "node":  "N2",
+                          "hour":  24,
+                          "demand_mw":  206.28
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  1,
+                          "demand_mw":  251.64
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  2,
+                          "demand_mw":  242.64
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  3,
+                          "demand_mw":  237.24
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  4,
+                          "demand_mw":  226.8
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  5,
+                          "demand_mw":  231.48
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  6,
+                          "demand_mw":  254.16
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  7,
+                          "demand_mw":  311.4
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  8,
+                          "demand_mw":  358.2
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  9,
+                          "demand_mw":  360.0
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  10,
+                          "demand_mw":  326.16
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  11,
+                          "demand_mw":  289.08
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  12,
+                          "demand_mw":  275.4
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  13,
+                          "demand_mw":  269.64
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  14,
+                          "demand_mw":  266.76
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  15,
+                          "demand_mw":  263.16
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  16,
+                          "demand_mw":  272.88
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  17,
+                          "demand_mw":  291.96
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  18,
+                          "demand_mw":  300.24
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  19,
+                          "demand_mw":  303.12
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  20,
+                          "demand_mw":  333.72
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  21,
+                          "demand_mw":  323.28
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  22,
+                          "demand_mw":  253.44
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  23,
+                          "demand_mw":  222.84
+                      },
+                      {
+                          "node":  "N3",
+                          "hour":  24,
+                          "demand_mw":  206.28
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  1,
+                          "demand_mw":  251.64
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  2,
+                          "demand_mw":  242.64
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  3,
+                          "demand_mw":  237.24
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  4,
+                          "demand_mw":  226.8
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  5,
+                          "demand_mw":  231.48
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  6,
+                          "demand_mw":  254.16
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  7,
+                          "demand_mw":  311.4
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  8,
+                          "demand_mw":  358.2
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  9,
+                          "demand_mw":  360.0
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  10,
+                          "demand_mw":  326.16
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  11,
+                          "demand_mw":  289.08
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  12,
+                          "demand_mw":  275.4
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  13,
+                          "demand_mw":  269.64
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  14,
+                          "demand_mw":  266.76
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  15,
+                          "demand_mw":  263.16
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  16,
+                          "demand_mw":  272.88
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  17,
+                          "demand_mw":  291.96
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  18,
+                          "demand_mw":  300.24
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  19,
+                          "demand_mw":  303.12
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  20,
+                          "demand_mw":  333.72
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  21,
+                          "demand_mw":  323.28
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  22,
+                          "demand_mw":  253.44
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  23,
+                          "demand_mw":  222.84
+                      },
+                      {
+                          "node":  "N4",
+                          "hour":  24,
+                          "demand_mw":  206.28
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  1,
+                          "demand_mw":  41.94
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  2,
+                          "demand_mw":  40.44
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  3,
+                          "demand_mw":  39.54
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  4,
+                          "demand_mw":  37.8
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  5,
+                          "demand_mw":  38.58
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  6,
+                          "demand_mw":  42.36
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  7,
+                          "demand_mw":  51.9
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  8,
+                          "demand_mw":  59.7
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  9,
+                          "demand_mw":  60.0
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  10,
+                          "demand_mw":  54.36
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  11,
+                          "demand_mw":  48.18
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  12,
+                          "demand_mw":  45.9
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  13,
+                          "demand_mw":  44.94
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  14,
+                          "demand_mw":  44.46
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  15,
+                          "demand_mw":  43.86
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  16,
+                          "demand_mw":  45.48
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  17,
+                          "demand_mw":  48.66
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  18,
+                          "demand_mw":  50.04
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  19,
+                          "demand_mw":  50.52
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  20,
+                          "demand_mw":  55.62
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  21,
+                          "demand_mw":  53.88
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  22,
+                          "demand_mw":  42.23999999999999
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  23,
+                          "demand_mw":  37.14
+                      },
+                      {
+                          "node":  "N5",
+                          "hour":  24,
+                          "demand_mw":  34.38
+                      }
+                  ],
+    "voll":  10000.0,
+    "x_power":  [
+                    {
+                        "storage_unit":  "BESS_1",
+                        "node":  "N1",
+                        "power_mw":  0
+                    },
+                    {
+                        "storage_unit":  "BESS_1",
+                        "node":  "N2",
+                        "power_mw":  0
+                    },
+                    {
+                        "storage_unit":  "BESS_1",
+                        "node":  "N3",
+                        "power_mw":  0
+                    },
+                    {
+                        "storage_unit":  "BESS_1",
+                        "node":  "N4",
+                        "power_mw":  0
+                    },
+                    {
+                        "storage_unit":  "BESS_1",
+                        "node":  "N5",
+                        "power_mw":  0
+                    }
+                ],
+    "x_energy":  [
+                     {
+                         "storage_unit":  "BESS_1",
+                         "node":  "N1",
+                         "energy_mwh":  0
+                     },
+                     {
+                         "storage_unit":  "BESS_1",
+                         "node":  "N2",
+                         "energy_mwh":  0
+                     },
+                     {
+                         "storage_unit":  "BESS_1",
+                         "node":  "N3",
+                         "energy_mwh":  0
+                     },
+                     {
+                         "storage_unit":  "BESS_1",
+                         "node":  "N4",
+                         "energy_mwh":  0
+                     },
+                     {
+                         "storage_unit":  "BESS_1",
+                         "node":  "N5",
+                         "energy_mwh":  0
+                     }
+                 ],
+    "line_limit":  {
+                       "L12":  400.0,
+                       "L14":  400.0,
+                       "L15":  400.0,
+                       "L23":  400.0,
+                       "L34":  240.0,
+                       "L45":  240.0
+                   },
+    "ptdf":  [
+                 {
+                     "line":  "L12",
+                     "node":  "N1",
+                     "ptdf":  0.5429060632511921
+                 },
+                 {
+                     "line":  "L12",
+                     "node":  "N2",
+                     "ptdf":  -0.1269052575035251
+                 },
+                 {
+                     "line":  "L12",
+                     "node":  "N3",
+                     "ptdf":  0.0
+                 },
+                 {
+                     "line":  "L12",
+                     "node":  "N4",
+                     "ptdf":  0.34898945813469434
+                 },
+                 {
+                     "line":  "L12",
+                     "node":  "N5",
+                     "ptdf":  0.5085274961391261
+                 },
+                 {
+                     "line":  "L14",
+                     "node":  "N1",
+                     "ptdf":  0.24813670852078157
+                 },
+                 {
+                     "line":  "L14",
+                     "node":  "N2",
+                     "ptdf":  0.06889142550191366
+                 },
+                 {
+                     "line":  "L14",
+                     "node":  "N3",
+                     "ptdf":  0.0
+                 },
+                 {
+                     "line":  "L14",
+                     "node":  "N4",
+                     "ptdf":  -0.1894514201302626
+                 },
+                 {
+                     "line":  "L14",
+                     "node":  "N5",
+                     "ptdf":  0.17055875773500098
+                 },
+                 {
+                     "line":  "L15",
+                     "node":  "N1",
+                     "ptdf":  0.2089572282280264
+                 },
+                 {
+                     "line":  "L15",
+                     "node":  "N2",
+                     "ptdf":  0.05801383200161145
+                 },
+                 {
+                     "line":  "L15",
+                     "node":  "N3",
+                     "ptdf":  0.0
+                 },
+                 {
+                     "line":  "L15",
+                     "node":  "N4",
+                     "ptdf":  -0.15953803800443198
+                 },
+                 {
+                     "line":  "L15",
+                     "node":  "N5",
+                     "ptdf":  -0.6790862538741269
+                 },
+                 {
+                     "line":  "L23",
+                     "node":  "N1",
+                     "ptdf":  0.542906063251192
+                 },
+                 {
+                     "line":  "L23",
+                     "node":  "N2",
+                     "ptdf":  0.8730947424964749
+                 },
+                 {
+                     "line":  "L23",
+                     "node":  "N3",
+                     "ptdf":  0.0
+                 },
+                 {
+                     "line":  "L23",
+                     "node":  "N4",
+                     "ptdf":  0.3489894581346943
+                 },
+                 {
+                     "line":  "L23",
+                     "node":  "N5",
+                     "ptdf":  0.508527496139126
+                 },
+                 {
+                     "line":  "L34",
+                     "node":  "N1",
+                     "ptdf":  -0.4570939367488084
+                 },
+                 {
+                     "line":  "L34",
+                     "node":  "N2",
+                     "ptdf":  -0.1269052575035252
+                 },
+                 {
+                     "line":  "L34",
+                     "node":  "N3",
+                     "ptdf":  0.0
+                 },
+                 {
+                     "line":  "L34",
+                     "node":  "N4",
+                     "ptdf":  -0.651010541865306
+                 },
+                 {
+                     "line":  "L34",
+                     "node":  "N5",
+                     "ptdf":  -0.49147250386087443
+                 },
+                 {
+                     "line":  "L45",
+                     "node":  "N1",
+                     "ptdf":  -0.20895722822802662
+                 },
+                 {
+                     "line":  "L45",
+                     "node":  "N2",
+                     "ptdf":  -0.05801383200161152
+                 },
+                 {
+                     "line":  "L45",
+                     "node":  "N3",
+                     "ptdf":  0.0
+                 },
+                 {
+                     "line":  "L45",
+                     "node":  "N4",
+                     "ptdf":  0.1595380380044316
+                 },
+                 {
+                     "line":  "L45",
+                     "node":  "N5",
+                     "ptdf":  -0.3209137461258734
+                 }
+             ],
+    "eta":  0.936
+}

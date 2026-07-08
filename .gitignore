@@ -1,0 +1,18 @@
+# LaTeX build/auxiliary files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+*-blx.bib
+
+# Compiled PDFs at project root only (figures/ subfolders keep their source PDFs)
+/*.pdf

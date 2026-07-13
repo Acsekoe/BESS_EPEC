@@ -382,7 +382,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
     parser.add_argument("--ep-ratio-hours", type=float, default=DEFAULT_EP_RATIO_HOURS)
     parser.add_argument("--max-bid-price-eur-per-mw", type=float, default=50.0)
-    parser.add_argument("--output", type=Path, default=Path("output/auction_simulation_history.csv"))
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "output" / "auction_simulation_history.csv")
     return parser.parse_args()
 
 

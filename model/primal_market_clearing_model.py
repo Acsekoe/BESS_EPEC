@@ -19,7 +19,7 @@ import pyomo.environ as pyo
 
 
 MODEL_NAME = "Primal Spot Market Clearing Model"
-DEFAULT_DATA_PATH = Path("data/processed/market_data.json")
+DEFAULT_DATA_PATH = Path(__file__).resolve().parent / "data" / "processed" / "market_data.json"
 
 
 @dataclass(frozen=True)

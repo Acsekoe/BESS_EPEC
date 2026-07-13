@@ -19,9 +19,10 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_INPUT = Path("data/input/bess_epec_inputs.xlsx")
-DEFAULT_OUTPUT = Path("data/processed/market_data.json")
-DEFAULT_PTDF_OUTPUT = Path("data/processed/ptdf.csv")
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_INPUT = SCRIPT_DIR / "data" / "input" / "bess_epec_inputs.xlsx"
+DEFAULT_OUTPUT = SCRIPT_DIR / "data" / "processed" / "market_data.json"
+DEFAULT_PTDF_OUTPUT = SCRIPT_DIR / "data" / "processed" / "ptdf.csv"
 TOL = 1e-9
 
 

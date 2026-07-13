@@ -1,0 +1,71 @@
+%%%% Time-stamp: <2013-02-02 21:28:44 vk>
+%% ========================================================================
+%%%% Disclaimer
+%% ========================================================================
+%%
+%% created by
+%%      Stefan Kroboth and Karl Voit
+%%
+%% edited by 
+%%  	Andreas Fleischhacker
+
+\begin{titlepage}
+\AddToShipoutPicture*{%
+  \AtPageUpperLeft{%
+   \hspace{20mm}%
+    \raisebox{-30mm}{%\baselineskip}{%
+     \makebox[20mm][l]{\includegraphics[height=20mm]{figures/TU_Wien_Logo.pdf}}
+}}}%
+%  EEG Logo
+\AddToShipoutPicture*{%
+  \AtPageUpperLeft{%
+    \hspace{\paperwidth}%
+    \raisebox{-35mm}{%\baselineskip}{%
+    \makebox[-15mm][r]{\includegraphics[height=25mm]{figures/EEG_logo.png}}
+}}}%
+
+\newpage
+
+\begin{textblock}{15.98}[0,0](0,4.5)
+
+%   \pgfmathsetmacro\myNum{round(3.51459804*\textwidth)/100.0}
+\large
+\centering
+\textsf{\myauthor}\\
+\vspace{1cm}
+\LARGE\textbf{\textsf{\mytitle}}\\
+\vspace{1cm}
+\Large\textbf{\textsf{\myworktitle}}\\
+\end{textblock}
+
+\begin{textblock}{15.98}[0,0](0,11)
+\centering
+\large
+\textsf{\myuniversity}\\[0pt]
+\textsf{\myinstitute}\\[0pt]
+\textsf{\myworkinggroup}\\
+\vspace{1cm}
+%Head: \myinstitutehead\\
+\textsf{Betreuer: \mysupervisor}\\[0pt]
+\textsf{Assistent: \myassistant}\\
+\vspace{1cm}
+%usually not mentioned on titlepage:% Evaluator: \myevaluator
+\textsf{\mysubmissiontown, \mysubmissionmonth~\mysubmissionyear}
+\end{textblock}
+
+\null\newpage
+\cleardoublepage
+
+\end{titlepage}
+
+
+
+
+%% end of title page
+%%% Local Variables:
+%%% mode: latex
+%%% mode: auto-fill
+%%% mode: flyspell
+%%% eval: (ispell-change-dictionary "en_US")
+%%% TeX-master: "../main"
+%%% End:

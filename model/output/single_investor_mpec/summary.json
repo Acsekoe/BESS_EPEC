@@ -1,0 +1,106 @@
+{
+  "model": "Single Investor Primal-Dual MPEC",
+  "investor": "I1",
+  "wacc": 0.08,
+  "solver_status": "ok",
+  "termination": "optimal",
+  "profit_eur_per_day": 9552.09811962652,
+  "spot_revenue_eur_per_day": 15289.278987001187,
+  "degradation_cost_eur_per_day": 4092.7748020376985,
+  "capex_daily_eur_per_day": 1644.4060653369686,
+  "lower_level_primal_objective_eur_per_day": 749210.8912151383,
+  "lower_level_dual_objective_eur_per_day": 749210.8912149962,
+  "strong_duality_gap": 1.4202669262886047e-07,
+  "total_power_mw": 54.53064293744647,
+  "total_energy_mwh": 254.31308436333765,
+  "total_charge_mwh": 290.8717394734458,
+  "total_discharge_mwh": 254.83156746491397,
+  "total_storage_throughput_mwh": 545.7033069383598,
+  "total_load_shed_mwh": 38.05198755188084,
+  "load_shed_by_tier_mwh": {
+    "T01_100": 30.887999346973874,
+    "T02_200": 7.163998932604295,
+    "T03_300": -1.1756157214453093e-06,
+    "T04_450": -1.185928948051843e-06,
+    "T05_600": -1.1899990475320973e-06,
+    "T06_800": -1.1927711494747324e-06,
+    "T07_1000": -1.1943375386280662e-06,
+    "T08_1300": -1.1957255700060873e-06,
+    "T09_1600": -1.196566753149398e-06,
+    "T10_2000": -1.1972802221605386e-06,
+    "T_VOLL": -1.1994723794659236e-06
+  },
+  "demand_tiers": [
+    {
+      "tier": "T01_100",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 100.0
+    },
+    {
+      "tier": "T02_200",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 200.0
+    },
+    {
+      "tier": "T03_300",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 300.0
+    },
+    {
+      "tier": "T04_450",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 450.0
+    },
+    {
+      "tier": "T05_600",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 600.0
+    },
+    {
+      "tier": "T06_800",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 800.0
+    },
+    {
+      "tier": "T07_1000",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 1000.0
+    },
+    {
+      "tier": "T08_1300",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 1300.0
+    },
+    {
+      "tier": "T09_1600",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 1600.0
+    },
+    {
+      "tier": "T10_2000",
+      "share": 0.01,
+      "wtp_eur_per_mwh": 2000.0
+    },
+    {
+      "tier": "T_VOLL",
+      "share": 0.9,
+      "wtp_eur_per_mwh": 10000.0
+    }
+  ],
+  "equivalent_cycles_throughput_over_2e": 1.0728966390079882,
+  "equivalent_cycles_discharge_over_e": 1.0020387590472364,
+  "line_limits_mw": {
+    "L12": 400.0,
+    "L14": 400.0,
+    "L15": 400.0,
+    "L23": 400.0,
+    "L34": 240.0,
+    "L45": 240.0
+  },
+  "existing_power_mw_per_node": 50.0,
+  "existing_ratio_hours": 2.0,
+  "storage_units": [
+    "I1",
+    "E0"
+  ]
+}

@@ -25,6 +25,12 @@ DEFAULT_OUTPUT = SCRIPT_DIR / "data" / "processed" / "market_data.json"
 DEFAULT_PTDF_OUTPUT = SCRIPT_DIR / "data" / "processed" / "ptdf.csv"
 TOL = 1e-9
 
+# Tiered price-elastic demand (stepwise demand bid curve) is an experiment
+# feature and is NOT written to the baseline market_data.json. It is only
+# emitted when the workbook has an explicit optional "demand_tiers" sheet
+# (columns: tier, share, wtp_eur_per_mwh). Experiment tier schedules live in
+# data/processed/market_data_experiment.json, which is maintained by hand.
+
 
 def _as_float(value: Any, name: str) -> float:
     try:
@@ -54,7 +60,10 @@ def read_workbook(path: Path) -> dict[str, pd.DataFrame]:
         "res_generation",
         "storage",
     ]
-    workbook = pd.read_excel(path, sheet_name=required_sheets)
+    workbook = pd.read_excel(path, sheet_name=None)
+    missing = [sheet for sheet in required_sheets if sheet not in workbook]
+    if missing:
+        raise ValueError(f"Workbook is missing required sheets: {missing}")
     return {name: df for name, df in workbook.items()}
 
 
@@ -64,6 +73,45 @@ def settings_dict(settings: pd.DataFrame) -> dict[str, float]:
     for row in _records(settings):
         result[str(row["parameter"])] = _as_float(row["value"], str(row["parameter"]))
     return result
+
+
+def demand_tier_records(tables: dict[str, pd.DataFrame], voll: float) -> list[dict[str, Any]] | None:
+    """Build the tiered demand schedule from the optional "demand_tiers" sheet.
+
+    Returns None when the sheet is absent, so the baseline output carries no
+    demand_tiers key and downstream models fall back to a single VOLL tier.
+    """
+
+    if "demand_tiers" not in tables:
+        return None
+    df = tables["demand_tiers"]
+    _require_columns(df, "demand_tiers", ["tier", "share", "wtp_eur_per_mwh"])
+    tiers = [
+        {
+            "tier": str(row["tier"]),
+            "share": _as_float(row["share"], f"share for tier {row['tier']}"),
+            "wtp_eur_per_mwh": _as_float(row["wtp_eur_per_mwh"], f"wtp_eur_per_mwh for tier {row['tier']}"),
+        }
+        for row in _records(df)
+    ]
+
+    names = [tier["tier"] for tier in tiers]
+    if len(set(names)) != len(names):
+        raise ValueError("Demand tier names must be unique.")
+    for tier in tiers:
+        if tier["share"] <= 0.0:
+            raise ValueError(f"Demand tier {tier['tier']!r} must have positive share.")
+        if tier["wtp_eur_per_mwh"] < 0.0:
+            raise ValueError(f"Demand tier {tier['tier']!r} must have non-negative willingness-to-pay.")
+        if tier["wtp_eur_per_mwh"] > voll + TOL:
+            raise ValueError(f"Demand tier {tier['tier']!r} willingness-to-pay exceeds VOLL.")
+
+    total_share = sum(tier["share"] for tier in tiers)
+    if total_share > 1.0 + 1e-6:
+        raise ValueError(f"Demand tier shares sum to {total_share}, which exceeds 1.")
+    if total_share < 1.0 - 1e-6:
+        tiers.append({"tier": "T_VOLL", "share": 1.0 - total_share, "wtp_eur_per_mwh": voll})
+    return tiers
 
 
 def calculate_ptdf(nodes: list[str], transmission: pd.DataFrame, slack_node: str) -> dict[tuple[str, str], float]:
@@ -221,9 +269,9 @@ def build_processed_data(tables: dict[str, pd.DataFrame]) -> dict[str, Any]:
         for row in _records(tables["transmission"])
     }
 
-    return {
+    result = {
         "metadata": {
-            "source_workbook": str(DEFAULT_INPUT),
+            "source_workbook": str(DEFAULT_INPUT.relative_to(SCRIPT_DIR)),
             "description": "Prepared deterministic spot-market BESS EPEC benchmark data.",
             "slack_node": slack_node,
         },
@@ -244,6 +292,10 @@ def build_processed_data(tables: dict[str, pd.DataFrame]) -> dict[str, Any]:
         "ptdf": ptdf_records,
         "eta": _as_float(settings.get("eta", 0.936), "eta"),
     }
+    tiers = demand_tier_records(tables, result["voll"])
+    if tiers is not None:
+        result["demand_tiers"] = tiers
+    return result
 
 
 def write_processed_data(data: dict[str, Any], output_path: Path, ptdf_output_path: Path) -> None:
@@ -265,7 +317,10 @@ def main() -> int:
     args = parse_args()
     tables = read_workbook(args.input)
     data = build_processed_data(tables)
-    data["metadata"]["source_workbook"] = str(args.input)
+    try:
+        data["metadata"]["source_workbook"] = str(Path(args.input).resolve().relative_to(SCRIPT_DIR))
+    except ValueError:
+        data["metadata"]["source_workbook"] = str(args.input)
     write_processed_data(data, args.output, args.ptdf_output)
     print(f"Wrote processed data to {args.output}")
     print(f"Wrote PTDF audit table to {args.ptdf_output}")

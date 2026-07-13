@@ -3,7 +3,7 @@
                      "source_workbook":  "data\\input\\bess_epec_inputs.xlsx",
                      "description":  "Prepared deterministic spot-market BESS EPEC benchmark data.",
                      "slack_node":  "N3",
-                     "experiment":  "Baseline demand from market_data.json with all BESS power and energy capacities set to zero."
+                     "experiment":  "Baseline demand from market_data.json with all BESS power and energy capacities set to zero. Adds tiered price-elastic demand: 10 x 1% curtailable at 100-2000 EUR/MWh, remaining 90% at VOLL."
                  },
     "nodes":  [
                   "N1",
@@ -1191,6 +1191,63 @@
                       }
                   ],
     "voll":  10000.0,
+    "demand_tiers":  [
+                         {
+                             "tier":  "T01_100",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  100.0
+                         },
+                         {
+                             "tier":  "T02_200",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  200.0
+                         },
+                         {
+                             "tier":  "T03_300",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  300.0
+                         },
+                         {
+                             "tier":  "T04_450",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  450.0
+                         },
+                         {
+                             "tier":  "T05_600",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  600.0
+                         },
+                         {
+                             "tier":  "T06_800",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  800.0
+                         },
+                         {
+                             "tier":  "T07_1000",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  1000.0
+                         },
+                         {
+                             "tier":  "T08_1300",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  1300.0
+                         },
+                         {
+                             "tier":  "T09_1600",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  1600.0
+                         },
+                         {
+                             "tier":  "T10_2000",
+                             "share":  0.01,
+                             "wtp_eur_per_mwh":  2000.0
+                         },
+                         {
+                             "tier":  "T_VOLL",
+                             "share":  0.9,
+                             "wtp_eur_per_mwh":  10000.0
+                         }
+                     ],
     "x_power":  [
                     {
                         "storage_unit":  "BESS_1",

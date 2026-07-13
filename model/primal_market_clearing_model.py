@@ -40,6 +40,11 @@ class MarketData:
     line_limit: Mapping[str, float]
     ptdf: Mapping[Tuple[str, str], float]
     eta: float
+    # Tiered price-elastic demand: each tier k may curtail up to
+    # tier_share[k] * demand at willingness-to-pay tier_wtp[k].
+    demand_tiers: Sequence[str]
+    tier_share: Mapping[str, float]
+    tier_wtp: Mapping[str, float]
 
 
 def _tuple_map(records: Sequence[Mapping[str, Any]], key_fields: Sequence[str], value_field: str) -> dict[tuple[Any, ...], float]:
@@ -58,6 +63,10 @@ def load_market_data(path: Path = DEFAULT_DATA_PATH) -> MarketData:
     x_power = _tuple_map(raw["x_power"], ["storage_unit", "node"], "power_mw")
     x_energy = _tuple_map(raw["x_energy"], ["storage_unit", "node"], "energy_mwh")
     ptdf = _tuple_map(raw["ptdf"], ["line", "node"], "ptdf")
+    # Older processed files have no tier schedule; treat them as one VOLL tier.
+    tier_records = raw.get("demand_tiers") or [
+        {"tier": "T_VOLL", "share": 1.0, "wtp_eur_per_mwh": float(raw["voll"])}
+    ]
 
     return MarketData(
         nodes=[str(node) for node in raw["nodes"]],
@@ -79,12 +88,27 @@ def load_market_data(path: Path = DEFAULT_DATA_PATH) -> MarketData:
         line_limit={str(line): float(limit) for line, limit in raw["line_limit"].items()},
         ptdf=ptdf,
         eta=float(raw["eta"]),
+        demand_tiers=[str(record["tier"]) for record in tier_records],
+        tier_share={str(record["tier"]): float(record["share"]) for record in tier_records},
+        tier_wtp={str(record["tier"]): float(record["wtp_eur_per_mwh"]) for record in tier_records},
     )
 
 
 def _validate_data(data: MarketData) -> None:
     if not 0.0 < data.eta <= 1.0:
         raise ValueError("eta must be in (0, 1].")
+    if not data.demand_tiers:
+        raise ValueError("At least one demand tier is required.")
+    for k in data.demand_tiers:
+        if k not in data.tier_share or k not in data.tier_wtp:
+            raise ValueError(f"Missing share/wtp for demand tier {k}.")
+        if data.tier_share[k] <= 0.0:
+            raise ValueError(f"Demand tier {k} must have positive share.")
+        if data.tier_wtp[k] < 0.0:
+            raise ValueError(f"Demand tier {k} must have non-negative willingness-to-pay.")
+    total_share = sum(data.tier_share[k] for k in data.demand_tiers)
+    if abs(total_share - 1.0) > 1e-6:
+        raise ValueError(f"Demand tier shares must sum to 1, got {total_share}.")
     for n in data.nodes:
         if n not in data.generators_at_node:
             raise ValueError(f"Missing generators_at_node entry for node {n}.")
@@ -123,9 +147,10 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
     m.T = pyo.Set(initialize=data.times, ordered=True)
     m.T_SOC = pyo.Set(initialize=data.soc_times, ordered=True)
     m.L = pyo.Set(initialize=data.lines, ordered=True)
+    m.K = pyo.Set(initialize=data.demand_tiers, ordered=True)
 
     m.P_gen = pyo.Var(m.G, m.T, domain=pyo.NonNegativeReals)
-    m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals)
+    m.P_shed = pyo.Var(m.K, m.N, m.T, domain=pyo.NonNegativeReals)
     m.P_charge = pyo.Var(m.I, m.N, m.T, domain=pyo.NonNegativeReals)
     m.P_discharge = pyo.Var(m.I, m.N, m.T, domain=pyo.NonNegativeReals)
     m.SOC = pyo.Var(m.I, m.N, m.T_SOC, domain=pyo.NonNegativeReals)
@@ -138,7 +163,8 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
             for t in model.T
         )
         load_shed_cost = sum(
-            data.voll * model.P_shed[n, t]
+            data.tier_wtp[k] * model.P_shed[k, n, t]
+            for k in model.K
             for n in model.N
             for t in model.T
         )
@@ -155,7 +181,7 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
         return (
             sum(model.P_gen[g, t] for g in generators)
             + storage_net
-            + model.P_shed[n, t]
+            + sum(model.P_shed[k, n, t] for k in model.K)
             - data.demand_el[n, t]
             == model.NetInjection[n, t]
         )
@@ -213,10 +239,10 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
 
     m.soc_periodicity = pyo.Constraint(m.I, m.N, rule=soc_periodicity_rule)
 
-    def load_shed_bound_rule(model: pyo.ConcreteModel, n: str, t: int) -> pyo.Expression:
-        return model.P_shed[n, t] <= data.demand_el[n, t]
+    def load_shed_bound_rule(model: pyo.ConcreteModel, k: str, n: str, t: int) -> pyo.Expression:
+        return model.P_shed[k, n, t] <= data.tier_share[k] * data.demand_el[n, t]
 
-    m.load_shed_bound = pyo.Constraint(m.N, m.T, rule=load_shed_bound_rule)
+    m.load_shed_bound = pyo.Constraint(m.K, m.N, m.T, rule=load_shed_bound_rule)
 
     m._market_data = data
     return m
@@ -286,7 +312,8 @@ def run_sanity_checks(model: pyo.ConcreteModel) -> Dict[str, float]:
         for n in model.N
     )
     checks["load_shed_bound_violation_MW"] = max(
-        max(0.0, value(model.P_shed[n, t]) - data.demand_el[n, t])
+        max(0.0, value(model.P_shed[k, n, t]) - data.tier_share[k] * data.demand_el[n, t])
+        for k in model.K
         for n in model.N
         for t in model.T
     )
@@ -316,7 +343,7 @@ def print_solution_summary(model: pyo.ConcreteModel, checks: Mapping[str, float]
     print("\nDispatch by time:")
     for t in model.T:
         gen = sum(value(model.P_gen[g, t]) for g in model.G)
-        shed = sum(value(model.P_shed[n, t]) for n in model.N)
+        shed = sum(value(model.P_shed[k, n, t]) for k in model.K for n in model.N)
         charge = sum(value(model.P_charge[i, n, t]) for i in model.I for n in model.N)
         discharge = sum(value(model.P_discharge[i, n, t]) for i in model.I for n in model.N)
         print(

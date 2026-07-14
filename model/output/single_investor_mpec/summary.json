@@ -4,91 +4,21 @@
   "wacc": 0.08,
   "solver_status": "ok",
   "termination": "optimal",
-  "profit_eur_per_day": 9552.09811962652,
-  "spot_revenue_eur_per_day": 15289.278987001187,
-  "degradation_cost_eur_per_day": 4092.7748020376985,
-  "capex_daily_eur_per_day": 1644.4060653369686,
-  "lower_level_primal_objective_eur_per_day": 749210.8912151383,
-  "lower_level_dual_objective_eur_per_day": 749210.8912149962,
-  "strong_duality_gap": 1.4202669262886047e-07,
-  "total_power_mw": 54.53064293744647,
-  "total_energy_mwh": 254.31308436333765,
-  "total_charge_mwh": 290.8717394734458,
-  "total_discharge_mwh": 254.83156746491397,
-  "total_storage_throughput_mwh": 545.7033069383598,
-  "total_load_shed_mwh": 38.05198755188084,
-  "load_shed_by_tier_mwh": {
-    "T01_100": 30.887999346973874,
-    "T02_200": 7.163998932604295,
-    "T03_300": -1.1756157214453093e-06,
-    "T04_450": -1.185928948051843e-06,
-    "T05_600": -1.1899990475320973e-06,
-    "T06_800": -1.1927711494747324e-06,
-    "T07_1000": -1.1943375386280662e-06,
-    "T08_1300": -1.1957255700060873e-06,
-    "T09_1600": -1.196566753149398e-06,
-    "T10_2000": -1.1972802221605386e-06,
-    "T_VOLL": -1.1994723794659236e-06
-  },
-  "demand_tiers": [
-    {
-      "tier": "T01_100",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 100.0
-    },
-    {
-      "tier": "T02_200",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 200.0
-    },
-    {
-      "tier": "T03_300",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 300.0
-    },
-    {
-      "tier": "T04_450",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 450.0
-    },
-    {
-      "tier": "T05_600",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 600.0
-    },
-    {
-      "tier": "T06_800",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 800.0
-    },
-    {
-      "tier": "T07_1000",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 1000.0
-    },
-    {
-      "tier": "T08_1300",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 1300.0
-    },
-    {
-      "tier": "T09_1600",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 1600.0
-    },
-    {
-      "tier": "T10_2000",
-      "share": 0.01,
-      "wtp_eur_per_mwh": 2000.0
-    },
-    {
-      "tier": "T_VOLL",
-      "share": 0.9,
-      "wtp_eur_per_mwh": 10000.0
-    }
-  ],
-  "equivalent_cycles_throughput_over_2e": 1.0728966390079882,
-  "equivalent_cycles_discharge_over_e": 1.0020387590472364,
+  "profit_eur_per_day": 500043.66655052756,
+  "spot_revenue_eur_per_day": 518418.0585981809,
+  "degradation_cost_eur_per_day": 15007.268558993854,
+  "capex_daily_eur_per_day": 3367.1234886594702,
+  "lower_level_primal_objective_eur_per_day": 975432.5614367282,
+  "lower_level_dual_objective_eur_per_day": 975432.5614369268,
+  "strong_duality_gap": 1.986045390367508e-07,
+  "total_power_mw": 173.14890473835777,
+  "total_energy_mwh": 499.1501260400511,
+  "total_charge_mwh": 1066.5601020412496,
+  "total_discharge_mwh": 934.4090391579308,
+  "total_storage_throughput_mwh": 2000.9691411991803,
+  "total_load_shed_mwh": 238.13702874542932,
+  "equivalent_cycles_throughput_over_2e": 2.004376075263803,
+  "equivalent_cycles_discharge_over_e": 1.8720000064328446,
   "line_limits_mw": {
     "L12": 400.0,
     "L14": 400.0,
@@ -97,10 +27,33 @@
     "L34": 240.0,
     "L45": 240.0
   },
-  "existing_power_mw_per_node": 50.0,
+  "existing_power_mw_per_node": 0.0,
   "existing_ratio_hours": 2.0,
   "storage_units": [
-    "I1",
-    "E0"
-  ]
+    "I1"
+  ],
+  "demand_model": "quadratic",
+  "load_shed_allowed": true,
+  "quadratic_demand_alpha_eur_per_mwh": 500,
+  "quadratic_demand_beta_eur_per_mwh_per_share": 17631.57894736842,
+  "quadratic_demand_source": "fixed_default",
+  "reference_settlement_solver": "ipopt",
+  "reference_settlement_problem": "QP",
+  "reference_settlement_solver_status": "ok",
+  "reference_settlement_termination": "optimal",
+  "reference_lower_level_objective_eur_per_day": 975432.5565140794,
+  "mpec_lambda_max_abs_diff_vs_reference_eur_per_mwh": 29.869467406355092,
+  "reference_lambda_solver_dual_max_abs_diff": 4.080587928001478e-06,
+  "spot_revenue_at_reference_prices_eur_per_day": 502523.38933103456,
+  "degradation_cost_at_reference_dispatch_eur_per_day": 15007.26869094212,
+  "profit_at_reference_prices_eur_per_day": 484148.99715143297,
+  "optimistic_minus_reference_profit_eur_per_day": 15894.669399094593,
+  "mpec_dispatch_spot_revenue_at_reference_prices_eur_per_day": 502523.38441200205,
+  "mpec_dispatch_profit_at_reference_prices_eur_per_day": 484148.9923643487,
+  "optimistic_minus_mpec_dispatch_reference_profit_eur_per_day": 15894.674186178832,
+  "reference_total_charge_mwh": 1066.5601114187562,
+  "reference_total_discharge_mwh": 934.4090473735266,
+  "reference_total_storage_throughput_mwh": 2000.9691587922828,
+  "reference_lambda_min_eur_per_mwh": 40.00000000366345,
+  "reference_lambda_max_eur_per_mwh": 2145.3905032389102
 }

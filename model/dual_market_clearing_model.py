@@ -29,7 +29,7 @@ Dual-variable naming follows the LaTeX notation table where practical:
     gam[i,n,t]      gamma_{i,n,t}    SOC transition            (free)
     del_soc[i,n,τ]  delta^+_{i,n,τ}  SOC energy cap            (<= 0)
     rho_per[i,n]    -                SOC periodicity           (free)
-    xi_shed[k,n,t]  xi^+_{k,n,t}     tier-k shed upper bound   (<= 0)
+    xi_shed[n,t]    xi^+_{n,t}       load shed upper bound     (<= 0)
 
 Default run:
     python dual_market_clearing_model.py           # solve the dual alone
@@ -77,7 +77,6 @@ def build_dual_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
     m.T = pyo.Set(initialize=data.times, ordered=True)
     m.T_SOC = pyo.Set(initialize=data.soc_times, ordered=True)
     m.L = pyo.Set(initialize=data.lines, ordered=True)
-    m.K = pyo.Set(initialize=data.demand_tiers, ordered=True)
 
     gen_nodes = _nodes_of_generator(data)
     last_t = max(data.times)
@@ -96,15 +95,14 @@ def build_dual_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
     m.gam = pyo.Var(m.I, m.N, m.T, domain=pyo.Reals)       # SOC transition
     m.del_soc = pyo.Var(m.I, m.N, m.T_SOC, domain=pyo.NonPositiveReals)  # SOC <= X_en
     m.rho_per = pyo.Var(m.I, m.N, domain=pyo.Reals)        # SOC periodicity
-    m.xi_shed = pyo.Var(m.K, m.N, m.T, domain=pyo.NonPositiveReals)  # tier shed <= share*demand
+    m.xi_shed = pyo.Var(m.N, m.T, domain=pyo.NonPositiveReals)  # shed <= demand
 
     # ------------------------------------------------------------------ #
     # Dual objective:  max  b^T y                                        #
     # ------------------------------------------------------------------ #
     def dual_objective_rule(model: pyo.ConcreteModel) -> pyo.Expression:
         demand_terms = sum(
-            data.demand_el[n, t]
-            * (model.lam[n, t] + sum(data.tier_share[k] * model.xi_shed[k, n, t] for k in model.K))
+            data.demand_el[n, t] * (model.lam[n, t] + model.xi_shed[n, t])
             for n in model.N
             for t in model.T
         )
@@ -145,11 +143,11 @@ def build_dual_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
 
     m.gen_stationarity = pyo.Constraint(m.G, m.T, rule=gen_stationarity_rule)
 
-    # P_shed[k,n,t] >= 0 :  lam[n,t] + xi_shed[k,n,t] <= WTP_k
-    def shed_stationarity_rule(model: pyo.ConcreteModel, k: str, n: str, t: int) -> pyo.Expression:
-        return model.lam[n, t] + model.xi_shed[k, n, t] <= data.tier_wtp[k]
+    # P_shed[n,t] >= 0 :  lam[n,t] + xi_shed[n,t] <= VOLL
+    def shed_stationarity_rule(model: pyo.ConcreteModel, n: str, t: int) -> pyo.Expression:
+        return model.lam[n, t] + model.xi_shed[n, t] <= data.voll
 
-    m.shed_stationarity = pyo.Constraint(m.K, m.N, m.T, rule=shed_stationarity_rule)
+    m.shed_stationarity = pyo.Constraint(m.N, m.T, rule=shed_stationarity_rule)
 
     # P_charge[i,n,t] >= 0 :  -lam[n,t] + rho_ch[i,n,t] - eta*gam[i,n,t] <= 0
     def charge_stationarity_rule(model: pyo.ConcreteModel, i: str, n: str, t: int) -> pyo.Expression:

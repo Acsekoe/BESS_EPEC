@@ -32,7 +32,7 @@ INVESTOR_ID = "I1"
 EXISTING_ID = "E0"
 # Experiment inputs (alternative capacities, stress cases, ...) live in a
 # separate JSON so the baseline market_data.json stays the untouched benchmark.
-EXPERIMENT_DATA_PATH = DEFAULT_DATA_PATH.with_name("market_data.json")
+EXPERIMENT_DATA_PATH = DEFAULT_DATA_PATH.with_name("market_data_euro.json")
 DEFAULT_WACC = 0.08
 DEFAULT_LIFETIME_YEARS = 15
 DEFAULT_NODE_LIMIT_MW = 100.0
@@ -45,8 +45,8 @@ DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "single_invest
 USE_DEMAND_CURVE = True
 DEFAULT_INITIAL_POWER_MW = DEFAULT_NODE_LIMIT_MW if not USE_DEMAND_CURVE else 10.0
 DEFAULT_INITIAL_RATIO_HOURS = DEFAULT_RATIO_MAX if not USE_DEMAND_CURVE else DEFAULT_RATIO_MIN
-DEFAULT_DEMAND_CURVE_ALPHA = 500
-DEFAULT_DEMAND_CURVE_BETA = 17_631.57894736842
+DEFAULT_DEMAND_CURVE_ALPHA = 4000
+DEFAULT_DEMAND_CURVE_BETA = 10000
 DEFAULT_FIXED_DEMAND_DUAL_BOUND_EUR_PER_MWH = 30_000.0
 # Below this shed level a node-hour counts as "no curtailment": the demand
 # curve does not pin the price there and the QP solver dual is used instead.

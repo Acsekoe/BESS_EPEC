@@ -45,7 +45,7 @@ DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parent / "output" / "epec"
 class EpecConfig:
     investors: tuple[InvestorConfig, ...]
     node_limit_mw: float = DEFAULT_NODE_LIMIT_MW
-    update_rule: str = "jacobi"  # "jacobi" | "seidel" (solve order = investors order)
+    update_rule: str = "seidel"  # "jacobi" | "seidel" (solve order = investors order)
     damping: float = DEFAULT_DAMPING  # x' = (1-a)*x_old + a*x_best_response
     max_iters: int = 60
     tol_rel: float = DEFAULT_TOL_REL
@@ -56,6 +56,7 @@ class EpecConfig:
     max_cpu_time: float = 120.0
     dual_bound_scale: float = 10.0
     max_consecutive_failures: int = 3
+    print_mpec_lambdas: bool = False
 
 
 @dataclass
@@ -216,6 +217,20 @@ def relative_delta(new: float, old: float, floor: float) -> float:
     return abs(new - old) / max(abs(old), floor)
 
 
+def print_mpec_lambdas(iteration: int, response: BestResponse) -> None:
+    """Print embedded MPEC nodal prices for one solved best response."""
+
+    if response.model is None:
+        print(f"\niter {iteration}, {response.investor_id}: no MPEC lambdas ({response.termination})")
+        return
+
+    model = response.model
+    print(f"\niter {iteration}, {response.investor_id}: embedded MPEC lambdas [EUR/MWh]")
+    for t in model.T:
+        parts = ", ".join(f"{n}={value(model.lam[n, t]):10.4f}" for n in model.N)
+        print(f"  hour={int(t):2d}: {parts}")
+
+
 def run_epec(data: MarketData, quad: QuadraticDemandCurve, cfg: EpecConfig, tee: bool = False) -> EpecState:
     nodes = list(data.nodes)
     n_inv = len(cfg.investors)
@@ -261,6 +276,10 @@ def run_epec(data: MarketData, quad: QuadraticDemandCurve, cfg: EpecConfig, tee:
                     apply_damped_update(state, cfg, nodes, response)
         else:
             raise ValueError(f"Unknown update rule: {cfg.update_rule}")
+
+        if cfg.print_mpec_lambdas:
+            for response in responses:
+                print_mpec_lambdas(iteration, response)
 
         project_joint_limit(state, cfg, nodes)
 
@@ -356,6 +375,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed-ratio-hours", type=float, default=DEFAULT_INITIAL_RATIO_HOURS)
     parser.add_argument("--max-cpu-time", type=float, default=120.0)
     parser.add_argument("--dual-bound-scale", type=float, default=10.0)
+    parser.add_argument(
+        "--print-mpec-lambdas",
+        action="store_true",
+        help="Print embedded MPEC nodal prices for every solved investor best response.",
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--tag", type=str, default=None, help="Optional label appended to the output folder name.")
     parser.add_argument("--tee", action="store_true")
@@ -382,6 +406,7 @@ def main() -> int:
         seed_ratio_hours=args.seed_ratio_hours,
         max_cpu_time=args.max_cpu_time,
         dual_bound_scale=args.dual_bound_scale,
+        print_mpec_lambdas=args.print_mpec_lambdas,
     )
     data = load_market_data(args.data)
     quad = default_quadratic_demand_curve()

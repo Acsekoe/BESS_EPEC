@@ -1,0 +1,75 @@
+{
+  "converged": true,
+  "stop_reason": "converged in 36 iterations",
+  "iterations": 36,
+  "update_rule": "jacobi",
+  "damping": 0.7,
+  "tol_rel": 0.01,
+  "projection_event_count": 8,
+  "investors": {
+    "I1": {
+      "wacc": 0.08,
+      "total_power_mw": 148.97600627165144,
+      "total_energy_mwh": 387.2598315519494,
+      "settled_spot_revenue_eur_per_day": 969309.3680608778,
+      "settled_degradation_eur_per_day": 9501.868598949382,
+      "capex_daily_eur_per_day": 2643.2509336063,
+      "settled_profit_eur_per_day": 957164.2485283221,
+      "capacity_proportional_profit_eur_per_day": 968663.5643204103,
+      "dispatch_attribution_band_eur_per_day": 11499.315792088164,
+      "last_profit_belief_eur_per_day": 958730.0559407459,
+      "belief_minus_settled_eur_per_day": 1565.8074124237755,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 30.07004292536007,
+      "throughput_mwh": 1266.9158131932509
+    },
+    "I2": {
+      "wacc": 0.12,
+      "total_power_mw": 157.94065405362494,
+      "total_energy_mwh": 447.3558000607609,
+      "settled_spot_revenue_eur_per_day": 1015858.2628664266,
+      "settled_degradation_eur_per_day": 10548.37723144168,
+      "capex_daily_eur_per_day": 3799.822319452813,
+      "settled_profit_eur_per_day": 1001510.0633155322,
+      "capacity_proportional_profit_eur_per_day": 990010.747523444,
+      "dispatch_attribution_band_eur_per_day": 11499.315792088164,
+      "last_profit_belief_eur_per_day": 1003609.6516430629,
+      "belief_minus_settled_eur_per_day": 2099.5883275307715,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 30.07004378451486,
+      "throughput_mwh": 1406.4502975255573
+    }
+  },
+  "node_shares": {
+    "N1": {
+      "I1": 42.91275438246095,
+      "I2": 42.90606627090516,
+      "total_mw": 85.81882065336612,
+      "limit_mw": 100.0
+    },
+    "N2": {
+      "I1": 58.74992459558138,
+      "I2": 41.250075404418624,
+      "total_mw": 100.0,
+      "limit_mw": 100.0
+    },
+    "N3": {
+      "I1": 2.3303530090363926,
+      "I2": 37.68598885801416,
+      "total_mw": 40.016341867050556,
+      "limit_mw": 100.0
+    },
+    "N4": {
+      "I1": 17.02001490556694,
+      "I2": 0.0014706080214062858,
+      "total_mw": 17.021485513588345,
+      "limit_mw": 100.0
+    },
+    "N5": {
+      "I1": 27.96295937900577,
+      "I2": 36.09705291226558,
+      "total_mw": 64.06001229127135,
+      "limit_mw": 100.0
+    }
+  },
+  "joint_lambda_min_eur_per_mwh": 40.00000009614634,
+  "joint_lambda_max_eur_per_mwh": 4000.2197406475866
+}

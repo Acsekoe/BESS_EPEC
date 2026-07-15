@@ -1,0 +1,71 @@
+{
+  "termination": "optimal",
+  "joint_lower_level_objective_eur_per_day": 750001.3799703432,
+  "lambda_solver_dual_max_abs_diff": 0.0,
+  "lambda_min_eur_per_mwh": 40.00000009619811,
+  "lambda_max_eur_per_mwh": 832.7018629891686,
+  "investors": {
+    "I1": {
+      "wacc": 0.08,
+      "total_power_mw": 171.0369285638226,
+      "total_energy_mwh": 429.1671701113928,
+      "settled_spot_revenue_eur_per_day": 163476.8314461385,
+      "settled_degradation_eur_per_day": 10929.240010537256,
+      "capex_daily_eur_per_day": 2941.829203548729,
+      "settled_profit_eur_per_day": 149605.7622320525,
+      "capacity_proportional_profit_eur_per_day": 149849.95754602383,
+      "dispatch_attribution_band_eur_per_day": 244.19531397131504,
+      "last_profit_belief_eur_per_day": 1274942.7753651096,
+      "belief_minus_settled_eur_per_day": 1125337.013133057,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 3789.213062082696,
+      "throughput_mwh": 1457.2320014049676
+    },
+    "I2": {
+      "wacc": 0.12,
+      "total_power_mw": 135.8059545368784,
+      "total_energy_mwh": 405.4818294640173,
+      "settled_spot_revenue_eur_per_day": 81552.73905730079,
+      "settled_degradation_eur_per_day": 9121.524529367103,
+      "capex_daily_eur_per_day": 3424.6438115319743,
+      "settled_profit_eur_per_day": 69006.57071640171,
+      "capacity_proportional_profit_eur_per_day": 68762.37540243042,
+      "dispatch_attribution_band_eur_per_day": 244.19531397128594,
+      "last_profit_belief_eur_per_day": 687742.4514035619,
+      "belief_minus_settled_eur_per_day": 618735.8806871602,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 3789.213061967983,
+      "throughput_mwh": 1216.2032705822805
+    }
+  },
+  "node_shares": {
+    "N1": {
+      "I1": 42.91448292663932,
+      "I2": 42.91448276333989,
+      "total_mw": 85.82896568997921,
+      "limit_mw": 100.0
+    },
+    "N2": {
+      "I1": 59.100430089459934,
+      "I2": 38.13927086850426,
+      "total_mw": 97.2397009579642,
+      "limit_mw": 100.0
+    },
+    "N3": {
+      "I1": 43.859677266321654,
+      "I2": 0.025272431563803485,
+      "total_mw": 43.88494969788546,
+      "limit_mw": 100.0
+    },
+    "N4": {
+      "I1": 0.31967986612137567,
+      "I2": 15.509078434134432,
+      "total_mw": 15.828758300255808,
+      "limit_mw": 100.0
+    },
+    "N5": {
+      "I1": 24.842658415280315,
+      "I2": 39.21785003933601,
+      "total_mw": 64.06050845461633,
+      "limit_mw": 100.0
+    }
+  }
+}

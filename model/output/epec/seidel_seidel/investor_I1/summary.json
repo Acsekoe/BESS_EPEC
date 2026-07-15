@@ -1,0 +1,41 @@
+{
+  "model": "Single Investor Primal-Dual MPEC",
+  "investor": "I1",
+  "wacc": 0.08,
+  "solver_status": "ok",
+  "termination": "optimal",
+  "profit_eur_per_day": 1274942.7753651096,
+  "spot_revenue_eur_per_day": 1287544.4238972743,
+  "degradation_cost_eur_per_day": 9659.81932669923,
+  "capex_daily_eur_per_day": 2941.8292054655,
+  "lower_level_primal_objective_eur_per_day": 750001.3790177838,
+  "lower_level_dual_objective_eur_per_day": 750001.3790177184,
+  "strong_duality_gap": 6.542541086673737e-08,
+  "total_power_mw": 171.03692928190162,
+  "total_energy_mwh": 429.16717017805115,
+  "total_charge_mwh": 686.5191921024104,
+  "total_discharge_mwh": 601.4567181241534,
+  "total_storage_throughput_mwh": 1287.9759102265639,
+  "total_load_shed_mwh": -1.1822718242324472e-06,
+  "equivalent_cycles_throughput_over_2e": 1.5005526980223274,
+  "equivalent_cycles_discharge_over_e": 1.4014509028605882,
+  "line_limits_mw": {
+    "L12": 400.0,
+    "L14": 400.0,
+    "L15": 400.0,
+    "L23": 400.0,
+    "L34": 240.0,
+    "L45": 240.0
+  },
+  "existing_power_mw_per_node": 0.0,
+  "existing_ratio_hours": 2.0,
+  "storage_units": [
+    "I1",
+    "RIV"
+  ],
+  "demand_model": "quadratic",
+  "load_shed_allowed": true,
+  "quadratic_demand_alpha_eur_per_mwh": 4000,
+  "quadratic_demand_beta_eur_per_mwh_per_share": 10000,
+  "quadratic_demand_source": "fixed_default"
+}

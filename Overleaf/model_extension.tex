@@ -78,7 +78,7 @@
 \multicolumn{3}{@{}l}{\textbf{Parameters}} \\
 \hline
 \(C_g\) & Marginal generation cost of generator \(g\). & \texteuro{}/MWh \\
-\(VOLL\) & Value of lost load for electricity demand. & \texteuro{}/MWh \\
+\(\alpha,\beta\) & Intercept and slope of the affine inverse-demand (curtailment) curve; marginal willingness to pay to avoid shedding is \(\alpha+\beta\,P^{shed}_{n,t}/D^{el}_{n,t}\). & \texteuro{}/MWh \\
 \(P^{max}_{g,t}\) & Maximum available dispatch of generator \(g\) in time period \(t\). & MW \\
 \(Limit_l\) & Transmission capacity limit on line \(l\). & MW \\
 \(PTDF_{l,n}\) & Power transfer distribution factor from node \(n\) to line \(l\). & dimensionless \\
@@ -86,6 +86,9 @@
 \(\eta\) & One-way BESS charging and discharging efficiency, \(0 < \eta \leq 1\). & dimensionless \\
 \(Limit^{node}_n\) & Accessible BESS power connection capacity at node \(n\). & MW \\
 \(Ratio^{min}, Ratio^{max}\) & Minimum and maximum BESS energy-to-power ratios. & h \\
+\(C^{power}_i, C^{energy}_i\) & Investor \(i\) power and energy capital cost. & \texteuro{}/MW, \texteuro{}/MWh \\
+\(d_i\) & Investor \(i\) throughput degradation cost. & \texteuro{}/MWh \\
+\(r_i, L_i\) & Investor \(i\) WACC and project lifetime; \(CRF_i=\dfrac{r_i(1+r_i)^{L_i}}{(1+r_i)^{L_i}-1}\). & --, a \\
 \end{longtable}
 \endgroup
 
@@ -100,9 +103,15 @@
 \min \quad
 &\sum_{t,g} C_g P_{g,t}
 \;+\;
-\sum_{n,t} VOLL \, P^{shed}_{n,t}
+\sum_{n,t}
+\left(
+\alpha \, P^{shed}_{n,t}
++ \frac{\beta}{2 D^{el}_{n,t}} \left(P^{shed}_{n,t}\right)^2
+\right)
 \end{align*}
 \nopagebreak[4]
+
+\noindent The curtailment term replaces the earlier linear value-of-lost-load penalty by a strictly convex cost, i.e.\ an affine inverse-demand curve with marginal willingness to pay \(\alpha+\beta\,P^{shed}_{n,t}/D^{el}_{n,t}\). Wherever curtailment is interior this pins the nodal price to the curve, which makes the lower-level dual (and hence the price \(\lambda_{n,t}\)) unique there and bounds price spikes without a hard VOLL cap.
 
 \paragraph{Subject to}
 \begin{align*}
@@ -190,17 +199,49 @@ Ratio^{max} X^{power}_{i,n},
 &&\forall i,n.
 \end{align*}
 
-\noindent The upper-level objective should focus on expected or deterministic spot-market profit net of degradation and annualized CAPEX:
+\noindent Each investor maximizes deterministic spot-market profit net of degradation and annualized CAPEX:
 \begin{align*}
 \max \; NPV_i
 =&
 \sum_{t,n}
-\lambda^{LMP}_{n,t}
+\pi_{n,t}
 \left(P^{discharge}_{i,n,t}-P^{charge}_{i,n,t}\right)
 - Cost^{degrad}_i
-- CAPEX^{daily}_i.
+- CAPEX^{daily}_i,
+\\[2pt]
+Cost^{degrad}_i
+=&
+\tfrac{1}{2} d_i
+\sum_{t,n}
+\left(P^{charge}_{i,n,t}+P^{discharge}_{i,n,t}\right),
+\\[2pt]
+CAPEX^{daily}_i
+=&
+\frac{CRF_i}{365.25}
+\sum_{n}
+\left(C^{power}_i X^{power}_{i,n}+C^{energy}_i X^{energy}_{i,n}\right).
 \end{align*}
 
+\noindent The settlement price \(\pi_{n,t}\) is, by default, the nodal marginal price \(\lambda_{n,t}\) (locational marginal pricing). The implementation also supports a uniform single-zone settlement in which \(\pi_{n,t}=\lambda_{sys,t}\) for all nodes, used to study how bidding-zone pricing distorts siting relative to nodal pricing.
+
 \noindent Investor heterogeneity can enter through WACC, CAPEX assumptions, degradation parameters, and operational restrictions such as stand-alone BESS operation versus portfolio-backed operation.
+
+\subsection*{Lower-Level Embedding (MPEC)}
+
+\noindent Because the lower level is a convex quadratic program, each investor's problem is closed as a single-level MPEC by replacing the lower level with its optimality conditions, embedded through a primal--dual (strong-duality) reformulation:
+\begin{itemize}
+\item \emph{Primal feasibility:} all lower-level constraints above.
+\item \emph{Dual feasibility:} the stationarity conditions in the dual variables listed in the notation, together with the sign restrictions on the inequality multipliers.
+\item \emph{Strong duality:} the lower-level primal objective equals its dual objective, which for the convex QP is equivalent to complementary slackness and forces the embedded \((P,\lambda)\) pair onto the lower-level optimal set.
+\end{itemize}
+\noindent The investor's installed capacities \(X^{power}_{i,n},X^{energy}_{i,n}\) and the price \(\pi_{n,t}\) enter this MPEC simultaneously, so the investor anticipates the market-clearing response of its own investment.
+
+\paragraph{Optimistic dual selection.} At congested or curtailed node-hours the lower-level dual is not unique, and the maximization is free to select the most favorable optimal price from that set. The embedded (``belief'') prices therefore differ from the neutral clearing prices, and the difference is reported as a diagnostic (see below). Both a generation-side and a storage-side Tikhonov regularization of the lower level were tested to remove this freedom; both either distorted the merit order/equilibrium or failed to shrink the gap at an economically negligible magnitude, so no primal regularization is used in the reported model.
+
+\subsection*{Equilibrium Solution and Price Settlement}
+
+\noindent The EPEC is solved by diagonalization over the investors. In each pass an investor solves its MPEC while every rival is frozen at its current capacities and represented as one aggregated, non-strategic storage unit inside the lower-level clearing. Updates use either Gauss--Jacobi (all investors respond to the same previous iterate) or Gauss--Seidel (sequential); capacity iterates are damped, and after each pass the joint capacities are projected onto the shared nodal access limit \(\sum_i X^{power}_{i,n}\le Limit^{node}_n\), preserving each investor's energy-to-power ratio.
+
+\paragraph{Settlement and diagnostics.} Reported quantities are \emph{not} the embedded belief prices. Once the diagonalization converges, the market is cleared once more with all installed fleets fixed, and profits are settled at the resulting neutral prices \(\pi_{n,t}\) (the dual of the nodal balance for LMP settlement, or of the system balance for single-zone settlement). For each investor the model reports settled profit, the belief-minus-settled gap, and the maximum absolute difference between the embedded MPEC prices and the neutral clearing prices, so the effect of optimistic dual selection is quantified rather than hidden.
 
 \end{document}

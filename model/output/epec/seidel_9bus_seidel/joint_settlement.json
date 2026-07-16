@@ -1,0 +1,95 @@
+{
+  "termination": "optimal",
+  "joint_lower_level_objective_eur_per_day": 434874.46097979514,
+  "lambda_solver_dual_max_abs_diff": 0.0,
+  "lambda_min_eur_per_mwh": 1.6649549169812598e-07,
+  "lambda_max_eur_per_mwh": 75.00000010760408,
+  "investors": {
+    "I1": {
+      "wacc": 0.08,
+      "total_power_mw": 126.55376143192359,
+      "total_energy_mwh": 424.9986491913592,
+      "settled_spot_revenue_eur_per_day": 23267.976533587724,
+      "settled_degradation_eur_per_day": 11355.802509761083,
+      "capex_daily_eur_per_day": 2822.8543142830226,
+      "settled_profit_eur_per_day": 9089.319709543619,
+      "capacity_proportional_profit_eur_per_day": 9089.323462662653,
+      "dispatch_attribution_band_eur_per_day": 0.0037531190337176668,
+      "last_profit_belief_eur_per_day": 13110.070940286481,
+      "belief_minus_settled_eur_per_day": 4020.7512307428624,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 11.363273593016427,
+      "throughput_mwh": 1514.1070013014776
+    },
+    "I2": {
+      "wacc": 0.12,
+      "total_power_mw": 84.90399789913238,
+      "total_energy_mwh": 260.7140192852688,
+      "settled_spot_revenue_eur_per_day": 14168.526019525416,
+      "settled_degradation_eur_per_day": 7086.463889558596,
+      "capex_daily_eur_per_day": 2195.5459447653434,
+      "settled_profit_eur_per_day": 4886.516185201477,
+      "capacity_proportional_profit_eur_per_day": 4886.512432082451,
+      "dispatch_attribution_band_eur_per_day": 0.003753119026441709,
+      "last_profit_belief_eur_per_day": 7101.087336223525,
+      "belief_minus_settled_eur_per_day": 2214.571151022048,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 11.363273586549308,
+      "throughput_mwh": 944.8618519411461
+    }
+  },
+  "node_shares": {
+    "N1": {
+      "I1": 3.8313723649881416e-07,
+      "I2": 0.0015235797040061777,
+      "total_mw": 0.0015239628412426764,
+      "limit_mw": 100.0
+    },
+    "N2": {
+      "I1": 6.318355681294448e-07,
+      "I2": 11.42955196872045,
+      "total_mw": 11.429552600556018,
+      "limit_mw": 100.0
+    },
+    "N3": {
+      "I1": 2.700376751138644e-07,
+      "I2": 8.483202738564973e-07,
+      "total_mw": 1.1183579489703617e-06,
+      "limit_mw": 100.0
+    },
+    "N4": {
+      "I1": 1.5408153114818482e-07,
+      "I2": 3.6019579234017403e-07,
+      "total_mw": 5.142773234883589e-07,
+      "limit_mw": 100.0
+    },
+    "N5": {
+      "I1": 1.0144863869104202e-07,
+      "I2": 3.4547284543272296e-07,
+      "total_mw": 4.46921484123765e-07,
+      "limit_mw": 100.0
+    },
+    "N6": {
+      "I1": 1.8408938912387038,
+      "I2": 0.1271205430890282,
+      "total_mw": 1.9680144343277322,
+      "limit_mw": 100.0
+    },
+    "N7": {
+      "I1": 60.57436881907245,
+      "I2": 39.42563117675654,
+      "total_mw": 99.99999999582899,
+      "limit_mw": 100.0
+    },
+    "N8": {
+      "I1": 64.13849710447442,
+      "I2": 33.920168713005864,
+      "total_mw": 98.05866581748029,
+      "limit_mw": 100.0
+    },
+    "N9": {
+      "I1": 7.659736836286311e-08,
+      "I2": 3.638675852435631e-07,
+      "total_mw": 4.4046495360642623e-07,
+      "limit_mw": 100.0
+    }
+  }
+}

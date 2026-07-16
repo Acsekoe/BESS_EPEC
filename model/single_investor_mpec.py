@@ -165,6 +165,28 @@ def quadratic_reference_lambda(
     return {key: curve.get(key, sign * duals[key]) for key in duals}
 
 
+def reference_system_price(
+    reference: pyo.ConcreteModel, nodal_lambda: dict[tuple[str, int], float]
+) -> dict[int, float]:
+    """Uniform per-hour system price = dual of the system-balance constraint.
+
+    Nodal price = system price + congestion rent; this returns just the system
+    component, i.e. the single price a zonal / one-bidding-zone settlement pays
+    at every node. The sign is aligned to ``nodal_lambda`` so it uses the same
+    orientation the nodal-price recovery already picked for the solver duals.
+    """
+
+    raw_sys = {t: float(reference.dual[reference.system_balance[t]]) for t in reference.T}
+    raw_nodal = {
+        (n, t): float(reference.dual[reference.nodal_balance[n, t]])
+        for n in reference.N
+        for t in reference.T
+    }
+    aligned = sum(nodal_lambda[key] * raw_nodal[key] for key in raw_nodal)
+    sign = -1.0 if aligned < 0.0 else 1.0
+    return {t: sign * raw_sys[t] for t in reference.T}
+
+
 def fixed_demand_reference_lambda(reference: pyo.ConcreteModel) -> dict[tuple[str, int], float]:
     """Nodal prices from the fixed-demand reference LP solver duals."""
 
@@ -274,6 +296,7 @@ def build_single_investor_mpec(
     rival_id: str = EXISTING_ID,
     rival_power_mw: Mapping[str, float] | None = None,
     rival_energy_mwh: Mapping[str, float] | None = None,
+    system_price_settlement: bool = False,
 ) -> pyo.ConcreteModel:
     """Build the one-investor MPEC.
 
@@ -548,9 +571,16 @@ def build_single_investor_mpec(
     m.strong_duality = pyo.Constraint(expr=m.primal_objective_expr == m.dual_objective_expr)
 
     # Upper-level investor objective.
+    # Price the investor is paid: nodal LMP (lam[n,t]) by default, or the
+    # uniform system-wide price (lam_sys[t], the single bidding-zone / zonal
+    # price that ignores congestion rent) when system_price_settlement is set.
+    def settlement_price(n: str, t: int):
+        return m.lam_sys[t] if system_price_settlement else m.lam[n, t]
+
     m.spot_revenue_expr = pyo.Expression(
         expr=sum(
-            m.lam[n, t] * (m.P_discharge[inv.investor_id, n, t] - m.P_charge[inv.investor_id, n, t])
+            settlement_price(n, t)
+            * (m.P_discharge[inv.investor_id, n, t] - m.P_charge[inv.investor_id, n, t])
             for n in m.N
             for t in m.T
         )
@@ -569,6 +599,10 @@ def build_single_investor_mpec(
         )
     )
     m.investor_profit_expr = pyo.Expression(expr=m.spot_revenue_expr - m.degradation_cost_expr - m.capex_daily_expr)
+    # Clean EPEC baseline: the MPEC selects the dual/primal optimum that
+    # maximizes investor profit. Any optimistic-price effect is diagnosed ex
+    # post by comparing these embedded prices to the standalone reference
+    # settlement, not regularized inside the objective.
     m.objective = pyo.Objective(expr=m.investor_profit_expr, sense=pyo.maximize)
 
     m._market_data = data

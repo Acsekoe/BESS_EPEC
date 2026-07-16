@@ -22,6 +22,7 @@ from single_investor_mpec import (
     build_quadratic_primal_model,
     capital_recovery_factor,
     quadratic_reference_lambda,
+    reference_system_price,
 )
 from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
@@ -56,13 +57,23 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
     lam = quadratic_reference_lambda(reference, quad)
     dual_cross_check = _solver_dual_cross_check(reference, lam)
 
+    # Settlement price: nodal LMP by default, or the uniform per-hour system
+    # price (broadcast to every node) when the run uses zonal settlement, so
+    # the reported profit matches the price each investor optimized against.
+    if cfg.system_price_settlement:
+        sys_price = reference_system_price(reference, lam)
+        settle_price = {(n, t): sys_price[t] for n in reference.N for t in reference.T}
+    else:
+        settle_price = lam
+
     investors_out: dict[str, dict] = {}
     for inv in cfg.investors:
         i = inv.investor_id
         charge = sum(value(reference.P_charge[i, n, t]) for n in reference.N for t in reference.T)
         discharge = sum(value(reference.P_discharge[i, n, t]) for n in reference.N for t in reference.T)
         revenue = sum(
-            lam[n, t] * (value(reference.P_discharge[i, n, t]) - value(reference.P_charge[i, n, t]))
+            settle_price[n, t]
+            * (value(reference.P_discharge[i, n, t]) - value(reference.P_charge[i, n, t]))
             for n in reference.N
             for t in reference.T
         )
@@ -84,24 +95,31 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
                 agg_thru = sum(
                     value(reference.P_discharge[j, n, t]) + value(reference.P_charge[j, n, t]) for j in units
                 )
-                alt_revenue += share * lam[n, t] * agg_net
+                alt_revenue += share * settle_price[n, t] * agg_net
                 alt_throughput += share * agg_thru
         alt_profit = alt_revenue - 0.5 * inv.degradation_eur_per_mwh * alt_throughput - capex
 
-        belief = next(
+        optimistic_profit = next(
             (
-                row["profit_belief_eur_per_day"]
+                row["optimistic_mpec_profit_eur_per_day"]
                 for row in reversed(state.history)
                 if row["investor"] == i and row["termination"] == "optimal"
             ),
             float("nan"),
         )
         model = state.final_models.get(i)
-        lambda_diff = (
-            max(abs(value(model.lam[n, t]) - lam[n, t]) for n in model.N for t in model.T)
-            if model is not None
-            else None
-        )
+        if model is None:
+            lambda_diff = None
+        elif cfg.system_price_settlement:
+            lambda_diff = max(
+                abs(value(model.lam_sys[t]) - settle_price[n, t])
+                for n in model.N
+                for t in model.T
+            )
+        else:
+            lambda_diff = max(
+                abs(value(model.lam[n, t]) - settle_price[n, t]) for n in model.N for t in model.T
+            )
         investors_out[i] = {
             "wacc": inv.wacc,
             "total_power_mw": sum(state.x_power[i, n] for n in nodes),
@@ -112,8 +130,8 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             "settled_profit_eur_per_day": settled_profit,
             "capacity_proportional_profit_eur_per_day": alt_profit,
             "dispatch_attribution_band_eur_per_day": abs(settled_profit - alt_profit),
-            "last_profit_belief_eur_per_day": belief,
-            "belief_minus_settled_eur_per_day": belief - settled_profit,
+            "last_optimistic_mpec_profit_eur_per_day": optimistic_profit,
+            "optimistic_mpec_minus_settled_eur_per_day": optimistic_profit - settled_profit,
             "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": lambda_diff,
             "throughput_mwh": charge + discharge,
         }
@@ -130,11 +148,12 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         "termination": termination,
         "joint_lower_level_objective_eur_per_day": value(reference.quad_objective),
         "lambda_solver_dual_max_abs_diff": dual_cross_check,
-        "lambda_min_eur_per_mwh": min(lam.values()),
-        "lambda_max_eur_per_mwh": max(lam.values()),
+        "lambda_min_eur_per_mwh": min(settle_price.values()),
+        "lambda_max_eur_per_mwh": max(settle_price.values()),
+        "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "investors": investors_out,
         "node_shares": node_shares,
-        "reference_lambda": lam,
+        "reference_lambda": settle_price,
         "reference_model": reference,
     }
 
@@ -152,7 +171,7 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
         print(
             f"  {i} (WACC {row['wacc']:.1%}): {row['total_power_mw']:8.2f} MW / {row['total_energy_mwh']:9.2f} MWh"
             f"  settled {row['settled_profit_eur_per_day']:12,.2f} EUR/day"
-            f"  (belief-settled {row['belief_minus_settled_eur_per_day']:+10,.2f},"
+            f"  (optimistic-settled {row['optimistic_mpec_minus_settled_eur_per_day']:+10,.2f},"
             f" attribution band {row['dispatch_attribution_band_eur_per_day']:8,.2f})"
         )
     print("  per-node power shares [MW]:")
@@ -172,6 +191,8 @@ def export_epec_results(
     run_config = {
         "data_path": str(data_path),
         "update_rule": cfg.update_rule,
+        "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
+        "dual_selection": "optimistic_mpec_no_price_penalty",
         "damping": cfg.damping,
         "max_iters": cfg.max_iters,
         "tol_rel": cfg.tol_rel,
@@ -205,7 +226,7 @@ def export_epec_results(
             "investor",
             "termination",
             "solve_seconds",
-            "profit_belief_eur_per_day",
+            "optimistic_mpec_profit_eur_per_day",
             "strong_duality_gap",
             "total_power_mw",
             "total_energy_mwh",
@@ -282,6 +303,7 @@ def export_epec_results(
         "stop_reason": state.stop_reason,
         "iterations": state.iteration,
         "update_rule": cfg.update_rule,
+        "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "damping": cfg.damping,
         "tol_rel": cfg.tol_rel,
         "projection_event_count": len(state.projection_events),

@@ -34,6 +34,16 @@ from single_investor_mpec import (
 from solver_utils import get_ipopt_solver
 
 RIVAL_ID = "RIV"
+
+# Settlement price basis for investor revenue (drives BOTH the MPEC objective
+# and the final settlement, so it changes siting, not just reported profit):
+#   False -> nodal LMP: each investor is paid the locational price lam[n,t].
+#   True  -> uniform system price: investors optimize and settle at lam_sys[t],
+#            i.e. a single bidding-zone / zonal market that ignores congestion.
+# Flip this for a zonal-pricing run, or override per-run with
+# --settlement-price {nodal,system} on the CLI.
+SYSTEM_PRICE_SETTLEMENT = False
+
 DEFAULT_DAMPING = 0.7
 DEFAULT_TOL_REL = 0.01
 DEFAULT_FLOOR_MW = 1.0
@@ -57,6 +67,7 @@ class EpecConfig:
     dual_bound_scale: float = 10.0
     max_consecutive_failures: int = 3
     print_mpec_lambdas: bool = False
+    system_price_settlement: bool = SYSTEM_PRICE_SETTLEMENT
 
 
 @dataclass
@@ -66,7 +77,7 @@ class BestResponse:
     solve_seconds: float
     proposed_power: dict[str, float]  # node -> MW
     proposed_energy: dict[str, float]  # node -> MWh
-    profit_belief_eur_per_day: float
+    optimistic_mpec_profit_eur_per_day: float
     strong_duality_gap: float
     model: pyo.ConcreteModel | None
 
@@ -132,6 +143,7 @@ def solve_best_response(
             dual_bound_scale=cfg.dual_bound_scale,
             initial_power_mw=cfg.seed_power_mw,
             initial_ratio_hours=cfg.seed_ratio_hours,
+            system_price_settlement=cfg.system_price_settlement,
         )
         for n in model.N:
             headroom = cfg.node_limit_mw - rival_power[n]
@@ -165,7 +177,7 @@ def solve_best_response(
             solve_seconds=seconds,
             proposed_power=dict(x_prev_power),
             proposed_energy=dict(x_prev_energy),
-            profit_belief_eur_per_day=float("nan"),
+            optimistic_mpec_profit_eur_per_day=float("nan"),
             strong_duality_gap=float("nan"),
             model=None,
         )
@@ -175,7 +187,7 @@ def solve_best_response(
         solve_seconds=seconds,
         proposed_power={n: max(0.0, value(model.X_power[n])) for n in model.N},
         proposed_energy={n: max(0.0, value(model.X_energy[n])) for n in model.N},
-        profit_belief_eur_per_day=value(model.investor_profit_expr),
+        optimistic_mpec_profit_eur_per_day=value(model.investor_profit_expr),
         strong_duality_gap=abs(value(model.primal_objective_expr) - value(model.dual_objective_expr)),
         model=model,
     )
@@ -307,7 +319,7 @@ def run_epec(data: MarketData, quad: QuadraticDemandCurve, cfg: EpecConfig, tee:
                     "investor": inv_id,
                     "termination": response.termination,
                     "solve_seconds": response.solve_seconds,
-                    "profit_belief_eur_per_day": response.profit_belief_eur_per_day,
+                    "optimistic_mpec_profit_eur_per_day": response.optimistic_mpec_profit_eur_per_day,
                     "strong_duality_gap": response.strong_duality_gap,
                     "total_power_mw": sum(state.x_power[inv_id, n] for n in nodes),
                     "total_energy_mwh": sum(state.x_energy[inv_id, n] for n in nodes),
@@ -329,13 +341,13 @@ def run_epec(data: MarketData, quad: QuadraticDemandCurve, cfg: EpecConfig, tee:
                     }
                 )
 
-        beliefs = ", ".join(
-            f"{r.investor_id}={r.profit_belief_eur_per_day:,.0f}" if r.ok else f"{r.investor_id}=FAILED"
+        optimistic = ", ".join(
+            f"{r.investor_id}={r.optimistic_mpec_profit_eur_per_day:,.0f}" if r.ok else f"{r.investor_id}=FAILED"
             for r in responses
         )
         print(
             f"iter {iteration:2d} [{cfg.update_rule}] max_rel dP={max_rel_power:.4f} dE={max_rel_energy:.4f}"
-            f"  beliefs [EUR/day]: {beliefs}"
+            f"  optimistic MPEC profit [EUR/day]: {optimistic}"
         )
 
         if any(count >= cfg.max_consecutive_failures for count in consecutive_failures.values()):
@@ -380,6 +392,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print embedded MPEC nodal prices for every solved investor best response.",
     )
+    parser.add_argument(
+        "--settlement-price",
+        choices=["nodal", "system"],
+        default=None,
+        help="Price basis for investor revenue (MPEC objective + settlement). "
+        f"Default follows the SYSTEM_PRICE_SETTLEMENT toggle "
+        f"({'system' if SYSTEM_PRICE_SETTLEMENT else 'nodal'}).",
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--tag", type=str, default=None, help="Optional label appended to the output folder name.")
     parser.add_argument("--tee", action="store_true")
@@ -394,6 +414,10 @@ def main() -> int:
     investors = tuple(
         InvestorConfig(investor_id=f"I{k + 1}", wacc=wacc) for k, wacc in enumerate(args.wacc)
     )
+    if args.settlement_price is None:
+        system_price_settlement = SYSTEM_PRICE_SETTLEMENT
+    else:
+        system_price_settlement = args.settlement_price == "system"
     cfg = EpecConfig(
         investors=investors,
         update_rule=args.update_rule,
@@ -407,13 +431,16 @@ def main() -> int:
         max_cpu_time=args.max_cpu_time,
         dual_bound_scale=args.dual_bound_scale,
         print_mpec_lambdas=args.print_mpec_lambdas,
+        system_price_settlement=system_price_settlement,
     )
     data = load_market_data(args.data)
     quad = default_quadratic_demand_curve()
     print(
         f"EPEC diagonalization: {len(investors)} investors "
         f"(WACC {', '.join(f'{i.wacc:.1%}' for i in investors)}), "
-        f"rule={cfg.update_rule}, damping={cfg.damping}, tol_rel={cfg.tol_rel}"
+        f"rule={cfg.update_rule}, damping={cfg.damping}, tol_rel={cfg.tol_rel}, "
+        f"settlement price={'system (zonal)' if cfg.system_price_settlement else 'nodal (LMP)'}, "
+        "dual_selection=optimistic"
     )
     print(
         "Quadratic demand curve: "

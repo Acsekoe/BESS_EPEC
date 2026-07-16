@@ -35,6 +35,41 @@ from solver_utils import get_ipopt_solver
 
 RIVAL_ID = "RIV"
 
+# Wind-vs-solar tilt for the two renewable-portfolio investors: the dominant
+# technology's rent share, the minor technology gets 1 - this. Shares sum to
+# 1.0 per generator across the two portfolios, so all existing RES rent is
+# allocated and none is double-counted.
+PORTFOLIO_MAJORITY_SHARE = 0.8
+
+
+def four_investor_portfolio_profiles(data: MarketData) -> tuple[InvestorConfig, ...]:
+    """Four heterogeneous investors for the portfolio EPEC on 9-bus-style data.
+
+    I1, I2: stand-alone merchant BESS (no generation), 8% and 12% WACC.
+    I3, I4: 8% WACC renewable-portfolio BESS investors that differ only by a
+    wind-vs-solar ownership tilt. I3 is wind-heavy, I4 is solar-heavy; each also
+    earns the inframarginal spot rent of its owned share of the existing wind/PV
+    fleet, so the two same-WACC portfolios face genuinely different economics.
+    """
+
+    wind = [g for g in data.generators if "Wind" in g]
+    solar = [g for g in data.generators if "PV" in g]
+    if not wind or not solar:
+        raise SystemExit(
+            "portfolio4 investor set needs both wind and PV generators in the data "
+            f"(found wind={wind}, PV={solar})."
+        )
+    major = PORTFOLIO_MAJORITY_SHARE
+    minor = 1.0 - major
+    wind_heavy = {**{g: major for g in wind}, **{g: minor for g in solar}}
+    solar_heavy = {**{g: minor for g in wind}, **{g: major for g in solar}}
+    return (
+        InvestorConfig(investor_id="I1", wacc=0.08),
+        InvestorConfig(investor_id="I2", wacc=0.12),
+        InvestorConfig(investor_id="I3", wacc=0.08, owned_generation_shares=wind_heavy),
+        InvestorConfig(investor_id="I4", wacc=0.08, owned_generation_shares=solar_heavy),
+    )
+
 # Settlement price basis for investor revenue (drives BOTH the MPEC objective
 # and the final settlement, so it changes siting, not just reported profit):
 #   False -> nodal LMP: each investor is paid the locational price lam[n,t].
@@ -45,7 +80,7 @@ RIVAL_ID = "RIV"
 SYSTEM_PRICE_SETTLEMENT = False
 
 DEFAULT_DAMPING = 0.7
-DEFAULT_TOL_REL = 0.01
+DEFAULT_TOL_REL = 0.02
 DEFAULT_FLOOR_MW = 1.0
 DEFAULT_FLOOR_MWH = 2.0
 DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parent / "output" / "epec"
@@ -372,11 +407,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data", type=Path, default=EXPERIMENT_DATA_PATH)
     parser.add_argument("--update-rule", choices=["jacobi", "seidel"], default="jacobi")
     parser.add_argument(
+        "--investor-set",
+        choices=["wacc", "portfolio4"],
+        default="wacc",
+        help="'wacc' (default): homogeneous investors from --wacc. 'portfolio4': four "
+        "heterogeneous investors (two merchants + two same-WACC wind/solar-tilted RES portfolios).",
+    )
+    parser.add_argument(
         "--wacc",
         type=float,
         nargs="+",
         default=[0.08, 0.12],
-        help="One WACC per investor; investors are named I1, I2, ... in this (Seidel solve) order.",
+        help="One WACC per investor (only used when --investor-set wacc); investors are "
+        "named I1, I2, ... in this (Seidel solve) order.",
     )
     parser.add_argument("--damping", type=float, default=DEFAULT_DAMPING)
     parser.add_argument("--max-iters", type=int, default=60)
@@ -411,9 +454,13 @@ def main() -> int:
     args = parse_args()
     if not 0.0 < args.damping <= 1.0:
         raise SystemExit("--damping must be in (0, 1].")
-    investors = tuple(
-        InvestorConfig(investor_id=f"I{k + 1}", wacc=wacc) for k, wacc in enumerate(args.wacc)
-    )
+    data = load_market_data(args.data)
+    if args.investor_set == "portfolio4":
+        investors = four_investor_portfolio_profiles(data)
+    else:
+        investors = tuple(
+            InvestorConfig(investor_id=f"I{k + 1}", wacc=wacc) for k, wacc in enumerate(args.wacc)
+        )
     if args.settlement_price is None:
         system_price_settlement = SYSTEM_PRICE_SETTLEMENT
     else:
@@ -433,7 +480,6 @@ def main() -> int:
         print_mpec_lambdas=args.print_mpec_lambdas,
         system_price_settlement=system_price_settlement,
     )
-    data = load_market_data(args.data)
     quad = default_quadratic_demand_curve()
     print(
         f"EPEC diagonalization: {len(investors)} investors "
@@ -442,6 +488,12 @@ def main() -> int:
         f"settlement price={'system (zonal)' if cfg.system_price_settlement else 'nodal (LMP)'}, "
         "dual_selection=optimistic"
     )
+    for inv in investors:
+        if inv.owned_generation_shares:
+            owned = ", ".join(f"{g}={s:.2f}" for g, s in inv.owned_generation_shares.items())
+            print(f"  {inv.investor_id}: portfolio-backed, generation shares [{owned}]")
+        else:
+            print(f"  {inv.investor_id}: stand-alone merchant BESS")
     print(
         "Quadratic demand curve: "
         f"marginal WTP = {quad.alpha:,.2f} + {quad.beta:,.2f} * curtailed_share EUR/MWh"

@@ -89,6 +89,7 @@
 \(C^{power}_i, C^{energy}_i\) & Investor \(i\) power and energy capital cost. & \texteuro{}/MW, \texteuro{}/MWh \\
 \(d_i\) & Investor \(i\) throughput degradation cost. & \texteuro{}/MWh \\
 \(r_i, L_i\) & Investor \(i\) WACC and project lifetime; \(CRF_i=\dfrac{r_i(1+r_i)^{L_i}}{(1+r_i)^{L_i}-1}\). & --, a \\
+\(s_{i,g}\) & Share of generator \(g\)'s spot rent owned by investor \(i\); \(0\) for a stand-alone merchant. & dimensionless \\
 \end{longtable}
 \endgroup
 
@@ -199,15 +200,22 @@ Ratio^{max} X^{power}_{i,n},
 &&\forall i,n.
 \end{align*}
 
-\noindent Each investor maximizes deterministic spot-market profit net of degradation and annualized CAPEX:
+\noindent Each investor maximizes deterministic spot-market profit from its BESS arbitrage and its owned generation, net of degradation and annualized CAPEX:
 \begin{align*}
 \max \; NPV_i
 =&
 \sum_{t,n}
 \pi_{n,t}
 \left(P^{discharge}_{i,n,t}-P^{charge}_{i,n,t}\right)
++ GenRent_i
 - Cost^{degrad}_i
 - CAPEX^{daily}_i,
+\\[2pt]
+GenRent_i
+=&
+\sum_{g}\; s_{i,g}
+\sum_{t}
+\left(\pi_{n(g),t}-C_g\right) P_{g,t},
 \\[2pt]
 Cost^{degrad}_i
 =&
@@ -224,7 +232,7 @@ CAPEX^{daily}_i
 
 \noindent The settlement price \(\pi_{n,t}\) is, by default, the nodal marginal price \(\lambda_{n,t}\) (locational marginal pricing). The implementation also supports a uniform single-zone settlement in which \(\pi_{n,t}=\lambda_{sys,t}\) for all nodes, used to study how bidding-zone pricing distorts siting relative to nodal pricing.
 
-\noindent Investor heterogeneity can enter through WACC, CAPEX assumptions, degradation parameters, and operational restrictions such as stand-alone BESS operation versus portfolio-backed operation.
+\noindent Investor heterogeneity enters through WACC, CAPEX, degradation, and business model. A \emph{stand-alone merchant} investor operates only BESS. A \emph{portfolio-backed} investor additionally owns a share \(s_{i,g}\in[0,1]\) of one or more of the exogenous generators already present in the lower level and collects the corresponding inframarginal spot rent \(GenRent_i\), where \(MC_g\) is the generator marginal cost, \(P_{gen,g,t}\) its cleared output, and \(n(g)\) its node; renewables have \(C_g=0\). Ownership shares are exogenous and enter only the upper-level objective, so the lower-level clearing is unchanged. Since the price \(\pi_{n,t}\) and dispatch \(P_{g,t}\) are shared with the lower level, a portfolio investor anticipates how its own BESS siting shifts the price its generation earns --- for example a solar-heavy investor time-shifting midday PV output to lift its otherwise near-zero midday nodal price.
 
 \subsection*{Lower-Level Embedding (MPEC)}
 

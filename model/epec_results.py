@@ -66,6 +66,10 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
     else:
         settle_price = lam
 
+    # Generator -> its node, for crediting portfolio investors their owned
+    # share of each existing generator's inframarginal rent at settlement prices.
+    gen_node = {g: n for n in nodes for g in data.generators_at_node.get(n, [])}
+
     investors_out: dict[str, dict] = {}
     for inv in cfg.investors:
         i = inv.investor_id
@@ -77,9 +81,18 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             for n in reference.N
             for t in reference.T
         )
+        generation_rent = 0.0
+        for g, share in inv.owned_generation_shares.items():
+            n = gen_node.get(g)
+            if n is None or share == 0.0:
+                continue
+            mc = data.generation_cost[g]
+            generation_rent += share * sum(
+                (settle_price[n, t] - mc) * value(reference.P_gen[g, t]) for t in reference.T
+            )
         degradation = 0.5 * inv.degradation_eur_per_mwh * (charge + discharge)
         capex = _daily_capex(inv, state, nodes)
-        settled_profit = revenue - degradation - capex
+        settled_profit = revenue + generation_rent - degradation - capex
 
         # Capacity-proportional attribution of each node-hour's aggregate
         # storage rent: the other end of the dispatch-degeneracy band.
@@ -97,7 +110,9 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
                 )
                 alt_revenue += share * settle_price[n, t] * agg_net
                 alt_throughput += share * agg_thru
-        alt_profit = alt_revenue - 0.5 * inv.degradation_eur_per_mwh * alt_throughput - capex
+        # Generation rent is unambiguously owned (one generator, one investor),
+        # so it enters both attribution variants unchanged.
+        alt_profit = alt_revenue + generation_rent - 0.5 * inv.degradation_eur_per_mwh * alt_throughput - capex
 
         optimistic_profit = next(
             (
@@ -125,6 +140,8 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             "total_power_mw": sum(state.x_power[i, n] for n in nodes),
             "total_energy_mwh": sum(state.x_energy[i, n] for n in nodes),
             "settled_spot_revenue_eur_per_day": revenue,
+            "settled_generation_rent_eur_per_day": generation_rent,
+            "owned_generation_shares": dict(inv.owned_generation_shares),
             "settled_degradation_eur_per_day": degradation,
             "capex_daily_eur_per_day": capex,
             "settled_profit_eur_per_day": settled_profit,
@@ -168,10 +185,12 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
         f"{settlement['lambda_min_eur_per_mwh']:,.4f} to {settlement['lambda_max_eur_per_mwh']:,.4f} EUR/MWh"
     )
     for i, row in settlement["investors"].items():
+        gen_rent = row.get("settled_generation_rent_eur_per_day", 0.0)
+        gen_str = f" gen rent {gen_rent:11,.2f}," if gen_rent else ""
         print(
             f"  {i} (WACC {row['wacc']:.1%}): {row['total_power_mw']:8.2f} MW / {row['total_energy_mwh']:9.2f} MWh"
             f"  settled {row['settled_profit_eur_per_day']:12,.2f} EUR/day"
-            f"  (optimistic-settled {row['optimistic_mpec_minus_settled_eur_per_day']:+10,.2f},"
+            f" ({gen_str} optimistic-settled {row['optimistic_mpec_minus_settled_eur_per_day']:+10,.2f},"
             f" attribution band {row['dispatch_attribution_band_eur_per_day']:8,.2f})"
         )
     print("  per-node power shares [MW]:")
@@ -213,6 +232,7 @@ def export_epec_results(
                 "degradation_eur_per_mwh": inv.degradation_eur_per_mwh,
                 "ratio_min": inv.ratio_min,
                 "ratio_max": inv.ratio_max,
+                "owned_generation_shares": dict(inv.owned_generation_shares),
             }
             for inv in cfg.investors
         ],

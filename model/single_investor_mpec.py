@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pyomo.environ as pyo
@@ -69,6 +69,11 @@ class InvestorConfig:
     degradation_eur_per_mwh: float = DEFAULT_DEGRADATION_EUR_PER_MWH
     ratio_min: float = DEFAULT_RATIO_MIN
     ratio_max: float = DEFAULT_RATIO_MAX
+    # Fraction of each existing generator's rent this investor collects (0..1).
+    # Empty => stand-alone merchant BESS. A portfolio-backed investor owns a
+    # share of the exogenous wind/PV/thermal fleet already in the lower level
+    # and earns its inframarginal spot rent alongside BESS arbitrage.
+    owned_generation_shares: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -585,6 +590,19 @@ def build_single_investor_mpec(
             for t in m.T
         )
     )
+    # Portfolio-backed rent: the investor's owned share of each existing
+    # generator's inframarginal spot rent (price minus marginal cost times
+    # cleared output), settled at the same price as its BESS. Zero for a
+    # stand-alone merchant (empty owned_generation_shares).
+    gen_node = {g: (gen_nodes.get(g) or [None])[0] for g in data.generators}
+    m.generation_rent_expr = pyo.Expression(
+        expr=sum(
+            share * (settlement_price(gen_node[g], t) - data.generation_cost[g]) * m.P_gen[g, t]
+            for g, share in inv.owned_generation_shares.items()
+            for t in m.T
+            if share != 0.0 and gen_node.get(g) is not None
+        )
+    )
     m.degradation_cost_expr = pyo.Expression(
         expr=0.5
         * inv.degradation_eur_per_mwh
@@ -598,7 +616,9 @@ def build_single_investor_mpec(
             for n in m.N
         )
     )
-    m.investor_profit_expr = pyo.Expression(expr=m.spot_revenue_expr - m.degradation_cost_expr - m.capex_daily_expr)
+    m.investor_profit_expr = pyo.Expression(
+        expr=m.spot_revenue_expr + m.generation_rent_expr - m.degradation_cost_expr - m.capex_daily_expr
+    )
     # Clean EPEC baseline: the MPEC selects the dual/primal optimum that
     # maximizes investor profit. Any optimistic-price effect is diagnosed ex
     # post by comparing these embedded prices to the standalone reference

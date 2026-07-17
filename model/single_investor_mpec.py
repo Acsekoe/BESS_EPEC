@@ -41,6 +41,10 @@ DEFAULT_RATIO_MAX = 8.0
 DEFAULT_BESS_COST_POWER_EUR_PER_MW = 6_600.0
 DEFAULT_BESS_COST_ENERGY_EUR_PER_MWH = 18_800.0
 DEFAULT_DEGRADATION_EUR_PER_MWH = 15.0
+# Neutral strictly-convex tie-break in the lower-level dispatch objective.
+# At 1,000 MW its marginal contribution is 0.1 EUR/MWh, so it selects among
+# otherwise equivalent dispatches without materially replacing market costs.
+DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H = 1.0e-4
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "single_investor_mpec"
 USE_DEMAND_CURVE = True
 DEFAULT_INITIAL_POWER_MW = DEFAULT_NODE_LIMIT_MW if not USE_DEMAND_CURVE else 10.0
@@ -103,35 +107,125 @@ def default_quadratic_demand_curve() -> QuadraticDemandCurve:
     return QuadraticDemandCurve(alpha=DEFAULT_DEMAND_CURVE_ALPHA, beta=DEFAULT_DEMAND_CURVE_BETA)
 
 
-def build_quadratic_primal_model(data: MarketData, quad: QuadraticDemandCurve) -> pyo.ConcreteModel:
+def _storage_degradation_costs(
+    data: MarketData,
+    overrides: Mapping[str, float] | None,
+) -> dict[str, float]:
+    """Per-unit full-cycle degradation coefficients used by market clearing."""
+
+    costs = {str(unit): DEFAULT_DEGRADATION_EUR_PER_MWH for unit in data.storage_units}
+    if overrides is not None:
+        unknown = set(overrides) - set(costs)
+        if unknown:
+            raise ValueError(f"Degradation costs supplied for unknown storage units: {sorted(unknown)}")
+        costs.update({str(unit): float(cost) for unit, cost in overrides.items()})
+    if any(cost < 0.0 for cost in costs.values()):
+        raise ValueError("Storage degradation costs must be non-negative.")
+    return costs
+
+
+def build_quadratic_primal_model(
+    data: MarketData,
+    quad: QuadraticDemandCurve,
+    *,
+    storage_degradation_eur_per_mwh: Mapping[str, float] | None = None,
+    dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
+) -> pyo.ConcreteModel:
     """Lower-level clearing QP: the primal LP structure plus the quadratic shed cost.
 
     Reuses the standalone primal builder, where ``P_shed[n,t]`` is bounded by
     full nodal demand, then swaps in the strictly convex objective.
     """
 
+    if dispatch_regularization_eur_per_mw2h < 0.0:
+        raise ValueError("Dispatch regularization must be non-negative.")
+
     m = build_primal_market_clearing_model(data)
     md: MarketData = m._market_data
+    degradation = _storage_degradation_costs(md, storage_degradation_eur_per_mwh)
+    reg = dispatch_regularization_eur_per_mw2h
     generation_cost = sum(md.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
+    storage_degradation_cost = sum(
+        0.5 * degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
+        for i in m.I
+        for n in m.N
+        for t in m.T
+    )
     shed_linear_cost = sum(quad.alpha * m.P_shed[n, t] for n in m.N for t in m.T)
     quad_cost = sum(
         0.5 * quad.quad_coefficient(md.demand_el[n, t]) * m.P_shed[n, t] ** 2
         for n in m.N
         for t in m.T
     )
+    dispatch_regularization = 0.5 * reg * (
+        sum(m.P_gen[g, t] ** 2 for g in m.G for t in m.T)
+        + sum(
+            m.P_charge[i, n, t] ** 2 + m.P_discharge[i, n, t] ** 2
+            for i in m.I
+            for n in m.N
+            for t in m.T
+        )
+        + sum(m.SOC[i, n, tau] ** 2 for i in m.I for n in m.N for tau in m.T_SOC)
+        + sum(m.NetInjection[n, t] ** 2 for n in m.N for t in m.T)
+        + sum(m.P_shed[n, t] ** 2 for n in m.N for t in m.T)
+    )
     m.objective.deactivate()
-    m.quad_objective = pyo.Objective(expr=generation_cost + shed_linear_cost + quad_cost, sense=pyo.minimize)
+    m.storage_degradation_objective_expr = pyo.Expression(expr=storage_degradation_cost)
+    m.dispatch_regularization_expr = pyo.Expression(expr=dispatch_regularization)
+    m.quad_objective = pyo.Objective(
+        expr=generation_cost
+        + storage_degradation_cost
+        + shed_linear_cost
+        + quad_cost
+        + dispatch_regularization,
+        sense=pyo.minimize,
+    )
     m._quad_demand = quad
+    m._storage_degradation_eur_per_mwh = degradation
+    m._dispatch_regularization_eur_per_mw2h = reg
     return m
 
 
-def build_fixed_demand_primal_model(data: MarketData) -> pyo.ConcreteModel:
-    """Standalone lower-level clearing LP with fixed demand and no load shedding."""
+def build_fixed_demand_primal_model(
+    data: MarketData,
+    *,
+    storage_degradation_eur_per_mwh: Mapping[str, float] | None = None,
+    dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
+) -> pyo.ConcreteModel:
+    """Standalone regularized lower-level QP with fixed demand and no shedding."""
+
+    if dispatch_regularization_eur_per_mw2h < 0.0:
+        raise ValueError("Dispatch regularization must be non-negative.")
 
     m = build_primal_market_clearing_model(data)
+    degradation = _storage_degradation_costs(data, storage_degradation_eur_per_mwh)
+    reg = dispatch_regularization_eur_per_mw2h
     for n in m.N:
         for t in m.T:
             m.P_shed[n, t].fix(0.0)
+    generation_cost = sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
+    storage_degradation_cost = sum(
+        0.5 * degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
+        for i in m.I
+        for n in m.N
+        for t in m.T
+    )
+    dispatch_regularization = 0.5 * reg * (
+        sum(m.P_gen[g, t] ** 2 for g in m.G for t in m.T)
+        + sum(
+            m.P_charge[i, n, t] ** 2 + m.P_discharge[i, n, t] ** 2
+            for i in m.I
+            for n in m.N
+            for t in m.T
+        )
+        + sum(m.SOC[i, n, tau] ** 2 for i in m.I for n in m.N for tau in m.T_SOC)
+        + sum(m.NetInjection[n, t] ** 2 for n in m.N for t in m.T)
+    )
+    m.objective.set_value(generation_cost + storage_degradation_cost + dispatch_regularization)
+    m.storage_degradation_objective_expr = pyo.Expression(expr=storage_degradation_cost)
+    m.dispatch_regularization_expr = pyo.Expression(expr=dispatch_regularization)
+    m._storage_degradation_eur_per_mwh = degradation
+    m._dispatch_regularization_eur_per_mw2h = reg
     m._use_demand_curve = False
     return m
 
@@ -149,13 +243,14 @@ def quadratic_reference_lambda(
     """
 
     md: MarketData = reference._market_data
+    reg = getattr(reference, "_dispatch_regularization_eur_per_mw2h", 0.0)
     curve: dict[tuple[str, int], float] = {}
     for n in reference.N:
         for t in reference.T:
             demand = md.demand_el[n, t]
             shed = value(reference.P_shed[n, t])
             if demand > 0.0 and SHED_INTERIOR_TOL_MW < shed < demand - SHED_INTERIOR_TOL_MW:
-                curve[(n, t)] = quad.marginal_wtp(shed, demand)
+                curve[(n, t)] = quad.marginal_wtp(shed, demand) + reg * shed
     duals = {
         (n, t): float(reference.dual[reference.nodal_balance[n, t]])
         for n in reference.N
@@ -301,6 +396,8 @@ def build_single_investor_mpec(
     rival_id: str = EXISTING_ID,
     rival_power_mw: Mapping[str, float] | None = None,
     rival_energy_mwh: Mapping[str, float] | None = None,
+    rival_degradation_eur_per_mwh: float = DEFAULT_DEGRADATION_EUR_PER_MWH,
+    dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
     system_price_settlement: bool = False,
 ) -> pyo.ConcreteModel:
     """Build the one-investor MPEC.
@@ -322,6 +419,10 @@ def build_single_investor_mpec(
     if investor is not None and (wacc, ratio_min, ratio_max) != (DEFAULT_WACC, DEFAULT_RATIO_MIN, DEFAULT_RATIO_MAX):
         raise ValueError("Pass economic parameters through `investor`, not the legacy scalar kwargs.")
     inv = investor or InvestorConfig(wacc=wacc, ratio_min=ratio_min, ratio_max=ratio_max)
+    if rival_degradation_eur_per_mwh < 0.0:
+        raise ValueError("Rival degradation cost must be non-negative.")
+    if dispatch_regularization_eur_per_mw2h < 0.0:
+        raise ValueError("Dispatch regularization must be non-negative.")
     if existing_power_mw < 0.0:
         raise ValueError("existing_power_mw must be non-negative.")
     if rival_power_mw is not None and existing_power_mw > 0.0:
@@ -339,10 +440,14 @@ def build_single_investor_mpec(
     invest_limit = {node: node_limit_mw - rival_power_mw[node] for node in data.nodes}
     rival_active = any(v > 1e-9 for v in rival_power_mw.values())
     storage_units = [inv.investor_id] + ([rival_id] if rival_active else [])
+    storage_degradation = {inv.investor_id: inv.degradation_eur_per_mwh}
+    if rival_active:
+        storage_degradation[rival_id] = rival_degradation_eur_per_mwh
 
     gen_nodes = _nodes_of_generator(data)
     last_t = max(data.times)
     eta = data.eta
+    dispatch_reg = dispatch_regularization_eur_per_mw2h
     crf_daily = capital_recovery_factor(inv.wacc, inv.lifetime_years) / 365.25
     # Congestion duals can be much larger than generator marginal costs under
     # the PTDF formulation. In fixed-demand mode this bound is purely numerical;
@@ -484,7 +589,7 @@ def build_single_investor_mpec(
         m.G,
         m.T,
         rule=lambda model, g, t: sum(model.lam[n, t] for n in gen_nodes.get(g, [])) + model.nu_gen[g, t]
-        <= data.generation_cost[g],
+        <= data.generation_cost[g] + dispatch_reg * model.P_gen[g, t],
     )
     if use_demand_curve:
         # QP stationarity for P_shed: marginal cost is alpha + (beta/D)*shed.
@@ -493,7 +598,10 @@ def build_single_investor_mpec(
             m.T,
             rule=lambda model, n, t: model.lam[n, t] + model.xi_shed[n, t]
             <= quad_demand.alpha
-            + quad_demand.quad_coefficient(data.demand_el[n, t]) * model.P_shed[n, t],
+            + (
+                quad_demand.quad_coefficient(data.demand_el[n, t]) + dispatch_reg
+            )
+            * model.P_shed[n, t],
         )
     else:
         m.shed_stationarity = pyo.Constraint(m.N, m.T, rule=lambda model, n, t: model.xi_shed[n, t] == 0.0)
@@ -501,13 +609,19 @@ def build_single_investor_mpec(
         m.I,
         m.N,
         m.T,
-        rule=lambda model, i, n, t: -model.lam[n, t] + model.rho_ch[i, n, t] - eta * model.gam[i, n, t] <= 0.0,
+        rule=lambda model, i, n, t: -model.lam[n, t]
+        + model.rho_ch[i, n, t]
+        - eta * model.gam[i, n, t]
+        <= 0.5 * storage_degradation[i] + dispatch_reg * model.P_charge[i, n, t],
     )
     m.discharge_stationarity = pyo.Constraint(
         m.I,
         m.N,
         m.T,
-        rule=lambda model, i, n, t: model.lam[n, t] + model.sig_dis[i, n, t] + model.gam[i, n, t] / eta <= 0.0,
+        rule=lambda model, i, n, t: model.lam[n, t]
+        + model.sig_dis[i, n, t]
+        + model.gam[i, n, t] / eta
+        <= 0.5 * storage_degradation[i] + dispatch_reg * model.P_discharge[i, n, t],
     )
     m.netinjection_stationarity = pyo.Constraint(
         m.N,
@@ -515,7 +629,7 @@ def build_single_investor_mpec(
         rule=lambda model, n, t: -model.lam[n, t]
         + model.lam_sys[t]
         + sum(data.ptdf[l, n] * (model.mu_up[l, t] + model.mu_dn[l, t]) for l in model.L)
-        == 0.0,
+        == dispatch_reg * model.NetInjection[n, t],
     )
 
     def soc_stationarity_rule(model: pyo.ConcreteModel, i: str, n: str, tau: int) -> pyo.Expression:
@@ -528,7 +642,7 @@ def build_single_investor_mpec(
             expr = expr + model.rho_per[i, n]
         if tau == last_t:
             expr = expr - model.rho_per[i, n]
-        return expr <= 0.0
+        return expr <= dispatch_reg * model.SOC[i, n, tau]
 
     m.soc_stationarity = pyo.Constraint(m.I, m.N, m.T_SOC, rule=soc_stationarity_rule)
 
@@ -536,24 +650,55 @@ def build_single_investor_mpec(
     # shed variable. In demand-curve mode it is a convex QP with Wolfe-dual
     # correction for the quadratic curtailment cost.
     if use_demand_curve:
-        quad_cost_expr = sum(
+        demand_quad_cost_expr = sum(
             0.5 * quad_demand.quad_coefficient(data.demand_el[n, t]) * m.P_shed[n, t] ** 2
             for n in m.N
             for t in m.T
         )
-        shed_cost_expr = sum(quad_demand.alpha * m.P_shed[n, t] for n in m.N for t in m.T) + quad_cost_expr
+        shed_cost_expr = (
+            sum(quad_demand.alpha * m.P_shed[n, t] for n in m.N for t in m.T)
+            + demand_quad_cost_expr
+        )
         demand_dual_expr = sum(
             data.demand_el[n, t] * (m.lam[n, t] + m.xi_shed[n, t]) for n in m.N for t in m.T
         )
-        quad_dual_correction_expr = -quad_cost_expr
     else:
         shed_cost_expr = 0.0
+        demand_quad_cost_expr = 0.0
         demand_dual_expr = sum(data.demand_el[n, t] * m.lam[n, t] for n in m.N for t in m.T)
-        quad_dual_correction_expr = 0.0
+
+    storage_degradation_cost_expr = sum(
+        0.5 * storage_degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
+        for i in m.I
+        for n in m.N
+        for t in m.T
+    )
+    dispatch_regularization_expr = 0.5 * dispatch_reg * (
+        sum(m.P_gen[g, t] ** 2 for g in m.G for t in m.T)
+        + sum(
+            m.P_charge[i, n, t] ** 2 + m.P_discharge[i, n, t] ** 2
+            for i in m.I
+            for n in m.N
+            for t in m.T
+        )
+        + sum(m.SOC[i, n, tau] ** 2 for i in m.I for n in m.N for tau in m.T_SOC)
+        + sum(m.NetInjection[n, t] ** 2 for n in m.N for t in m.T)
+        + (
+            sum(m.P_shed[n, t] ** 2 for n in m.N for t in m.T)
+            if use_demand_curve
+            else 0.0
+        )
+    )
+    quad_dual_correction_expr = -demand_quad_cost_expr - dispatch_regularization_expr
+
+    m.lower_level_storage_degradation_expr = pyo.Expression(expr=storage_degradation_cost_expr)
+    m.dispatch_regularization_expr = pyo.Expression(expr=dispatch_regularization_expr)
 
     m.primal_objective_expr = pyo.Expression(
         expr=sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
+        + storage_degradation_cost_expr
         + shed_cost_expr
+        + dispatch_regularization_expr
     )
     m.dual_objective_expr = pyo.Expression(
         expr=demand_dual_expr
@@ -636,6 +781,9 @@ def build_single_investor_mpec(
     m._rival_id = rival_id
     m._rival_power_mw = dict(rival_power_mw)
     m._rival_energy_mwh = dict(rival_energy_mwh)
+    m._storage_degradation_eur_per_mwh = storage_degradation
+    m._rival_degradation_eur_per_mwh = rival_degradation_eur_per_mwh
+    m._dispatch_regularization_eur_per_mw2h = dispatch_reg
     m._quad_demand = quad_demand
     m._use_demand_curve = use_demand_curve
     return m
@@ -652,9 +800,18 @@ def _initialize_from_quadratic_llp(
     """
 
     if model._use_demand_curve:
-        qp = build_quadratic_primal_model(lp_data, quad)
+        qp = build_quadratic_primal_model(
+            lp_data,
+            quad,
+            storage_degradation_eur_per_mwh=model._storage_degradation_eur_per_mwh,
+            dispatch_regularization_eur_per_mw2h=model._dispatch_regularization_eur_per_mw2h,
+        )
     else:
-        qp = build_fixed_demand_primal_model(lp_data)
+        qp = build_fixed_demand_primal_model(
+            lp_data,
+            storage_degradation_eur_per_mwh=model._storage_degradation_eur_per_mwh,
+            dispatch_regularization_eur_per_mw2h=model._dispatch_regularization_eur_per_mw2h,
+        )
     results = get_ipopt_solver().solve(qp, tee=False)
     if results.solver.termination_condition != pyo.TerminationCondition.optimal:
         return
@@ -666,7 +823,11 @@ def _initialize_from_quadratic_llp(
         for t in model.T:
             model.P_gen[g, t].set_value(max(0.0, value(qp.P_gen[g, t])))
             lam_g = sum(lam_ref[n, t] for n in gen_nodes.get(g, []))
-            model.nu_gen[g, t].set_value(min(0.0, lp_data.generation_cost[g] - lam_g))
+            marginal_cost = (
+                lp_data.generation_cost[g]
+                + model._dispatch_regularization_eur_per_mw2h * value(qp.P_gen[g, t])
+            )
+            model.nu_gen[g, t].set_value(min(0.0, marginal_cost - lam_g))
     for n in model.N:
         for t in model.T:
             model.P_shed[n, t].set_value(max(0.0, value(qp.P_shed[n, t])))
@@ -713,11 +874,20 @@ def compute_reference_settlement(model: pyo.ConcreteModel) -> dict[str, object]:
     fixed_data = fixed_storage_data_from_solution(model)
     quad: QuadraticDemandCurve = model._quad_demand
     if model._use_demand_curve:
-        reference = build_quadratic_primal_model(fixed_data, quad)
+        reference = build_quadratic_primal_model(
+            fixed_data,
+            quad,
+            storage_degradation_eur_per_mwh=model._storage_degradation_eur_per_mwh,
+            dispatch_regularization_eur_per_mw2h=model._dispatch_regularization_eur_per_mw2h,
+        )
         reference_problem = "QP"
     else:
-        reference = build_fixed_demand_primal_model(fixed_data)
-        reference_problem = "LP"
+        reference = build_fixed_demand_primal_model(
+            fixed_data,
+            storage_degradation_eur_per_mwh=model._storage_degradation_eur_per_mwh,
+            dispatch_regularization_eur_per_mw2h=model._dispatch_regularization_eur_per_mw2h,
+        )
+        reference_problem = "QP"
     solver_label = "ipopt"
     print(f"Solving reference settlement {reference_problem} with ipopt...")
     results = get_ipopt_solver().solve(reference, tee=False)
@@ -811,6 +981,12 @@ def parse_args() -> argparse.Namespace:
         default=10.0,
         help="Finite bound multiplier for lower-level dual variables relative to VOLL.",
     )
+    parser.add_argument(
+        "--dispatch-regularization",
+        type=float,
+        default=DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
+        help="Neutral lower-level quadratic tie-break coefficient in EUR/(MW^2 h).",
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--no-export", action="store_true", help="Do not write detailed CSV/JSON outputs.")
     return parser.parse_args()
@@ -818,6 +994,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.dispatch_regularization < 0.0:
+        raise SystemExit("--dispatch-regularization must be non-negative.")
     data = load_market_data(args.data)
     output_dir = args.output_dir if args.output_dir is not None else DEFAULT_OUTPUT_DIR
 
@@ -829,6 +1007,15 @@ def main() -> int:
         )
     else:
         print("Fixed demand mode: demand curve disabled; P_shed fixed to 0 MW; no VOLL/load-shed pricing.")
+    print(
+        "Lower-level storage degradation: "
+        f"{DEFAULT_DEGRADATION_EUR_PER_MWH:,.2f} EUR/MWh-cycle "
+        f"({0.5 * DEFAULT_DEGRADATION_EUR_PER_MWH:,.2f} EUR/MWh on each charge/discharge leg)"
+    )
+    print(
+        "Lower-level dispatch regularization: "
+        f"{args.dispatch_regularization:.3e} EUR/(MW^2 h)"
+    )
 
     model = build_single_investor_mpec(
         data,
@@ -838,6 +1025,7 @@ def main() -> int:
         dual_bound_scale=args.dual_bound_scale,
         existing_power_mw=args.existing_power_mw,
         existing_ratio_hours=args.existing_ratio_hours,
+        dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,
         quad_demand=quad_demand,
         use_demand_curve=USE_DEMAND_CURVE,
     )

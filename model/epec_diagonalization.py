@@ -422,6 +422,12 @@ def parse_args() -> argparse.Namespace:
         "named I1, I2, ... in this (Seidel solve) order.",
     )
     parser.add_argument("--damping", type=float, default=DEFAULT_DAMPING)
+    parser.add_argument(
+        "--node-limit-mw",
+        type=float,
+        default=DEFAULT_NODE_LIMIT_MW,
+        help="Shared BESS power connection limit per node (sum over investors).",
+    )
     parser.add_argument("--max-iters", type=int, default=60)
     parser.add_argument("--tol-rel", type=float, default=DEFAULT_TOL_REL)
     parser.add_argument("--floor-mw", type=float, default=DEFAULT_FLOOR_MW)
@@ -467,6 +473,7 @@ def main() -> int:
         system_price_settlement = args.settlement_price == "system"
     cfg = EpecConfig(
         investors=investors,
+        node_limit_mw=args.node_limit_mw,
         update_rule=args.update_rule,
         damping=args.damping,
         max_iters=args.max_iters,

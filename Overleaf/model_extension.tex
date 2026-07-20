@@ -6,6 +6,11 @@
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{array,longtable}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{mathptmx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc}
 \usepackage[hidelinks]{hyperref}
 
 \setlength{\mathindent}{0pt}
@@ -251,5 +256,190 @@ CAPEX^{daily}_i
 \noindent The EPEC is solved by diagonalization over the investors. In each pass an investor solves its MPEC while every rival is frozen at its current capacities and represented as one aggregated, non-strategic storage unit inside the lower-level clearing. Updates use either Gauss--Jacobi (all investors respond to the same previous iterate) or Gauss--Seidel (sequential); capacity iterates are damped, and after each pass the joint capacities are projected onto the shared nodal access limit \(\sum_i X^{power}_{i,n}\le Limit^{node}_n\), preserving each investor's energy-to-power ratio.
 
 \paragraph{Settlement and diagnostics.} Reported quantities are \emph{not} the embedded belief prices. Once the diagonalization converges, the market is cleared once more with all installed fleets fixed, and profits are settled at the resulting neutral prices \(\pi_{n,t}\) (the dual of the nodal balance for LMP settlement, or of the system balance for single-zone settlement). For each investor the model reports settled profit, the belief-minus-settled gap, and the maximum absolute difference between the embedded MPEC prices and the neutral clearing prices, so the effect of optimistic dual selection is quantified rather than hidden.
+
+\paragraph{Robustness check against a non-strategic benchmark.} Non-unique lower-level duals raise a natural concern: if the belief price each investor embeds is not unique, is the converged capacity vector itself an artifact of which price happened to be selected, rather than a genuine equilibrium outcome? This is addressed by comparing the converged EPEC to a non-strategic benchmark that solves the identical lower-level physics --- generation dispatch, curtailment, PTDF network, storage/SOC dynamics --- and the identical shared nodal access limit and \(Ratio^{min}/Ratio^{max}\) envelope, but chooses every \(X^{power}_{i,n},X^{energy}_{i,n}\) jointly to minimize total system resource cost instead of as competing profit-maximizers. Two quantities are reported from this comparison: (i) the aggregate gap, the relative difference between total EPEC and total planner installed power/energy, \(\big|\sum_{i,n}X^{power}_{i,n}-\sum_n X^{power,\text{planner}}_n\big|/\sum_n X^{power,\text{planner}}_n\); and (ii) the siting divergence, an \(L^1\) distance between the two nodal allocation vectors after normalizing both to the same total, isolating \emph{where} capacity is placed from \emph{how much} is built. A small aggregate gap together with a non-trivial siting divergence is the expected signature when the underlying degeneracy is spatial: by standard LP duality, multiple primal optima (several nodes achieving essentially the same system cost, as evidenced by the near-zero spread in their settled hourly prices) are the counterpart of a degenerate dual, i.e.\ of the very price non-uniqueness that optimistic dual selection exploits. Under this reading, optimistic dual selection is expected to bias \emph{which} node and \emph{which investor} the capacity is attributed to, and each investor's profit level, but not the total quantity the system supports, which is instead pinned by the point where system-wide marginal storage value equals marginal storage cost.
+
+\section*{Nine-Bus Test Network}
+
+% Geometry-only network skeleton. Electrical data and component annotations are
+% intentionally omitted.
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  transmission/.style={
+    draw=black,
+    line width=0.75pt,
+    line cap=round,
+    line join=round
+  },
+  crossing/.style={
+    transmission,
+    preaction={draw=white,line width=3.0pt,line cap=round}
+  },
+  busbar/.style={
+    draw=black,
+    line width=2.4pt,
+    line cap=butt
+  },
+  bus label/.style={
+    font=\small,
+    inner sep=1pt
+  },
+  line label/.style={
+    font=\footnotesize,
+    fill=white,
+    inner sep=1.2pt
+  },
+  generator/.style={
+    circle,
+    draw=black,
+    fill=white,
+    line width=0.9pt,
+    minimum size=0.58cm,
+    inner sep=0pt,
+    font=\small
+  },
+  load arrow/.style={
+    draw=black,
+    line width=0.75pt,
+    -{Latex[length=4.5pt,width=3.4pt]}
+  },
+  component label/.style={
+    font=\small,
+    inner sep=1pt
+  }
+]
+
+% ---------------------------------------------------------------------------
+% Adjustable bus coordinates, arranged to match the reference skeleton.
+% The upper buses are vertical; the middle and lower buses are horizontal.
+% ---------------------------------------------------------------------------
+\coordinate (n2) at (-6.00, 3.00);
+\coordinate (n7) at (-3.80, 3.00);
+\coordinate (n8) at ( 0.00, 3.00);
+\coordinate (n9) at ( 3.80, 3.00);
+\coordinate (n3) at ( 6.00, 3.00);
+\coordinate (n5) at (-2.60, 0.60);
+\coordinate (n6) at ( 2.60, 0.60);
+\coordinate (n4) at ( 0.00,-1.20);
+\coordinate (n1) at ( 0.00,-3.00);
+
+% Generator symbol coordinates.
+\coordinate (g2) at (-7.10, 3.00);
+\coordinate (g3) at ( 7.10, 3.00);
+\coordinate (g1) at ( 0.00,-4.15);
+
+% ---------------------------------------------------------------------------
+% Transmission connections (drawn before the busbars)
+% ---------------------------------------------------------------------------
+
+% Upper spine and the two outer links.
+\draw[transmission] (n2) -- (n7); % N2--N7
+\draw[transmission] (n7) -- (n8); % N7--N8
+\draw[transmission] (n8) -- (n9); % N8--N9
+\draw[transmission] (n9) -- (n3); % N9--N3
+
+% Left and right descending sides of the reference skeleton.
+\draw[transmission]
+  (n5) -- (-2.60,2.40) -- ($(n7)+(0,-0.60)$); % N7--N5
+\draw[transmission]
+  ($(n5)+(0.80,0)$) -- ($(n4)+(-1.80,0)$); % N5--N4
+\draw[transmission]
+  ($(n4)+(1.80,0)$) -- ($(n6)+(-0.80,0)$); % N4--N6
+\draw[transmission]
+  (n6) -- ( 2.60,2.40) -- ($(n9)+(0,-0.60)$); % N6--N9
+
+% Lower central link; transformer symbols are intentionally omitted.
+\draw[transmission] (n4) -- (n1); % N4--N1
+
+% Generator connections.
+\draw[transmission] (n2) -- (g2);
+\draw[transmission] (n3) -- (g3);
+\draw[transmission] (n1) -- (g1);
+
+% Load connections: C at Bus 8, A at Bus 5, and B at Bus 6.
+\draw[load arrow]
+  ($(n8)+(0,0.68)$) -- ($(n8)+(0.95,0.68)$);
+\draw[load arrow]
+  ($(n5)+(-0.65,0)$) -- ($(n5)+(-0.65,-0.85)$);
+\draw[load arrow]
+  ($(n6)+(0.65,0)$) -- ($(n6)+(0.65,-0.85)$);
+
+% ---------------------------------------------------------------------------
+% Busbars (drawn last so they remain visually dominant)
+% ---------------------------------------------------------------------------
+
+% Standard vertical busbars at the two outer buses.
+\foreach \bus in {n2,n3}{
+  \draw[busbar]
+    ($(\bus)+(0,-0.43)$) -- ($(\bus)+(0,0.43)$);
+}
+
+% Bus 8 extends farther in the positive y direction.
+\draw[busbar] ($(n8)+(0,-0.43)$) -- ($(n8)+(0,0.86)$);
+
+% Buses 7 and 9 extend farther in the negative y direction.
+\foreach \bus in {n7,n9}{
+  \draw[busbar]
+    ($(\bus)+(0,-0.86)$) -- ($(\bus)+(0,0.43)$);
+}
+
+% Buses 5 and 6 extend equally in both x directions.
+\foreach \bus in {n5,n6}{
+  \draw[busbar]
+    ($(\bus)+(-1.00,0)$) -- ($(\bus)+(1.00,0)$);
+}
+
+% Bus 4 spans beneath Buses 5 and 6 so both connections can be vertical.
+\draw[busbar] ($(n4)+(-2.80,0)$) -- ($(n4)+(2.80,0)$);
+
+% Bus 1 retains the standard horizontal length.
+\draw[busbar] ($(n1)+(-0.62,0)$) -- ($(n1)+(0.62,0)$);
+
+% ---------------------------------------------------------------------------
+% Bus names
+% ---------------------------------------------------------------------------
+\node[bus label] at ($(n2)+(0,-0.68)$) {Bus 2};
+\node[bus label] at ($(n7)+(-0.55,-0.68)$) {Bus 7};
+\node[bus label] at ($(n8)+(0,-0.68)$) {Bus 8};
+\node[bus label] at ($(n9)+(0.48,-0.58)$) {Bus 9};
+\node[bus label] at ($(n3)+(0,-0.68)$) {Bus 3};
+\node[bus label] at ($(n5)+(-1.65,0)$) {Bus 5};
+\node[bus label] at ($(n6)+( 1.65,0)$) {Bus 6};
+\node[bus label] at ($(n4)+(-3.28,0)$) {Bus 4};
+\node[bus label] at ($(n1)+(-1.05,0)$) {Bus 1};
+
+% ---------------------------------------------------------------------------
+% Line names
+% ---------------------------------------------------------------------------
+\node[line label] at (-4.90,3.34) {Line 2--7};
+\node[line label] at (-1.90,3.34) {Line 7--8};
+\node[line label] at ( 1.90,3.34) {Line 8--9};
+\node[line label] at ( 4.90,3.34) {Line 3--9};
+\node[line label,rotate=90] at (-2.88,1.50) {Line 5--7};
+\node[line label,rotate=90] at (-2.08,-0.30) {Line 4--5};
+\node[line label,rotate=90] at ( 2.08,-0.30) {Line 4--6};
+\node[line label,rotate=90] at ( 2.88,1.50) {Line 6--9};
+\node[line label,rotate=90] at ( 0.30,-2.10) {Line 1--4};
+
+% Synchronous-generator symbols and names.
+\node[generator] at (g2) {$\sim$};
+\node[generator] at (g3) {$\sim$};
+\node[generator] at (g1) {$\sim$};
+\node[component label] at ($(g2)+(0,-0.55)$) {G2};
+\node[component label] at ($(g3)+(0,-0.55)$) {G3};
+\node[component label] at ($(g1)+(0,-0.55)$) {G1};
+
+% Load names.
+\node[component label] at ($(n8)+(1.48,0.68)$) {Load C};
+\node[component label] at ($(n5)+(-0.65,-1.12)$) {Load A};
+\node[component label] at ($(n6)+( 0.65,-1.12)$) {Load B};
+
+\end{tikzpicture}%
+}
+\end{figure}
 
 \end{document}

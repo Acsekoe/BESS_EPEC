@@ -1,0 +1,70 @@
+{
+  "data_path": "data\\processed\\market_data_IEEE_9Bus_congestion.json",
+  "update_rule": "seidel",
+  "settlement_price_basis": "nodal",
+  "dual_selection": "optimistic_mpec_no_price_penalty",
+  "damping": 0.7,
+  "max_iters": 60,
+  "tol_rel": 0.02,
+  "floor_mw": 1.0,
+  "floor_mwh": 2.0,
+  "seed_power_mw": 10.0,
+  "seed_ratio_hours": 2.0,
+  "node_limit_mw": 100.0,
+  "max_cpu_time": 120.0,
+  "dual_bound_scale": 10.0,
+  "investors": [
+    {
+      "investor_id": "I1",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {}
+    },
+    {
+      "investor_id": "I2",
+      "wacc": 0.12,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {}
+    },
+    {
+      "investor_id": "I3",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 0.8,
+        "RES_PV_N6": 0.19999999999999996,
+        "RES_PV_N8": 0.19999999999999996
+      }
+    },
+    {
+      "investor_id": "I4",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 0.19999999999999996,
+        "RES_PV_N6": 0.8,
+        "RES_PV_N8": 0.8
+      }
+    }
+  ]
+}

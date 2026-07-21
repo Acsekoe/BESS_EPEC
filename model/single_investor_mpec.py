@@ -399,14 +399,24 @@ def build_single_investor_mpec(
     rival_degradation_eur_per_mwh: float = DEFAULT_DEGRADATION_EUR_PER_MWH,
     dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
     system_price_settlement: bool = False,
+    capacity_price_eur_per_mw_day: Mapping[str, float] | None = None,
 ) -> pyo.ConcreteModel:
     """Build the one-investor MPEC.
 
     The rival fleet (``rival_power_mw``/``rival_energy_mwh`` per node, or the
     legacy uniform ``existing_power_mw``) is an exogenous, non-strategic BESS
-    unit inside the lower-level market clearing. It consumes part of the
-    shared nodal connection limit, so the investor can only add up to
-    ``node_limit_mw - rival_power_mw[n]`` at each node.
+    unit inside the lower-level market clearing.
+
+    By default (``capacity_price_eur_per_mw_day=None``) the shared nodal
+    connection limit is enforced as a private hard bound: the investor can only
+    add up to ``node_limit_mw - rival_power_mw[n]`` at each node. Passing
+    ``capacity_price_eur_per_mw_day`` switches to nodal access pricing: the
+    hard bound is dropped (only ``node_limit_mw`` remains as a generic
+    technical cap) and a capacity-access charge
+    ``sum_n capacity_price_eur_per_mw_day[n] * X_power[n]`` is added to the
+    investor's cost. The shared limit is then enforced only in aggregate, by
+    an outer price search around the diagonalization (see
+    ``epec_diagonalization.update_capacity_price``), not inside this MPEC.
 
     If ``use_demand_curve`` is false, demand is fixed and ``P_shed`` is fixed
     to zero for reporting only. If true, the lower level uses one quadratic
@@ -432,12 +442,21 @@ def build_single_investor_mpec(
         rival_energy_mwh = {node: existing_power_mw * existing_ratio_hours for node in data.nodes}
     elif rival_energy_mwh is None:
         raise ValueError("rival_energy_mwh is required when rival_power_mw is given.")
+    priced_access = capacity_price_eur_per_mw_day is not None
     for node in data.nodes:
         if rival_power_mw[node] < 0.0 or rival_energy_mwh[node] < 0.0:
             raise ValueError(f"Negative rival capacity at node {node}.")
-        if rival_power_mw[node] > node_limit_mw:
+        # Under nodal access pricing the shared limit is enforced in aggregate
+        # by the outer price search, not per-investor, so rivals can transiently
+        # sit above node_limit_mw while the price tâtonnement is still moving.
+        if not priced_access and rival_power_mw[node] > node_limit_mw:
             raise ValueError(f"Rival power at node {node} exceeds the nodal connection limit.")
-    invest_limit = {node: node_limit_mw - rival_power_mw[node] for node in data.nodes}
+    if priced_access:
+        capacity_price = dict(capacity_price_eur_per_mw_day)
+        invest_limit = {node: node_limit_mw for node in data.nodes}
+    else:
+        capacity_price = {node: 0.0 for node in data.nodes}
+        invest_limit = {node: node_limit_mw - rival_power_mw[node] for node in data.nodes}
     rival_active = any(v > 1e-9 for v in rival_power_mw.values())
     storage_units = [inv.investor_id] + ([rival_id] if rival_active else [])
     storage_degradation = {inv.investor_id: inv.degradation_eur_per_mwh}
@@ -761,8 +780,15 @@ def build_single_investor_mpec(
             for n in m.N
         )
     )
+    m.capacity_price_expr = pyo.Expression(
+        expr=sum(capacity_price[n] * m.X_power[n] for n in m.N)
+    )
     m.investor_profit_expr = pyo.Expression(
-        expr=m.spot_revenue_expr + m.generation_rent_expr - m.degradation_cost_expr - m.capex_daily_expr
+        expr=m.spot_revenue_expr
+        + m.generation_rent_expr
+        - m.degradation_cost_expr
+        - m.capex_daily_expr
+        - m.capacity_price_expr
     )
     # Clean EPEC baseline: the MPEC selects the dual/primal optimum that
     # maximizes investor profit. Any optimistic-price effect is diagnosed ex
@@ -778,6 +804,7 @@ def build_single_investor_mpec(
     m._existing_power_mw = existing_power_mw
     m._existing_ratio_hours = existing_ratio_hours
     m._node_limit_mw = node_limit_mw
+    m._capacity_price_eur_per_mw_day = dict(capacity_price)
     m._rival_id = rival_id
     m._rival_power_mw = dict(rival_power_mw)
     m._rival_energy_mwh = dict(rival_energy_mwh)

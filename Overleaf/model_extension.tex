@@ -79,6 +79,7 @@
 \(\gamma_{i,n,t}\) & Dual variable of the SOC transition equation. & \texteuro{}/MWh \\
 \(\delta^-_{i,n,\tau},\delta^+_{i,n,\tau}\) & Dual variables of the lower and upper SOC energy bounds. & \texteuro{}/MWh \\
 \(\xi^-_{n,t},\xi^+_{n,t}\) & Dual variables of the lower and upper load-shedding bounds. & \texteuro{}/MWh \\
+\(\lambda^{cap}_n\) & Nodal BESS connection-capacity price (planned extension): dual of the shared access limit, common to all investors. & \texteuro{}/MW/day \\
 \hline
 \multicolumn{3}{@{}l}{\textbf{Parameters}} \\
 \hline
@@ -258,6 +259,23 @@ CAPEX^{daily}_i
 \paragraph{Settlement and diagnostics.} Reported quantities are \emph{not} the embedded belief prices. Once the diagonalization converges, the market is cleared once more with all installed fleets fixed, and profits are settled at the resulting neutral prices \(\pi_{n,t}\) (the dual of the nodal balance for LMP settlement, or of the system balance for single-zone settlement). For each investor the model reports settled profit, the belief-minus-settled gap, and the maximum absolute difference between the embedded MPEC prices and the neutral clearing prices, so the effect of optimistic dual selection is quantified rather than hidden.
 
 \paragraph{Robustness check against a non-strategic benchmark.} Non-unique lower-level duals raise a natural concern: if the belief price each investor embeds is not unique, is the converged capacity vector itself an artifact of which price happened to be selected, rather than a genuine equilibrium outcome? This is addressed by comparing the converged EPEC to a non-strategic benchmark that solves the identical lower-level physics --- generation dispatch, curtailment, PTDF network, storage/SOC dynamics --- and the identical shared nodal access limit and \(Ratio^{min}/Ratio^{max}\) envelope, but chooses every \(X^{power}_{i,n},X^{energy}_{i,n}\) jointly to minimize total system resource cost instead of as competing profit-maximizers. Two quantities are reported from this comparison: (i) the aggregate gap, the relative difference between total EPEC and total planner installed power/energy, \(\big|\sum_{i,n}X^{power}_{i,n}-\sum_n X^{power,\text{planner}}_n\big|/\sum_n X^{power,\text{planner}}_n\); and (ii) the siting divergence, an \(L^1\) distance between the two nodal allocation vectors after normalizing both to the same total, isolating \emph{where} capacity is placed from \emph{how much} is built. A small aggregate gap together with a non-trivial siting divergence is the expected signature when the underlying degeneracy is spatial: by standard LP duality, multiple primal optima (several nodes achieving essentially the same system cost, as evidenced by the near-zero spread in their settled hourly prices) are the counterpart of a degenerate dual, i.e.\ of the very price non-uniqueness that optimistic dual selection exploits. Under this reading, optimistic dual selection is expected to bias \emph{which} node and \emph{which investor} the capacity is attributed to, and each investor's profit level, but not the total quantity the system supports, which is instead pinned by the point where system-wide marginal storage value equals marginal storage cost.
+
+\subsection*{Planned Extension: Nodal Access Pricing}
+
+\noindent The diagonalization above enforces \(\sum_i X^{power}_{i,n}\le Limit^{node}_n\) by giving each investor a private, iterate-dependent headroom bound and projecting the joint sum back onto the limit whenever it is exceeded. Because that headroom depends on which investors have already updated within the current pass, the resulting split is partly an artifact of solve order rather than of relative value. The planned extension replaces the private per-investor bound with one shared node price \(\lambda^{cap}_n\), so access is allocated by willingness to pay instead of by iteration order, while leaving the aggregate limit itself unchanged.
+
+\noindent Two changes to the upper-level problem:
+\begin{align*}
+&\text{(i) } X^{power}_{i,n} \text{ is no longer bounded by } Limit^{node}_n; \text{ only the } Ratio^{min}/Ratio^{max} \text{ envelope remains.}\\[2pt]
+&\text{(ii) } NPV_i \;\longrightarrow\; NPV_i - \sum_n \lambda^{cap}_n X^{power}_{i,n}.
+\end{align*}
+
+\noindent The shared constraint is enforced only in aggregate, through the market-clearing condition
+\begin{align*}
+0 \;\le\; \lambda^{cap}_n \;\perp\; \Big(Limit^{node}_n - \sum_i X^{power}_{i,n}\Big) \;\ge\; 0,
+\qquad \forall n,
+\end{align*}
+\noindent i.e.\ complementary slackness: a node with spare capacity clears at \(\lambda^{cap}_n=0\); a node where aggregate desired capacity would exceed \(Limit^{node}_n\) clears at the price that brings aggregate demand down to the limit exactly. \(\lambda^{cap}_n\) is found by an outer per-node price search wrapped around the existing investor diagonalization, replacing the current post-hoc projection step. As a direct by-product this traces out each investor's marginal willingness-to-pay curve \(X^{power}_{i,n}(\lambda^{cap}_n)\) at every node, which the projection-based mechanism cannot reveal.
 
 \section*{Nine-Bus Test Network}
 

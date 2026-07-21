@@ -28,6 +28,44 @@ from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
 
 
+ITERATION_HISTORY_FIELDS = [
+    "iteration",
+    "investor",
+    "termination",
+    "solve_seconds",
+    "optimistic_mpec_profit_eur_per_day",
+    "strong_duality_gap",
+    "total_power_mw",
+    "total_energy_mwh",
+    "max_rel_delta_power",
+    "max_rel_delta_energy",
+    "max_undamped_delta_power_mw",
+]
+
+CAPACITY_TRAJECTORY_FIELDS = [
+    "iteration",
+    "investor",
+    "node",
+    "x_power_mw",
+    "x_energy_mwh",
+    "proposed_x_power_mw",
+    "headroom_mw",
+]
+
+CAPACITY_PRICE_TRAJECTORY_FIELDS = [
+    "iteration",
+    "node",
+    "previous_capacity_price_eur_per_mw",
+    "capacity_price_eur_per_mw",
+    "capacity_price_change_eur_per_mw",
+    "total_power_mw",
+    "excess_mw",
+    "overload_mw",
+    "headroom_mw",
+    "projected_complementarity_residual_mw",
+]
+
+
 def _daily_capex(cfg_investor, state, nodes: list[str]) -> float:
     crf_daily = capital_recovery_factor(cfg_investor.wacc, cfg_investor.lifetime_years) / 365.25
     return crf_daily * sum(
@@ -178,6 +216,10 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         }
         for n in nodes
     }
+    max_node_overload = max(
+        max(0.0, shares["total_mw"] - shares["limit_mw"])
+        for shares in node_shares.values()
+    )
     return {
         "termination": termination,
         "joint_lower_level_objective_eur_per_day": value(reference.quad_objective),
@@ -187,6 +229,8 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "investors": investors_out,
         "node_shares": node_shares,
+        "max_node_overload_mw": max_node_overload,
+        "shared_limit_feasible": max_node_overload <= cfg.price_tol_mw,
         "reference_lambda": settle_price,
         "reference_model": reference,
     }
@@ -201,6 +245,13 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
         print(f"  final nodal capacity prices [EUR/MW/day]: {prices}")
     else:
         print(f"  projection events: {len(state.projection_events)}")
+    if not state.converged:
+        print("  WARNING: this is a diagnostic settlement of a nonconverged iterate, not an equilibrium result.")
+    if not settlement["shared_limit_feasible"]:
+        print(
+            "  WARNING: diagnostic settlement uses a fleet that exceeds a shared nodal limit by "
+            f"up to {settlement['max_node_overload_mw']:.3f} MW; it is not a feasible equilibrium."
+        )
     print(
         "  joint settlement lambda range: "
         f"{settlement['lambda_min_eur_per_mwh']:,.4f} to {settlement['lambda_max_eur_per_mwh']:,.4f} EUR/MWh"
@@ -221,6 +272,64 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
         print(f"    {n}: {parts}  (total {shares['total_mw']:.2f} / limit {shares['limit_mw']:.0f})")
 
 
+def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
+    """Persist lightweight traces after every completed EPEC iteration.
+
+    This deliberately avoids the joint market settlement and per-investor
+    model exports. If a run is interrupted during a later solve, the files
+    retain the last fully completed iteration and can be inspected directly.
+    """
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _write_csv(output_dir / "iteration_history.csv", ITERATION_HISTORY_FIELDS, state.history)
+    _write_csv(output_dir / "capacity_trajectory.csv", CAPACITY_TRAJECTORY_FIELDS, state.trajectory)
+    _write_csv(
+        output_dir / "capacity_price_trajectory.csv",
+        CAPACITY_PRICE_TRAJECTORY_FIELDS,
+        state.price_history,
+    )
+    nodes = list(state.capacity_price)
+    node_total_power = {
+        node: sum(state.x_power[inv.investor_id, node] for inv in cfg.investors)
+        for node in nodes
+    }
+    node_excess = {node: total - cfg.node_limit_mw for node, total in node_total_power.items()}
+    latest_price_residual = {
+        row["node"]: row["projected_complementarity_residual_mw"]
+        for row in state.price_history
+        if row["iteration"] == state.iteration
+    }
+    checkpoint = {
+        "status": state.stop_reason or f"in progress after iteration {state.iteration}",
+        "converged": state.converged,
+        "iteration": state.iteration,
+        "starting_iteration": cfg.starting_iteration,
+        "resume_from": cfg.resume_from,
+        "update_rule": cfg.update_rule,
+        "damping": cfg.damping,
+        "allocation_mechanism": cfg.allocation_mechanism,
+        "node_limit_mw": cfg.node_limit_mw,
+        "price_step_eur_per_mw": cfg.price_step_eur_per_mw,
+        "price_tol_mw": cfg.price_tol_mw,
+        "capacity_price_eur_per_mw": dict(state.capacity_price),
+        "node_total_power_mw": node_total_power,
+        "node_excess_mw": node_excess,
+        "max_node_overload_mw": max((max(0.0, value) for value in node_excess.values()), default=0.0),
+        "projected_complementarity_residual_mw": latest_price_residual,
+        "max_projected_complementarity_residual_mw": max(latest_price_residual.values(), default=0.0),
+        "x_power_mw": {
+            f"{investor}|{node}": value
+            for (investor, node), value in state.x_power.items()
+        },
+        "x_energy_mwh": {
+            f"{investor}|{node}": value
+            for (investor, node), value in state.x_energy.items()
+        },
+    }
+    (output_dir / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2), encoding="utf-8")
+
+
 def export_epec_results(
     output_dir: Path, data: MarketData, state, cfg, settlement: dict, data_path: Path
 ) -> None:
@@ -236,6 +345,8 @@ def export_epec_results(
         "dual_selection": "optimistic_mpec_no_price_penalty",
         "damping": cfg.damping,
         "max_iters": cfg.max_iters,
+        "starting_iteration": cfg.starting_iteration,
+        "resume_from": cfg.resume_from,
         "tol_rel": cfg.tol_rel,
         "floor_mw": cfg.floor_mw,
         "floor_mwh": cfg.floor_mwh,
@@ -264,37 +375,11 @@ def export_epec_results(
     }
     (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2), encoding="utf-8")
 
-    _write_csv(
-        output_dir / "iteration_history.csv",
-        [
-            "iteration",
-            "investor",
-            "termination",
-            "solve_seconds",
-            "optimistic_mpec_profit_eur_per_day",
-            "strong_duality_gap",
-            "total_power_mw",
-            "total_energy_mwh",
-            "max_rel_delta_power",
-            "max_rel_delta_energy",
-            "max_undamped_delta_power_mw",
-        ],
-        state.history,
-    )
-    _write_csv(
-        output_dir / "capacity_trajectory.csv",
-        ["iteration", "investor", "node", "x_power_mw", "x_energy_mwh", "proposed_x_power_mw", "headroom_mw"],
-        state.trajectory,
-    )
+    export_epec_checkpoint(output_dir, state, cfg)
     _write_csv(
         output_dir / "projection_events.csv",
         ["iteration", "node", "total_before_mw", "scale"],
         state.projection_events,
-    )
-    _write_csv(
-        output_dir / "capacity_price_trajectory.csv",
-        ["iteration", "node", "capacity_price_eur_per_mw", "total_power_mw", "excess_mw"],
-        state.price_history,
     )
     _write_csv(
         output_dir / "final_capacities.csv",
@@ -352,6 +437,9 @@ def export_epec_results(
         "converged": state.converged,
         "stop_reason": state.stop_reason,
         "iterations": state.iteration,
+        "starting_iteration": cfg.starting_iteration,
+        "additional_max_iters": cfg.max_iters,
+        "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "damping": cfg.damping,
@@ -361,6 +449,8 @@ def export_epec_results(
         "final_capacity_price_eur_per_mw": dict(state.capacity_price) if cfg.allocation_mechanism == "price" else None,
         "investors": settlement_json["investors"],
         "node_shares": settlement_json["node_shares"],
+        "max_node_overload_mw": settlement["max_node_overload_mw"],
+        "shared_limit_feasible": settlement["shared_limit_feasible"],
         "joint_lambda_min_eur_per_mwh": settlement["lambda_min_eur_per_mwh"],
         "joint_lambda_max_eur_per_mwh": settlement["lambda_max_eur_per_mwh"],
     }

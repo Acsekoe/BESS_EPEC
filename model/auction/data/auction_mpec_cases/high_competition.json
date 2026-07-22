@@ -1,0 +1,25 @@
+{
+  "description": "Every node is oversubscribed by the three fixed rivals; stresses marginal bidding and displacement behavior.",
+  "investors": {
+    "I1": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 45, "N2": 45, "N3": 60, "N4": 45, "N5": 45, "N6": 45, "N7": 45, "N8": 75, "N9": 60},
+      "price_eur_per_mw_day_by_node": {"N1": 16, "N2": 16, "N3": 22, "N4": 16, "N5": 16, "N6": 16, "N7": 16, "N8": 32, "N9": 24}
+    },
+    "I2": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 50, "N2": 50, "N3": 65, "N4": 50, "N5": 50, "N6": 50, "N7": 50, "N8": 80, "N9": 65},
+      "price_eur_per_mw_day_by_node": {"N1": 18, "N2": 18, "N3": 25, "N4": 18, "N5": 18, "N6": 18, "N7": 18, "N8": 35, "N9": 27}
+    },
+    "I3": {
+      "duration_hours": 6.0,
+      "quantity_mw_by_node": {"N1": 45, "N2": 45, "N3": 60, "N4": 45, "N5": 45, "N6": 45, "N7": 45, "N8": 70, "N9": 60},
+      "price_eur_per_mw_day_by_node": {"N1": 15, "N2": 15, "N3": 21, "N4": 15, "N5": 15, "N6": 15, "N7": 15, "N8": 29, "N9": 23}
+    },
+    "I4": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 45, "N2": 45, "N3": 60, "N4": 45, "N5": 45, "N6": 45, "N7": 45, "N8": 75, "N9": 65},
+      "price_eur_per_mw_day_by_node": {"N1": 14, "N2": 14, "N3": 20, "N4": 14, "N5": 14, "N6": 14, "N7": 14, "N8": 31, "N9": 25}
+    }
+  }
+}

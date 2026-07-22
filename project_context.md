@@ -1,6 +1,6 @@
 # Project Context: Strategic BESS Investment in Nodal Spot Markets
 
-Last updated: 2026-07-20
+Last updated: 2026-07-22
 
 ## Current objective
 
@@ -29,13 +29,13 @@ components are:
 - a 2-8 hour energy-to-power envelope;
 - shared nodal BESS connection limits, configurable from a 100 MW default;
 - annualized power and energy CAPEX using investor-specific WACC;
-- physical degradation cost of 15 EUR/MWh of throughput;
-- a small common dispatch regularizer, currently `1e-4 EUR/MW2h`, used as a
-  neutral primal-dispatch tie-break.
+- physical degradation cost of 15 EUR/MWh of throughput.
 
-The processed datasets include a 5-bus euro system and a 9-bus system. They use
-the same broad system-wide demand and generation quantities but different network
-topologies and nodal placement.
+The active empirical scope is the calibrated IEEE-9 congestion system. It is
+designed to retain manageable evening prices, midday solar-export congestion at
+N8, and a 100 MW shared BESS connection limit per node. The older 5-bus euro
+system and earlier IEEE-9 calibrations remain in the repository as historical
+cases but are not the current thesis benchmark.
 
 ## Models and solution methods
 
@@ -52,19 +52,30 @@ market transfers, and generator rents do not enter its objective.
 ### Single-investor MPEC
 
 `model/single_investor_mpec.py` lets one strategic investor choose nodal BESS MW
-and MWh while anticipating the spot-market response through the lower-level KKT
-conditions and Wolfe strong duality. The investor earns storage spot revenue and,
-if portfolio-backed, its share of existing generator rent, net of degradation and
-CAPEX.
+and MWh while anticipating the spot-market response through primal feasibility,
+dual feasibility, stationarity, and Wolfe strong duality. This is equivalent to
+the lower-level KKT system for the convex market-clearing problem, with strong
+duality replacing explicit complementarity equations. The investor earns storage
+spot revenue and, if portfolio-backed, its share of existing generator rent, net
+of degradation and CAPEX.
 
-The lower-level objective and the independent reference-market QP both include
-the same storage degradation and primal dispatch regularization.
+The lower-level objective and the independent reference market use the same
+storage-degradation cost. No artificial dispatch regularizer is included.
 
 ### Multi-investor EPEC
 
 `model/epec_diagonalization.py` couples investor MPECs through shared nodal
 connection limits and market outcomes. It supports Gauss-Jacobi and Gauss-Seidel
 updates with damping and feasibility projection.
+
+The maintained algorithm uses private rival-headroom bounds and a final
+shared-limit projection safeguard. Checkpoint/resume support persists MW and MWh
+strategies after every completed iteration. Experimental access-price code was
+removed after its projected price iterations failed to converge.
+
+The later two-follower access-auction MPEC experiment, its Gauss-Seidel driver,
+bid profiles, and diagnostic outputs are archived under `model/auction/`. They
+are not part of the maintained spot-market EPEC workflow.
 
 The main four-investor specification is:
 
@@ -75,22 +86,27 @@ The main four-investor specification is:
 
 ## Current empirical result
 
-Total installed BESS power is approximately **326.6 MW** in the tested cases:
+For the active IEEE-9 congestion case with a 100 MW nodal connection limit:
 
-- 9-bus central planner at 100 MW and 200 MW nodal limits;
-- 9-bus four-investor EPEC at the 100 MW nodal limit;
-- 5-bus four-investor EPEC at the 200 MW nodal limit.
+- the central planner installs **238.924 MW / 826.862 MWh**;
+- the original four-investor projection EPEC installs **239.004 MW /
+  827.044 MWh** and converges in seven Gauss-Seidel iterations;
+- a cross-machine verification run installs **238.939 MW / 826.9 MWh** and
+  converges in eight iterations;
+- both the planner and EPEC place 100 MW at N8, while the remaining small
+  planner-EPEC siting difference is mainly a shift between N3 and N9;
+- approximate EPEC social cost, revalued at the planner's 8% WACC, is about
+  0.134% above the planner cost.
 
-The current interpretation is that aggregate storage quantity is mainly pinned by
-system-wide arbitrage economics. Strategic ownership, topology, and nodal limits
-primarily change **where capacity is installed, who owns it, and how rents are
-distributed**. In the planner runs, relaxing the nodal limit changes siting but
-leaves total capacity and total cost unchanged.
+The close aggregate match is an observed result for this calibration, not a
+mathematical proof that strategic behavior or dual selection cannot change
+aggregate investment. Strategic ownership still materially changes rent
+allocation, and fine siting remains weakly identified where nodes have similar
+price profiles.
 
-This equality is an important empirical finding, but it is **not a mathematical
-proof** that strategic behavior or dual selection can never change aggregate
-capacity. Results must be described as applying to the tested systems and
-parameters.
+The previously reported approximately 326.6 MW equality belongs to earlier
+network calibrations. It is a historical sensitivity result, not the headline
+quantity for the active IEEE-9 congestion case.
 
 ## Dual-price nonuniqueness
 
@@ -100,19 +116,29 @@ an optimistic convention and can select prices favorable to the investor. Those
 prices can differ materially from the prices returned by the independent joint
 market reclear.
 
-In the standalone test with degradation and regularization:
-
-- investment was 49.3 MW;
-- MPEC and reference primal-dispatch profits agreed when evaluated at the same
-  reference prices;
-- the maximum MPEC-reference LMP difference remained about 16.25 EUR/MWh;
-- the optimistic-reference profit gap remained about 1.36 kEUR/day.
-
-The four-investor results also contain material optimistic-versus-settlement
-profit differences. Consequently, the current EPEC result should be presented as
-an **optimistic-equilibrium convention or candidate equilibrium**, not as a
+In the active IEEE-9 four-investor projection result, the maximum MPEC-versus-
+joint-settlement LMP difference is about 44.57 EUR/MWh. Merchant investors I1
+and I2 have last-iteration optimistic MPEC profits of about 13.5 and 5.7
+kEUR/day, respectively, but joint-settlement profits of about -0.04 and -0.30
+kEUR/day. Consequently, the current EPEC result should be presented as an
+**optimistic-equilibrium convention or candidate equilibrium**, not as a
 unique-price or fully verified equilibrium. Fine nodal allocation and investor
 rents are less firmly identified than aggregate capacity.
+
+## Discarded nodal access-price experiment
+
+Both sweep-level and investor-level projected access-price updates were tested.
+Neither eliminated the discontinuous multi-node capacity cycle. The final
+investor-level run was stopped after iteration 19 with N8 at 132.06 MW, an N8
+price of 74.49 EUR/MW/day, and a 32.06 MW overload/residual; all completed MPEC
+solves in that run were optimal. The failure was therefore algorithmic rather
+than attributable to solver termination.
+
+These saved runs are diagnostic and must not be reported as equilibria, clearing
+access prices, or settled investor profits. The maintained code no longer
+contains access-price variables, payments, price updates, or related CLI flags.
+If nodal access allocation is revisited, use a separate explicit merit-order
+auction design rather than extending the discarded tâtonnement code.
 
 ## Chosen thesis direction: expose the dual face
 
@@ -164,27 +190,33 @@ does and does not identify.
 
 ## Current priorities
 
-1. Implement the dual-face revenue/profit bounds first in the standalone MPEC or
-   reference-market workflow, then apply them to the four-investor result.
+1. Implement the dual-face revenue/profit bounds for the converged IEEE-9
+   projection EPEC, using a standalone/reference-market check first if useful.
 2. Produce the four-investor interval graph with optimistic and joint-settlement
    markers.
 3. Prepare a like-for-like 9-bus planner-versus-EPEC comparison at the same nodal
    limit, emphasizing aggregate quantity, siting, prices, and system cost.
 4. Add the benchmark and dual-nonuniqueness interpretation to
    `Overleaf_Alex/model_extension.tex`.
-5. Keep a unique neutral pricing rule, such as minimum-norm dual pricing, as a
-   possible robustness extension if the dual-face ranges undermine the intended
-   interpretation; it is not the immediate primary task.
-6. Return to nodal-access auction design only after the benchmark and dual-face
-   analysis are documented.
+5. If nodal access allocation is revisited, formulate it as a separate explicit
+   quantity-and-price bid auction with deterministic merit-order clearing.
+6. Keep a unique neutral electricity-pricing rule, such as minimum-norm dual
+   pricing, as a possible robustness extension if the dual-face ranges undermine
+   the intended interpretation; it is not the immediate primary task.
+7. Return to broader nodal-access auction design only after the benchmark and
+   dual-face analysis are documented.
 
 ## Important current caveats
 
-- The 5-bus 200 MW EPEC run reached its 45-iteration limit without formal
-  convergence, although aggregate MW and MWh were stable.
-- The saved 9-bus four-investor run had zero projection events; its remaining
-  energy movement was mainly relocation across near-price-equivalent nodes.
+- The 5-bus results and the earlier approximately 326.6 MW result are historical
+  sensitivities, not the active empirical benchmark.
+- The saved IEEE-9 four-investor projection run converged with zero projection
+  events; its small cross-machine siting variation was mainly relocation across
+  near-price-equivalent nodes.
+- The discarded access-price runs are infeasible and nonconverged, with
+  persistent multi-node cycling; their output folders are diagnostic history.
 - Loose nodal limits can produce overinvestment and negative settled merchant
   profit even when the optimistic MPEC reports positive incentives.
-- The central planner and EPEC agree on aggregate MW in the current cases but
+- The central planner and projection EPEC approximately agree on aggregate MW in
+  the active IEEE-9 case but
   differ in siting, ownership, prices, and rent allocation.

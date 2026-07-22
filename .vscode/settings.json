@@ -4,5 +4,8 @@
     "python.terminal.activateEnvironment": true,
     "terminal.integrated.env.windows": {
         "PATH": "C:\\Users\\Alexander\\AppData\\Local\\idaes\\bin;${env:PATH}"
+    },
+    "[latex]": {
+        "editor.wordWrap": "on"
     }
 }

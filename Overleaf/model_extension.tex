@@ -190,23 +190,7 @@ D^{el}_{n,t},\; Limit_l,\; PTDF_{l,n},\; \eta,\; VOLL.
 
 \subsection*{Upper-Level Investment Structure}
 
-\noindent Each investor chooses nodal BESS power and energy capacity before the lower-level spot market clears. The shared nodal access constraint is the core competition mechanism:
-\begin{align*}
-&\sum_i X^{power}_{i,n} \le Limit^{node}_n,
-  &&\forall n.
-\end{align*}
-
-\noindent A practical storage-sizing envelope should be retained:
-\begin{align*}
-&Ratio^{min} X^{power}_{i,n}
-\le
-X^{energy}_{i,n}
-\le
-Ratio^{max} X^{power}_{i,n},
-&&\forall i,n.
-\end{align*}
-
-\noindent Each investor maximizes deterministic spot-market profit from its BESS arbitrage and its owned generation, net of degradation and annualized CAPEX:
+\noindent Each investor chooses nodal BESS power and energy capacity before the lower-level spot market clears, maximizing deterministic spot-market profit from its BESS arbitrage and its owned generation, net of degradation and annualized CAPEX:
 \begin{align*}
 \max \; NPV_i
 =&
@@ -238,6 +222,22 @@ CAPEX^{daily}_i
 
 \noindent The settlement price \(\pi_{n,t}\) is, by default, the nodal marginal price \(\lambda_{n,t}\) (locational marginal pricing). The implementation also supports a uniform single-zone settlement in which \(\pi_{n,t}=\lambda_{sys,t}\) for all nodes, used to study how bidding-zone pricing distorts siting relative to nodal pricing.
 
+\noindent Investment is subject to two constraints. The shared nodal access constraint is the core competition mechanism:
+\begin{align*}
+&\sum_i X^{power}_{i,n} \le Limit^{node}_n,
+  &&\forall n.
+\end{align*}
+
+\noindent A practical storage-sizing envelope is retained, with a 2--8 hour energy-to-power ratio:
+\begin{align*}
+&2 \, X^{power}_{i,n}
+\le
+X^{energy}_{i,n}
+\le
+8 \, X^{power}_{i,n},
+&&\forall i,n.
+\end{align*}
+
 \noindent Investor heterogeneity enters through WACC, CAPEX, degradation, and business model. A \emph{stand-alone merchant} investor operates only BESS. A \emph{portfolio-backed} investor additionally owns a share \(s_{i,g}\in[0,1]\) of one or more of the exogenous generators already present in the lower level and collects the corresponding inframarginal spot rent \(GenRent_i\), where \(MC_g\) is the generator marginal cost, \(P_{gen,g,t}\) its cleared output, and \(n(g)\) its node; renewables have \(C_g=0\). Ownership shares are exogenous and enter only the upper-level objective, so the lower-level clearing is unchanged. Since the price \(\pi_{n,t}\) and dispatch \(P_{g,t}\) are shared with the lower level, a portfolio investor anticipates how its own BESS siting shifts the price its generation earns --- for example a solar-heavy investor time-shifting midday PV output to lift its otherwise near-zero midday nodal price.
 
 \subsection*{Lower-Level Embedding (MPEC)}
@@ -250,7 +250,7 @@ CAPEX^{daily}_i
 \end{itemize}
 \noindent The investor's installed capacities \(X^{power}_{i,n},X^{energy}_{i,n}\) and the price \(\pi_{n,t}\) enter this MPEC simultaneously, so the investor anticipates the market-clearing response of its own investment.
 
-\paragraph{Optimistic dual selection.} At congested or curtailed node-hours the lower-level dual is not unique, and the maximization is free to select the most favorable optimal price from that set. The embedded (``belief'') prices therefore differ from the neutral clearing prices, and the difference is reported as a diagnostic (see below). Both a generation-side and a storage-side Tikhonov regularization of the lower level were tested to remove this freedom; both either distorted the merit order/equilibrium or failed to shrink the gap at an economically negligible magnitude, so no primal regularization is used in the reported model.
+\paragraph{Optimistic dual selection.} At congested or curtailed node-hours the lower-level dual is not unique, and the maximization is free to select the most favorable optimal price from that set. The embedded (``belief'') prices therefore differ from the neutral clearing prices, and the difference is reported as a diagnostic (see below).
 
 \subsection*{Equilibrium Solution and Price Settlement}
 

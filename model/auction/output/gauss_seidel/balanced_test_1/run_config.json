@@ -1,0 +1,28 @@
+{
+  "data_path": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_congestion.json",
+  "initial_bids_path": "model\\data\\input\\auction_mpec_cases\\balanced_competition.json",
+  "output_dir": "model\\output\\gauss_seidel\\balanced_test_1",
+  "investor_order": [
+    "I1",
+    "I2",
+    "I3",
+    "I4"
+  ],
+  "node_limit_mw": 100.0,
+  "min_bid_price_eur_per_mw_day": 0.0,
+  "max_bid_price_eur_per_mw_day": 100.0,
+  "max_iterations": 1,
+  "max_cpu_time": 60.0,
+  "dual_bound_scale": 10.0,
+  "damping": 1.0,
+  "quantity_tolerance_mw": 0.05,
+  "price_tolerance_eur_per_mw_day": 0.05,
+  "duration_tolerance_hours": 0.01,
+  "award_tolerance_mw": 0.05,
+  "active_award_zero_tolerance_mw": 0.0001,
+  "outside_option_tolerance_eur_per_day": 0.01,
+  "max_consecutive_failures": 3,
+  "use_outside_option": false,
+  "resume_path": null,
+  "tee": false
+}

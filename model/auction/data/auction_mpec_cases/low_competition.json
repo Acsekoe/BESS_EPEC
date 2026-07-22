@@ -1,0 +1,25 @@
+{
+  "description": "Low rival quantities at every IEEE-9 node; tests residual-capacity and optimistic zero-price allocation behavior.",
+  "investors": {
+    "I1": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 10, "N2": 10, "N3": 15, "N4": 10, "N5": 10, "N6": 10, "N7": 10, "N8": 20, "N9": 15},
+      "price_eur_per_mw_day_by_node": {"N1": 2, "N2": 2, "N3": 3, "N4": 2, "N5": 2, "N6": 2, "N7": 2, "N8": 4, "N9": 3}
+    },
+    "I2": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 8, "N2": 8, "N3": 12, "N4": 8, "N5": 8, "N6": 8, "N7": 8, "N8": 18, "N9": 12},
+      "price_eur_per_mw_day_by_node": {"N1": 3, "N2": 3, "N3": 5, "N4": 3, "N5": 3, "N6": 3, "N7": 3, "N8": 7, "N9": 5}
+    },
+    "I3": {
+      "duration_hours": 6.0,
+      "quantity_mw_by_node": {"N1": 12, "N2": 12, "N3": 18, "N4": 12, "N5": 12, "N6": 12, "N7": 12, "N8": 25, "N9": 18},
+      "price_eur_per_mw_day_by_node": {"N1": 2, "N2": 2, "N3": 4, "N4": 2, "N5": 2, "N6": 2, "N7": 2, "N8": 6, "N9": 4}
+    },
+    "I4": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 10, "N2": 10, "N3": 15, "N4": 10, "N5": 10, "N6": 10, "N7": 10, "N8": 22, "N9": 15},
+      "price_eur_per_mw_day_by_node": {"N1": 2.5, "N2": 2.5, "N3": 4, "N4": 2.5, "N5": 2.5, "N6": 2.5, "N7": 2.5, "N8": 5.5, "N9": 4}
+    }
+  }
+}

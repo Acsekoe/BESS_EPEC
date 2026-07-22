@@ -1,0 +1,5 @@
+iteration,investor,selection,candidate_termination,candidate_seconds,candidate_profit_eur_per_day,candidate_auction_gap,candidate_spot_gap,baseline_termination,baseline_profit_eur_per_day,selected_total_award_mw,max_quantity_change_mw,max_price_change_eur_per_mw_day,max_duration_change_hours,response_max_award_change_mw
+1,I1,retain_after_solver_failure,maxIterations,60.34719270002097,-3208.2606663718884,-8.023464943107683e-06,0.0026889228029176593,skipped,nan,255.00000237132247,0.0,0.0,0.0,0.0
+1,I2,candidate,optimal,18.3069942999864,-2550.247517752886,-7.6232045103097335e-06,0.0023969741887412965,skipped,nan,1.8648704183614486,20.0,10.0,1.9999999999191558,59.056237070442585
+1,I3,retain_after_solver_failure,maxIterations,60.155181500012986,139234.6860648054,1.4484038729278836e-05,-0.003401099645998329,skipped,nan,214.501488570415,0.0,0.0,0.0,0.0
+1,I4,candidate,optimal,11.708015899988823,204335.5126473169,-5.5309383242274635e-06,0.0024892224464565516,skipped,nan,5.547628310276096,20.0,6.0,1.9999999986122639,43.29435354315588

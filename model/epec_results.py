@@ -28,6 +28,9 @@ from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
 
 
+#### Export schemas
+# -----------------------------------------------------------------------------
+
 ITERATION_HISTORY_FIELDS = [
     "iteration",
     "investor",
@@ -52,19 +55,8 @@ CAPACITY_TRAJECTORY_FIELDS = [
     "headroom_mw",
 ]
 
-CAPACITY_PRICE_TRAJECTORY_FIELDS = [
-    "iteration",
-    "node",
-    "previous_capacity_price_eur_per_mw",
-    "capacity_price_eur_per_mw",
-    "capacity_price_change_eur_per_mw",
-    "total_power_mw",
-    "excess_mw",
-    "overload_mw",
-    "headroom_mw",
-    "projected_complementarity_residual_mw",
-]
-
+#### Joint market settlement
+# -----------------------------------------------------------------------------
 
 def _daily_capex(cfg_investor, state, nodes: list[str]) -> float:
     crf_daily = capital_recovery_factor(cfg_investor.wacc, cfg_investor.lifetime_years) / 365.25
@@ -127,19 +119,10 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             mc = data.generation_cost[g]
             generation_rent += share * sum(
                 (settle_price[n, t] - mc) * value(reference.P_gen[g, t]) for t in reference.T
-            )
+        )
         degradation = 0.5 * inv.degradation_eur_per_mwh * (charge + discharge)
         capex = _daily_capex(inv, state, nodes)
-        # Under nodal access pricing the investor's MPEC objective already
-        # nets out this payment (see capacity_price_expr), so settlement must
-        # too, or settled profit would be inflated relative to what the
-        # optimistic MPEC value and the investor's real cash flow reflect.
-        capacity_price_payment = (
-            sum(state.capacity_price.get(n, 0.0) * state.x_power[i, n] for n in nodes)
-            if cfg.allocation_mechanism == "price"
-            else 0.0
-        )
-        settled_profit = revenue + generation_rent - degradation - capex - capacity_price_payment
+        settled_profit = revenue + generation_rent - degradation - capex
 
         # Capacity-proportional attribution of each node-hour's aggregate
         # storage rent: the other end of the dispatch-degeneracy band.
@@ -164,7 +147,6 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             + generation_rent
             - 0.5 * inv.degradation_eur_per_mwh * alt_throughput
             - capex
-            - capacity_price_payment
         )
 
         optimistic_profit = next(
@@ -197,7 +179,6 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             "owned_generation_shares": dict(inv.owned_generation_shares),
             "settled_degradation_eur_per_day": degradation,
             "capex_daily_eur_per_day": capex,
-            "capacity_price_payment_eur_per_day": capacity_price_payment,
             "settled_profit_eur_per_day": settled_profit,
             "capacity_proportional_profit_eur_per_day": alt_profit,
             "dispatch_attribution_band_eur_per_day": abs(settled_profit - alt_profit),
@@ -212,7 +193,6 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             **{i: state.x_power[i, n] for i in units},
             "total_mw": sum(state.x_power[i, n] for i in units),
             "limit_mw": cfg.node_limit_mw,
-            "capacity_price_eur_per_mw": state.capacity_price.get(n, 0.0),
         }
         for n in nodes
     }
@@ -230,7 +210,7 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         "investors": investors_out,
         "node_shares": node_shares,
         "max_node_overload_mw": max_node_overload,
-        "shared_limit_feasible": max_node_overload <= cfg.price_tol_mw,
+        "shared_limit_feasible": max_node_overload <= 1e-6,
         "reference_lambda": settle_price,
         "reference_model": reference,
     }
@@ -238,13 +218,9 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
 
 def print_epec_summary(state, cfg, settlement: dict) -> None:
     print("\nEPEC result")
-    print(f"  update rule: {cfg.update_rule}, damping: {cfg.damping}, allocation: {cfg.allocation_mechanism}")
+    print(f"  update rule: {cfg.update_rule}, damping: {cfg.damping}")
     print(f"  status: {state.stop_reason}")
-    if cfg.allocation_mechanism == "price":
-        prices = ", ".join(f"{n}={p:.3f}" for n, p in state.capacity_price.items())
-        print(f"  final nodal capacity prices [EUR/MW/day]: {prices}")
-    else:
-        print(f"  projection events: {len(state.projection_events)}")
+    print(f"  projection events: {len(state.projection_events)}")
     if not state.converged:
         print("  WARNING: this is a diagnostic settlement of a nonconverged iterate, not an equilibrium result.")
     if not settlement["shared_limit_feasible"]:
@@ -266,11 +242,14 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
             f" attribution band {row['dispatch_attribution_band_eur_per_day']:8,.2f})"
         )
     print("  per-node power shares [MW]:")
-    non_investor_keys = ("total_mw", "limit_mw", "capacity_price_eur_per_mw")
+    non_investor_keys = ("total_mw", "limit_mw")
     for n, shares in settlement["node_shares"].items():
         parts = ", ".join(f"{i}={shares[i]:.2f}" for i in shares if i not in non_investor_keys)
         print(f"    {n}: {parts}  (total {shares['total_mw']:.2f} / limit {shares['limit_mw']:.0f})")
 
+
+#### Checkpoint export
+# -----------------------------------------------------------------------------
 
 def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
     """Persist lightweight traces after every completed EPEC iteration.
@@ -284,22 +263,12 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(output_dir / "iteration_history.csv", ITERATION_HISTORY_FIELDS, state.history)
     _write_csv(output_dir / "capacity_trajectory.csv", CAPACITY_TRAJECTORY_FIELDS, state.trajectory)
-    _write_csv(
-        output_dir / "capacity_price_trajectory.csv",
-        CAPACITY_PRICE_TRAJECTORY_FIELDS,
-        state.price_history,
-    )
-    nodes = list(state.capacity_price)
+    nodes = sorted({node for _, node in state.x_power})
     node_total_power = {
         node: sum(state.x_power[inv.investor_id, node] for inv in cfg.investors)
         for node in nodes
     }
     node_excess = {node: total - cfg.node_limit_mw for node, total in node_total_power.items()}
-    latest_price_residual = {
-        row["node"]: row["projected_complementarity_residual_mw"]
-        for row in state.price_history
-        if row["iteration"] == state.iteration
-    }
     checkpoint = {
         "status": state.stop_reason or f"in progress after iteration {state.iteration}",
         "converged": state.converged,
@@ -308,16 +277,10 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
         "damping": cfg.damping,
-        "allocation_mechanism": cfg.allocation_mechanism,
         "node_limit_mw": cfg.node_limit_mw,
-        "price_step_eur_per_mw": cfg.price_step_eur_per_mw,
-        "price_tol_mw": cfg.price_tol_mw,
-        "capacity_price_eur_per_mw": dict(state.capacity_price),
         "node_total_power_mw": node_total_power,
         "node_excess_mw": node_excess,
         "max_node_overload_mw": max((max(0.0, value) for value in node_excess.values()), default=0.0),
-        "projected_complementarity_residual_mw": latest_price_residual,
-        "max_projected_complementarity_residual_mw": max(latest_price_residual.values(), default=0.0),
         "x_power_mw": {
             f"{investor}|{node}": value
             for (investor, node), value in state.x_power.items()
@@ -329,6 +292,9 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
     }
     (output_dir / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2), encoding="utf-8")
 
+
+#### Final result export
+# -----------------------------------------------------------------------------
 
 def export_epec_results(
     output_dir: Path, data: MarketData, state, cfg, settlement: dict, data_path: Path
@@ -355,9 +321,6 @@ def export_epec_results(
         "node_limit_mw": cfg.node_limit_mw,
         "max_cpu_time": cfg.max_cpu_time,
         "dual_bound_scale": cfg.dual_bound_scale,
-        "allocation_mechanism": cfg.allocation_mechanism,
-        "price_step_eur_per_mw": cfg.price_step_eur_per_mw,
-        "price_tol_mw": cfg.price_tol_mw,
         "investors": [
             {
                 "investor_id": inv.investor_id,
@@ -444,9 +407,7 @@ def export_epec_results(
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "damping": cfg.damping,
         "tol_rel": cfg.tol_rel,
-        "allocation_mechanism": cfg.allocation_mechanism,
         "projection_event_count": len(state.projection_events),
-        "final_capacity_price_eur_per_mw": dict(state.capacity_price) if cfg.allocation_mechanism == "price" else None,
         "investors": settlement_json["investors"],
         "node_shares": settlement_json["node_shares"],
         "max_node_overload_mw": settlement["max_node_overload_mw"],

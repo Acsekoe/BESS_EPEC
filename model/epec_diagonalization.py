@@ -14,12 +14,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pyomo.environ as pyo
+
+# The maintained primal/dual market modules currently live in this subfolder.
+_MODEL_DIR = Path(__file__).resolve().parent
+_PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
+if _PRIMAL_DUAL_DIR.is_dir() and str(_PRIMAL_DUAL_DIR) not in sys.path:
+    sys.path.append(str(_PRIMAL_DUAL_DIR))
 
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_mpec import (
@@ -34,6 +41,10 @@ from single_investor_mpec import (
     initialize_from_reference_dispatch,
 )
 from solver_utils import get_ipopt_solver
+
+
+#### Constants and investor profiles
+# -----------------------------------------------------------------------------
 
 RIVAL_ID = "RIV"
 
@@ -88,6 +99,9 @@ DEFAULT_FLOOR_MWH = 2.0
 DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parent / "output" / "epec"
 
 
+#### Configuration and state
+# -----------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class EpecConfig:
     investors: tuple[InvestorConfig, ...]
@@ -105,15 +119,6 @@ class EpecConfig:
     max_consecutive_failures: int = 3
     print_mpec_lambdas: bool = False
     system_price_settlement: bool = SYSTEM_PRICE_SETTLEMENT
-    # "projection": today's mechanism -- private per-investor headroom bound,
-    # joint sum clipped back onto node_limit_mw after each pass.
-    # "price": nodal access pricing -- the bound is dropped, investors pay
-    # capacity_price[n] per MW, and one shared price per node is found by an
-    # projected dual-price update so that aggregate demand respects
-    # node_limit_mw and complementary slackness holds at every node.
-    allocation_mechanism: str = "projection"  # "projection" | "price"
-    price_step_eur_per_mw: float = 0.05  # EUR/MW/day added per MW of node oversubscription; needs empirical tuning
-    price_tol_mw: float = 1.0  # tolerance on the projected complementarity residual, expressed in MW
     starting_iteration: int = 0
     resume_from: str | None = None
 
@@ -138,23 +143,24 @@ class BestResponse:
 class EpecState:
     x_power: dict[tuple[str, str], float]  # (investor_id, node) -> MW, damped iterate
     x_energy: dict[tuple[str, str], float]  # (investor_id, node) -> MWh
-    capacity_price: dict[str, float] = field(default_factory=dict)  # node -> EUR/MW/day, "price" mechanism only
     iteration: int = 0
     converged: bool = False
     stop_reason: str = ""
     history: list[dict] = field(default_factory=list)  # one row per (iteration, investor)
-    price_history: list[dict] = field(default_factory=list)  # one row per (iteration, node), "price" mechanism only
     trajectory: list[dict] = field(default_factory=list)  # one row per (iteration, investor, node)
     projection_events: list[dict] = field(default_factory=list)
     final_models: dict[str, pyo.ConcreteModel] = field(default_factory=dict)
 
+
+#### Checkpoint and resume
+# -----------------------------------------------------------------------------
 
 def load_checkpoint_state(
     checkpoint_or_directory: Path,
     data: MarketData,
     cfg: EpecConfig,
 ) -> tuple[EpecState, Path]:
-    """Restore capacities and nodal access prices from a completed-iteration checkpoint."""
+    """Restore MW and MWh strategies from a completed-iteration checkpoint."""
 
     checkpoint_path = Path(checkpoint_or_directory)
     if checkpoint_path.is_dir():
@@ -163,11 +169,6 @@ def load_checkpoint_state(
         raise ValueError(f"Resume checkpoint does not exist: {checkpoint_path}")
 
     raw = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-    if raw.get("allocation_mechanism") != cfg.allocation_mechanism:
-        raise ValueError(
-            "Resume checkpoint allocation mechanism does not match this run "
-            f"({raw.get('allocation_mechanism')!r} != {cfg.allocation_mechanism!r})."
-        )
     if abs(float(raw.get("node_limit_mw", float("nan"))) - cfg.node_limit_mw) > 1e-9:
         raise ValueError("Resume checkpoint node limit does not match this run.")
 
@@ -188,18 +189,16 @@ def load_checkpoint_state(
             raise ValueError(f"Checkpoint capacity keys do not match this run (missing={missing}, extra={extra}).")
         return restored
 
-    capacity_price = {node: float(value_) for node, value_ in raw["capacity_price_eur_per_mw"].items()}
-    if set(capacity_price) != nodes:
-        raise ValueError("Checkpoint nodal capacity-price keys do not match the dataset nodes.")
-
     state = EpecState(
         x_power=read_capacity("x_power_mw"),
         x_energy=read_capacity("x_energy_mwh"),
-        capacity_price=capacity_price,
         iteration=int(raw["iteration"]),
     )
     return state, checkpoint_path.resolve()
 
+
+#### Rival aggregation and investor best responses
+# -----------------------------------------------------------------------------
 
 def aggregate_rival_capacity(
     state: EpecState, cfg: EpecConfig, nodes: list[str], active_id: str
@@ -214,13 +213,9 @@ def aggregate_rival_capacity(
         for n in nodes:
             rival_power[n] += state.x_power[inv.investor_id, n]
             rival_energy[n] += state.x_energy[inv.investor_id, n]
-    if cfg.allocation_mechanism == "projection":
-        # Numerical guard: post-projection sums can sit epsilon above the limit.
-        for n in nodes:
-            rival_power[n] = min(rival_power[n], cfg.node_limit_mw)
-    # Under "price", nodes can transiently sit above node_limit_mw while the
-    # price tâtonnement is still converging; rival_power must reflect the real
-    # (uncapped) installed capacity for the lower-level dispatch physics.
+    # Numerical guard: post-projection sums can sit epsilon above the limit.
+    for n in nodes:
+        rival_power[n] = min(rival_power[n], cfg.node_limit_mw)
     return rival_power, rival_energy
 
 
@@ -233,7 +228,6 @@ def solve_best_response(
     rival_energy: dict[str, float],
     x_prev_power: dict[str, float],
     x_prev_energy: dict[str, float],
-    capacity_price: dict[str, float] | None = None,
     tee: bool = False,
 ) -> BestResponse:
     """One investor's MPEC against the fixed rival fleet, warm-started from its previous iterate."""
@@ -251,13 +245,11 @@ def solve_best_response(
             initial_power_mw=cfg.seed_power_mw,
             initial_ratio_hours=cfg.seed_ratio_hours,
             system_price_settlement=cfg.system_price_settlement,
-            capacity_price_eur_per_mw_day=capacity_price,
         )
         for n in model.N:
-            # Under "price" the technical cap is node_limit_mw itself (no rival
-            # deduction); under "projection" it is the private headroom. Either
-            # way this only seeds Ipopt's starting point, never the real bound.
-            cap = cfg.node_limit_mw if capacity_price is not None else max(0.0, cfg.node_limit_mw - rival_power[n])
+            # Seed Ipopt inside the investor's private rival-headroom bound.
+            # The actual bound remains part of the MPEC.
+            cap = max(0.0, cfg.node_limit_mw - rival_power[n])
             power = min(max(0.0, shrink * x_prev_power[n]), cap)
             energy = min(
                 max(investor.ratio_min * power, shrink * x_prev_energy[n]),
@@ -314,6 +306,9 @@ def apply_damped_update(
         state.x_energy[inv_id, n] = (1.0 - a) * state.x_energy[inv_id, n] + a * response.proposed_energy[n]
 
 
+#### Shared nodal limit
+# -----------------------------------------------------------------------------
+
 def project_joint_limit(state: EpecState, cfg: EpecConfig, nodes: list[str]) -> None:
     """Scale capacities down where the joint nodal sum exceeds the connection limit.
 
@@ -336,52 +331,8 @@ def project_joint_limit(state: EpecState, cfg: EpecConfig, nodes: list[str]) -> 
         print(f"  [projection] iter {state.iteration}, node {n}: {total:.3f} MW -> {cfg.node_limit_mw:.1f} MW")
 
 
-def update_capacity_price(
-    state: EpecState, cfg: EpecConfig, nodes: list[str]
-) -> tuple[dict[str, float], dict[str, float]]:
-    """One subgradient step on the shared nodal capacity price.
-
-    Raises the price where aggregate installed power exceeds node_limit_mw,
-    lowers it (never below zero) where the node has slack. This is the price
-    counterpart of ``project_joint_limit``: instead of clipping capacities
-    back onto the limit after the fact, it nudges the common cost signal every
-    investor's MPEC sees, so the limit is approached from the demand side.
-    Returns both signed nodal excess (installed minus limit, MW) and the
-    projected fixed-point residual
-
-        |lambda - projection_+(lambda + step * excess)| / step.
-
-    This residual is zero both at a binding node with a positive clearing
-    price and at a slack node whose clearing price is zero. Unlike
-    ``abs(excess)``, it therefore represents the intended complementary-
-    slackness condition rather than incorrectly requiring every node to fill.
-    """
-
-    excess: dict[str, float] = {}
-    projected_residual: dict[str, float] = {}
-    for n in nodes:
-        total = sum(state.x_power[inv.investor_id, n] for inv in cfg.investors)
-        excess[n] = total - cfg.node_limit_mw
-        old_price = state.capacity_price[n]
-        new_price = max(0.0, old_price + cfg.price_step_eur_per_mw * excess[n])
-        projected_residual[n] = abs(new_price - old_price) / cfg.price_step_eur_per_mw
-        state.price_history.append(
-            {
-                "iteration": state.iteration,
-                "node": n,
-                "previous_capacity_price_eur_per_mw": old_price,
-                "capacity_price_eur_per_mw": new_price,
-                "capacity_price_change_eur_per_mw": new_price - old_price,
-                "total_power_mw": total,
-                "excess_mw": excess[n],
-                "overload_mw": max(0.0, excess[n]),
-                "headroom_mw": max(0.0, -excess[n]),
-                "projected_complementarity_residual_mw": projected_residual[n],
-            }
-        )
-        state.capacity_price[n] = new_price
-    return excess, projected_residual
-
+#### Diagnostics
+# -----------------------------------------------------------------------------
 
 def relative_delta(new: float, old: float, floor: float) -> float:
     return abs(new - old) / max(abs(old), floor)
@@ -401,6 +352,9 @@ def print_mpec_lambdas(iteration: int, response: BestResponse) -> None:
         print(f"  hour={int(t):2d}: {parts}")
 
 
+#### Jacobi and Gauss-Seidel diagonalization
+# -----------------------------------------------------------------------------
+
 def run_epec(
     data: MarketData,
     quad: QuadraticDemandCurve,
@@ -409,12 +363,8 @@ def run_epec(
     checkpoint_callback: Callable[[EpecState], None] | None = None,
     initial_state: EpecState | None = None,
 ) -> EpecState:
-    if cfg.allocation_mechanism not in {"projection", "price"}:
-        raise ValueError(f"Unknown allocation mechanism: {cfg.allocation_mechanism}")
-    if cfg.allocation_mechanism == "price" and cfg.price_step_eur_per_mw <= 0.0:
-        raise ValueError("price_step_eur_per_mw must be positive in price mode.")
-    if cfg.price_tol_mw < 0.0:
-        raise ValueError("price_tol_mw must be nonnegative.")
+    if cfg.update_rule not in {"jacobi", "seidel"}:
+        raise ValueError(f"Unknown update rule: {cfg.update_rule}")
     if cfg.max_iters <= 0:
         raise ValueError("max_iters must be positive.")
 
@@ -425,7 +375,6 @@ def run_epec(
         state = EpecState(
             x_power={(inv.investor_id, n): seed for inv in cfg.investors for n in nodes},
             x_energy={(inv.investor_id, n): seed * cfg.seed_ratio_hours for inv in cfg.investors for n in nodes},
-            capacity_price={n: 0.0 for n in nodes},
         )
     else:
         state = initial_state
@@ -438,8 +387,6 @@ def run_epec(
         x_energy_start = dict(state.x_energy)
         responses: list[BestResponse] = []
 
-        capacity_price = state.capacity_price if cfg.allocation_mechanism == "price" else None
-
         if cfg.update_rule == "jacobi":
             snapshot = EpecState(x_power=dict(state.x_power), x_energy=dict(state.x_energy))
             for inv in cfg.investors:
@@ -449,7 +396,6 @@ def run_epec(
                         data, quad, cfg, inv, rival_power, rival_energy,
                         {n: snapshot.x_power[inv.investor_id, n] for n in nodes},
                         {n: snapshot.x_energy[inv.investor_id, n] for n in nodes},
-                        capacity_price=capacity_price,
                         tee=tee,
                     )
                 )
@@ -463,25 +409,17 @@ def run_epec(
                     data, quad, cfg, inv, rival_power, rival_energy,
                     {n: state.x_power[inv.investor_id, n] for n in nodes},
                     {n: state.x_energy[inv.investor_id, n] for n in nodes},
-                    capacity_price=capacity_price,
                     tee=tee,
                 )
                 responses.append(response)
                 if response.ok:
                     apply_damped_update(state, cfg, nodes, response)
-        else:
-            raise ValueError(f"Unknown update rule: {cfg.update_rule}")
 
         if cfg.print_mpec_lambdas:
             for response in responses:
                 print_mpec_lambdas(iteration, response)
 
-        if cfg.allocation_mechanism == "projection":
-            excess = None
-            projected_price_residual = None
-            project_joint_limit(state, cfg, nodes)
-        else:
-            excess, projected_price_residual = update_capacity_price(state, cfg, nodes)
+        project_joint_limit(state, cfg, nodes)
 
         all_ok = all(r.ok for r in responses)
         max_rel_power = 0.0
@@ -533,26 +471,16 @@ def run_epec(
             f"{r.investor_id}={r.optimistic_mpec_profit_eur_per_day:,.0f}" if r.ok else f"{r.investor_id}=FAILED"
             for r in responses
         )
-        price_ok = True
-        price_note = ""
-        if excess is not None:
-            max_overload = max(max(0.0, v) for v in excess.values())
-            max_price_residual = max(projected_price_residual.values())
-            price_ok = max_price_residual <= cfg.price_tol_mw
-            price_note = (
-                f"  max overload={max_overload:.3f} MW"
-                f"  max price-KKT residual={max_price_residual:.3f} MW"
-            )
         print(
             f"iter {iteration:2d} [{cfg.update_rule}] max_rel dP={max_rel_power:.4f} dE={max_rel_energy:.4f}"
-            f"{price_note}  optimistic MPEC profit [EUR/day]: {optimistic}"
+            f"  optimistic MPEC profit [EUR/day]: {optimistic}"
         )
 
         should_stop = False
         if any(count >= cfg.max_consecutive_failures for count in consecutive_failures.values()):
             state.stop_reason = "aborted: repeated MPEC solve failures"
             should_stop = True
-        elif all_ok and max_rel_power < cfg.tol_rel and max_rel_energy < cfg.tol_rel and price_ok:
+        elif all_ok and max_rel_power < cfg.tol_rel and max_rel_energy < cfg.tol_rel:
             state.converged = True
             state.stop_reason = f"converged in {iteration} iterations"
             state.final_models = {r.investor_id: r.model for r in responses if r.model is not None}
@@ -570,6 +498,9 @@ def run_epec(
     print(state.stop_reason)
     return state
 
+
+#### Command-line interface
+# -----------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Multi-investor BESS EPEC via diagonalization")
@@ -606,29 +537,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-cpu-time", type=float, default=120.0)
     parser.add_argument("--dual-bound-scale", type=float, default=10.0)
     parser.add_argument(
-        "--allocation-mechanism",
-        choices=["projection", "price"],
-        default="projection",
-        help="'projection' (default): private per-investor headroom bound, joint sum clipped "
-        "onto node_limit_mw after each pass. 'price': nodal access pricing -- the bound is "
-        "dropped and one shared EUR/MW/day price per node is found by an outer subgradient "
-        "search so aggregate demand clears node_limit_mw.",
-    )
-    parser.add_argument(
-        "--price-step-eur-per-mw",
-        type=float,
-        default=0.05,
-        help="Subgradient step size for --allocation-mechanism price: EUR/MW/day added to a "
-        "node's price per MW of oversubscription. Needs empirical tuning, same as --damping.",
-    )
-    parser.add_argument(
-        "--price-tol-mw",
-        type=float,
-        default=1.0,
-        help="Convergence tolerance for --allocation-mechanism price: maximum projected "
-        "complementarity residual per node, MW. A slack node passes when its price is zero.",
-    )
-    parser.add_argument(
         "--print-mpec-lambdas",
         action="store_true",
         help="Print embedded MPEC nodal prices for every solved investor best response.",
@@ -647,7 +555,7 @@ def parse_args() -> argparse.Namespace:
         "--resume-from",
         type=Path,
         default=None,
-        help="Resume MW/MWh capacities and nodal access prices from a checkpoint.json file "
+        help="Resume MW/MWh strategies from a checkpoint.json file "
         "or a directory containing it. --max-iters then means additional iterations.",
     )
     parser.add_argument("--tee", action="store_true")
@@ -659,10 +567,6 @@ def main() -> int:
     args = parse_args()
     if not 0.0 < args.damping <= 1.0:
         raise SystemExit("--damping must be in (0, 1].")
-    if args.allocation_mechanism == "price" and args.price_step_eur_per_mw <= 0.0:
-        raise SystemExit("--price-step-eur-per-mw must be positive in price mode.")
-    if args.price_tol_mw < 0.0:
-        raise SystemExit("--price-tol-mw must be nonnegative.")
     if args.max_iters <= 0:
         raise SystemExit("--max-iters must be positive.")
     data = load_market_data(args.data)
@@ -691,9 +595,6 @@ def main() -> int:
         dual_bound_scale=args.dual_bound_scale,
         print_mpec_lambdas=args.print_mpec_lambdas,
         system_price_settlement=system_price_settlement,
-        allocation_mechanism=args.allocation_mechanism,
-        price_step_eur_per_mw=args.price_step_eur_per_mw,
-        price_tol_mw=args.price_tol_mw,
     )
     initial_state = None
     if args.resume_from is not None:
@@ -712,7 +613,6 @@ def main() -> int:
         f"(WACC {', '.join(f'{i.wacc:.1%}' for i in investors)}), "
         f"rule={cfg.update_rule}, damping={cfg.damping}, tol_rel={cfg.tol_rel}, "
         f"settlement price={'system (zonal)' if cfg.system_price_settlement else 'nodal (LMP)'}, "
-        f"allocation={cfg.allocation_mechanism}, "
         "dual_selection=optimistic"
     )
     for inv in investors:

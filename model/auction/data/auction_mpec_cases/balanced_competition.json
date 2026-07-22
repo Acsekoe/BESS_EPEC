@@ -1,0 +1,25 @@
+{
+  "description": "Moderate bids at all nodes with deliberate oversubscription at N3, N8, and N9.",
+  "investors": {
+    "I1": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 25, "N2": 25, "N3": 35, "N4": 25, "N5": 25, "N6": 25, "N7": 25, "N8": 55, "N9": 35},
+      "price_eur_per_mw_day_by_node": {"N1": 8, "N2": 8, "N3": 13, "N4": 8, "N5": 8, "N6": 8, "N7": 8, "N8": 22, "N9": 12}
+    },
+    "I2": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 20, "N2": 20, "N3": 30, "N4": 20, "N5": 20, "N6": 20, "N7": 20, "N8": 60, "N9": 30},
+      "price_eur_per_mw_day_by_node": {"N1": 10, "N2": 10, "N3": 15, "N4": 10, "N5": 10, "N6": 10, "N7": 10, "N8": 25, "N9": 14}
+    },
+    "I3": {
+      "duration_hours": 6.0,
+      "quantity_mw_by_node": {"N1": 25, "N2": 25, "N3": 40, "N4": 25, "N5": 25, "N6": 25, "N7": 25, "N8": 50, "N9": 35},
+      "price_eur_per_mw_day_by_node": {"N1": 7, "N2": 7, "N3": 12, "N4": 7, "N5": 7, "N6": 7, "N7": 7, "N8": 18, "N9": 11}
+    },
+    "I4": {
+      "duration_hours": 4.0,
+      "quantity_mw_by_node": {"N1": 20, "N2": 20, "N3": 30, "N4": 20, "N5": 20, "N6": 20, "N7": 20, "N8": 45, "N9": 40},
+      "price_eur_per_mw_day_by_node": {"N1": 6, "N2": 6, "N3": 10, "N4": 6, "N5": 6, "N6": 6, "N7": 6, "N8": 20, "N9": 14}
+    }
+  }
+}

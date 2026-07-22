@@ -1,0 +1,214 @@
+{
+  "iteration": 1,
+  "investor": "I4",
+  "selection": "candidate",
+  "candidate_termination": "optimal",
+  "candidate_seconds": 11.708015899988823,
+  "candidate_profit_eur_per_day": 204335.5126473169,
+  "candidate_auction_gap": -5.5309383242274635e-06,
+  "candidate_spot_gap": 0.0024892224464565516,
+  "baseline_termination": "skipped",
+  "baseline_profit_eur_per_day": NaN,
+  "selected_total_award_mw": 5.547628310276096,
+  "max_quantity_change_mw": 20.0,
+  "max_price_change_eur_per_mw_day": 6.0,
+  "max_duration_change_hours": 1.9999999986122639,
+  "response_max_award_change_mw": 43.29435354315588,
+  "candidate_summary": {
+    "termination": "optimal",
+    "interpretation": "local optimistic MPEC candidate",
+    "active_investor": "I4",
+    "permitted_active_nodes": [
+      "N1",
+      "N2",
+      "N3",
+      "N4",
+      "N5",
+      "N6",
+      "N7",
+      "N8",
+      "N9"
+    ],
+    "profit_eur_per_day": 204335.5126473169,
+    "spot_revenue_eur_per_day": 6127.26949856055,
+    "generation_rent_eur_per_day": 206872.24706933968,
+    "degradation_cost_eur_per_day": 4808.223023231736,
+    "capex_eur_per_day": 2375.781025700601,
+    "access_payment_eur_per_day": 1479.9998716509954,
+    "auction_primal_value_eur_per_day": 6679.999921518485,
+    "auction_dual_value_eur_per_day": 6679.999927049424,
+    "auction_strong_duality_gap": -5.5309383242274635e-06,
+    "spot_primal_value_eur_per_day": 434013.48420275695,
+    "spot_dual_value_eur_per_day": 434013.4817135345,
+    "spot_strong_duality_gap": 0.0024892224464565516,
+    "independent_auction_termination": "optimal",
+    "max_embedded_vs_reclear_award_difference_mw": 44.4322630722455,
+    "max_lmp_fraction_of_numerical_bound": 0.0002477004464755145,
+    "nodes": {
+      "N1": {
+        "active_bid_quantity_mw": 7.892533253238308e-08,
+        "active_bid_price_eur_per_mw_day": 3.5075313528626286,
+        "active_award_mw": 3.096878073975649e-08,
+        "active_energy_mwh": 1.0186121371580191e-07,
+        "active_duration_hours": null,
+        "total_award_mw": 50.00000049881269,
+        "rival_awards_mw": {
+          "I1": 25.000000233934973,
+          "I2": 2.2688369466196756e-09,
+          "I3": 25.000000231640097
+        }
+      },
+      "N2": {
+        "active_bid_quantity_mw": 7.210063716827073e-08,
+        "active_bid_price_eur_per_mw_day": 3.889440649810654,
+        "active_award_mw": 3.034715822335743e-08,
+        "active_energy_mwh": 1.0073957466428164e-07,
+        "active_duration_hours": null,
+        "total_award_mw": 50.00000049819106,
+        "rival_awards_mw": {
+          "I1": 25.000000233934973,
+          "I2": 2.2688369466200313e-09,
+          "I3": 25.000000231640097
+        }
+      },
+      "N3": {
+        "active_bid_quantity_mw": 43.14982719437276,
+        "active_bid_price_eur_per_mw_day": 9.999999823774326,
+        "active_award_mw": 24.99998878584228,
+        "active_energy_mwh": 49.999977613316645,
+        "active_duration_hours": 2.000000001665284,
+        "total_award_mw": 99.99998951791068,
+        "rival_awards_mw": {
+          "I1": 35.00000034010526,
+          "I2": 2.683176501690217e-09,
+          "I3": 40.00000038927996
+        }
+      },
+      "N4": {
+        "active_bid_quantity_mw": 7.892566552131711e-08,
+        "active_bid_price_eur_per_mw_day": 3.5075123182326506,
+        "active_award_mw": 3.0968750329735564e-08,
+        "active_energy_mwh": 1.0186115017537039e-07,
+        "active_duration_hours": null,
+        "total_award_mw": 50.00000049881266,
+        "rival_awards_mw": {
+          "I1": 25.000000233934973,
+          "I2": 2.2688369466200313e-09,
+          "I3": 25.000000231640097
+        }
+      },
+      "N5": {
+        "active_bid_quantity_mw": 7.839663216188856e-08,
+        "active_bid_price_eur_per_mw_day": 3.5369719856739206,
+        "active_award_mw": 3.0988945454968084e-08,
+        "active_energy_mwh": 1.0183259563266275e-07,
+        "active_duration_hours": null,
+        "total_award_mw": 50.000000498832854,
+        "rival_awards_mw": {
+          "I1": 25.000000233934973,
+          "I2": 2.2688369466200313e-09,
+          "I3": 25.000000231640097
+        }
+      },
+      "N6": {
+        "active_bid_quantity_mw": 7.824862638355611e-08,
+        "active_bid_price_eur_per_mw_day": 3.5412887009170095,
+        "active_award_mw": 3.088656132936116e-08,
+        "active_energy_mwh": 1.0174695703701274e-07,
+        "active_duration_hours": null,
+        "total_award_mw": 50.000000498730465,
+        "rival_awards_mw": {
+          "I1": 25.000000233934973,
+          "I2": 2.2688369466200313e-09,
+          "I3": 25.000000231640097
+        }
+      },
+      "N7": {
+        "active_bid_quantity_mw": 7.22698241327061e-08,
+        "active_bid_price_eur_per_mw_day": 3.8882074969813707,
+        "active_award_mw": 3.0564946772683954e-08,
+        "active_energy_mwh": 1.0117053622980174e-07,
+        "active_duration_hours": null,
+        "total_award_mw": 50.00000049840885,
+        "rival_awards_mw": {
+          "I1": 25.000000233934973,
+          "I2": 2.2688369466200313e-09,
+          "I3": 25.000000231640097
+        }
+      },
+      "N8": {
+        "active_bid_quantity_mw": 47.02101969436607,
+        "active_bid_price_eur_per_mw_day": 19.99999962547027,
+        "active_award_mw": 45.000000460015954,
+        "active_energy_mwh": 249.7041835116284,
+        "active_duration_hours": 5.548981799089072,
+        "total_award_mw": 100.0000009975953,
+        "rival_awards_mw": {
+          "I1": 55.00000053757934,
+          "I2": 0.0,
+          "I3": 0.0
+        }
+      },
+      "N9": {
+        "active_bid_quantity_mw": 31.587590731427948,
+        "active_bid_price_eur_per_mw_day": 10.999999805642586,
+        "active_award_mw": 30.00000009175862,
+        "active_energy_mwh": 60.00000022514932,
+        "active_duration_hours": 2.000000001387736,
+        "total_award_mw": 100.00000078491257,
+        "rival_awards_mw": {
+          "I1": 35.00000033872869,
+          "I2": 1.6780045719750467e-08,
+          "I3": 35.00000033764522
+        }
+      }
+    }
+  },
+  "baseline": null,
+  "selected_strategy": {
+    "quantity_mw": {
+      "N1": 0.0,
+      "N2": 0.0,
+      "N3": 43.14982719437276,
+      "N4": 0.0,
+      "N5": 0.0,
+      "N6": 0.0,
+      "N7": 0.0,
+      "N8": 47.02101969436607,
+      "N9": 31.587590731427948
+    },
+    "price_eur_per_mw_day": {
+      "N1": 0.0,
+      "N2": 0.0,
+      "N3": 9.999999823774326,
+      "N4": 0.0,
+      "N5": 0.0,
+      "N6": 0.0,
+      "N7": 0.0,
+      "N8": 19.99999962547027,
+      "N9": 10.999999805642586
+    },
+    "duration_hours": {
+      "N1": 4.0,
+      "N2": 4.0,
+      "N3": 2.000000001665284,
+      "N4": 4.0,
+      "N5": 4.0,
+      "N6": 4.0,
+      "N7": 4.0,
+      "N8": 5.548981799089072,
+      "N9": 2.000000001387736
+    },
+    "awards_mw": {
+      "N1": 5.015539367092932e-13,
+      "N2": 5.015539367075941e-13,
+      "N3": 2.0298272789748095,
+      "N4": 5.015539367075941e-13,
+      "N5": 5.015539367075941e-13,
+      "N6": 5.015539367075941e-13,
+      "N7": 5.015539367075941e-13,
+      "N8": 0.7618834130442905,
+      "N9": 2.755917618253987
+    }
+  }
+}

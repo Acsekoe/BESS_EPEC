@@ -1,0 +1,235 @@
+{
+  "iteration": 1,
+  "investor": "I2",
+  "selection": "candidate",
+  "termination": "optimal",
+  "solve_seconds": 38.677177599980496,
+  "profit_eur_per_day": 18699.722577390534,
+  "selected_tick_price_eur_per_mw_day": 0.01,
+  "access_payment_eur_per_day": 0.9999999862555412,
+  "auction_strong_duality_gap": -3.57813017437536e-07,
+  "spot_strong_duality_gap": 0.0035759505699388683,
+  "max_abs_price_dual_fraction_of_bound": 0.20136714624200683,
+  "max_abs_internal_dual_fraction_of_bound": 0.7332483216869083,
+  "embedded_storage_pair_count": 10,
+  "variable_count": 2854,
+  "constraint_count": 2847,
+  "selected_total_bid_quantity_mw": 99.99999980529549,
+  "selected_total_award_mw": 99.99999862555411,
+  "max_quantity_change_mw": 99.99999980529549,
+  "max_price_change_eur_per_mw_day": 0.01,
+  "max_duration_change_hours": 0.7112632154195122,
+  "max_award_change_mw": 99.99999862555411,
+  "response_summary": {
+    "termination": "optimal",
+    "interpretation": "local optimistic continuous-bid MPEC candidate",
+    "formulation": "leader + auction primal/dual/strong-duality + spot primal/dual/strong-duality",
+    "payment_rule": "pay_as_bid",
+    "bid_merit_tie_break_epsilon_eur_per_mw_day": 0.001,
+    "priority_offset_eur_per_mw_day": {
+      "I1": 0.002,
+      "I2": 0.001
+    },
+    "active_investor": "I2",
+    "permitted_active_nodes": [
+      "N8"
+    ],
+    "profit_eur_per_day": 18699.722577390534,
+    "spot_revenue_eur_per_day": 29611.441431553845,
+    "generation_rent_eur_per_day": 0.0,
+    "degradation_cost_eur_per_day": 7082.35737200985,
+    "capex_eur_per_day": 3828.361482167205,
+    "access_payment_eur_per_day": 0.9999999862555412,
+    "auction_primal_value_eur_per_day": 1.0999999895005983,
+    "auction_dual_value_eur_per_day": 1.1000003473136157,
+    "auction_strong_duality_gap": -3.57813017437536e-07,
+    "spot_primal_value_eur_per_day": 444679.9829221028,
+    "spot_dual_value_eur_per_day": 444679.9793461522,
+    "spot_strong_duality_gap": 0.0035759505699388683,
+    "independent_auction_termination": "optimal",
+    "max_embedded_vs_reclear_award_difference_mw": 2.168353375964216e-06,
+    "price_bound_eur_per_mwh": 500.0,
+    "dual_bound_eur_per_mwh": 10000.0,
+    "max_abs_price_dual": 100.68357312100342,
+    "max_abs_price_dual_name": "lam[('N2', 12)]",
+    "max_abs_price_dual_fraction_of_bound": 0.20136714624200683,
+    "max_abs_internal_dual": 7332.483216869084,
+    "max_abs_internal_dual_name": "rho_ch[('I2', 'N9', 16)]",
+    "max_abs_internal_dual_fraction_of_bound": 0.7332483216869083,
+    "embedded_storage_pair_count": 10,
+    "positive_generator_hour_count": 100,
+    "variable_count": 2854,
+    "constraint_count": 2847,
+    "nodes": {
+      "N1": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N2": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N3": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N4": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N5": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N6": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N7": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.622927970138127e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      },
+      "N8": {
+        "active_bid_quantity_mw": 99.99999980529549,
+        "active_bid_price_eur_per_mw_day": 0.01,
+        "active_award_mw": 99.99999862555411,
+        "active_energy_mwh": 471.1263150665749,
+        "active_duration_hours": 4.711263215419512,
+        "total_award_mw": 100.00000093530568,
+        "auction_capacity_dual_eur_per_mw_day": 0.007709953810750448,
+        "rival_awards_mw": {
+          "I1": 2.3097515641742943e-06
+        }
+      },
+      "N9": {
+        "active_bid_quantity_mw": 0.0,
+        "active_bid_price_eur_per_mw_day": 0.0,
+        "active_award_mw": 0.0,
+        "active_energy_mwh": 3.6229279701315096e-12,
+        "active_duration_hours": null,
+        "total_award_mw": 0.0,
+        "auction_capacity_dual_eur_per_mw_day": 0.0,
+        "rival_awards_mw": {}
+      }
+    },
+    "solve_seconds": 15.346704700030386
+  },
+  "tick_candidate_diagnostics": [
+    {
+      "fixed_bid_price_eur_per_mw_day": 0.0,
+      "termination": "optimal",
+      "valid": false,
+      "rejection_reasons": [
+        "auction_award_reclear_mismatch"
+      ],
+      "elapsed_seconds": 21.470474499976262,
+      "profit_eur_per_day": 6678.377484436381,
+      "access_payment_eur_per_day": 0.0,
+      "payment_reconciliation_residual_eur_per_day": 0.0,
+      "max_embedded_vs_reclear_award_difference_mw": 0.009563589189561128,
+      "auction_strong_duality_gap": -8.999531769887659e-06,
+      "spot_strong_duality_gap": 0.0033713066368363798
+    },
+    {
+      "fixed_bid_price_eur_per_mw_day": 0.01,
+      "termination": "optimal",
+      "valid": true,
+      "rejection_reasons": [],
+      "elapsed_seconds": 15.346704700030386,
+      "profit_eur_per_day": 18699.722577390534,
+      "access_payment_eur_per_day": 0.9999999862555412,
+      "payment_reconciliation_residual_eur_per_day": 0.0,
+      "max_embedded_vs_reclear_award_difference_mw": 2.168353375964216e-06,
+      "auction_strong_duality_gap": -3.57813017437536e-07,
+      "spot_strong_duality_gap": 0.0035759505699388683
+    }
+  ],
+  "selected_strategy": {
+    "quantity_mw": {
+      "N1": 0.0,
+      "N2": 0.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 0.0,
+      "N6": 0.0,
+      "N7": 0.0,
+      "N8": 99.99999980529549,
+      "N9": 0.0
+    },
+    "price_eur_per_mw_day": {
+      "N1": 0.0,
+      "N2": 0.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 0.0,
+      "N6": 0.0,
+      "N7": 0.0,
+      "N8": 0.01,
+      "N9": 0.0
+    },
+    "duration_hours": {
+      "N1": 4.0,
+      "N2": 4.0,
+      "N3": 4.0,
+      "N4": 4.0,
+      "N5": 4.0,
+      "N6": 4.0,
+      "N7": 4.0,
+      "N8": 4.711263215419512,
+      "N9": 4.0
+    },
+    "awards_mw": {
+      "N1": 0.0,
+      "N2": 0.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 0.0,
+      "N6": 0.0,
+      "N7": 0.0,
+      "N8": 99.99999862555411,
+      "N9": 0.0
+    }
+  }
+}

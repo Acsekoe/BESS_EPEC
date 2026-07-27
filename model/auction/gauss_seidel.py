@@ -1,19 +1,18 @@
-"""Gauss-Seidel diagonalization for a configurable investor access-auction game.
+"""Gauss-Jacobi or Gauss-Seidel diagonalization of the clean auction EPEC.
 
-Each investor solves the reusable one-leader/two-follower MPEC against the
-latest fixed rival bid vectors. Accepted updates are applied immediately, so
-later investors in a sweep observe earlier same-sweep changes. The economic
-game remains simultaneous; Gauss-Seidel is the numerical fixed-point method.
-
-Every candidate response is compared with an explicit zero-bid outside option
-by default. This prevents a locally solved, positive-award response from being
-accepted when the investor can earn more by staying out of the auction.
+In Jacobi mode every investor solves against one frozen bid snapshot, all bid
+proposals are applied simultaneously, and one common auction determines the
+new awards. Seidel mode applies each response immediately. Continuous mode uses
+one solve per investor. Exact tick mode enumerates economically distinct
+fixed-price candidates with deterministic sub-tick merit priority. There is no
+damping, outside-option re-solve, or continuous-price rounding.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -21,22 +20,31 @@ from typing import Any, Mapping
 
 import pyomo.environ as pyo
 
+_AUCTION_DIR = Path(__file__).resolve().parent
+_MODEL_DIR = _AUCTION_DIR.parent
+_PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
+for module_dir in (_MODEL_DIR, _PRIMAL_DUAL_DIR):
+    if str(module_dir) not in sys.path:
+        sys.path.append(str(module_dir))
+
 from config import GaussSeidelConfig, parse_gauss_seidel_cli
+from auction_epec_results import (
+    compute_joint_auction_settlement,
+    export_joint_auction_settlement,
+    print_joint_auction_summary,
+)
+from nodal_access_auction_primal import Bid, awarded_mw, build_primal as build_auction_primal
+from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_auction_mpec import (
     RivalBid,
     build_one_leader_two_follower_mpec,
     initialize_from_independent_followers,
     load_rival_bid_vector,
-    pay_as_bid_tick_candidate_diagnostic,
     pay_as_bid_tick_candidates,
     solve_mpec,
     summarize,
+    tick_candidate_diagnostic,
 )
-
-# Importing the MPEC above installs the current ``Primal and dual problems``
-# directory as a module fallback before these moved standalone helpers load.
-from nodal_access_auction_primal import Bid, awarded_mw, build_primal as build_auction_primal
-from primal_market_clearing_model import MarketData, load_market_data, value
 from solver_utils import get_ipopt_solver
 
 
@@ -53,12 +61,9 @@ class StrategyState:
 class SolveRecord:
     termination: str
     seconds: float
-    profit_eur_per_day: float
-    auction_gap: float
-    spot_gap: float
     model: pyo.ConcreteModel
-    summary: dict[str, object] | None = None
-    selected_tick_candidate: str | None = None
+    summary: dict[str, object]
+    selected_tick_price_eur_per_mw_day: float | None = None
     tick_candidate_diagnostics: tuple[dict[str, object], ...] = ()
 
 
@@ -75,46 +80,76 @@ def _jsonable(value_to_convert: Any) -> Any:
 
 
 def validate_config(cfg: GaussSeidelConfig) -> None:
+    if cfg.update_rule not in {"jacobi", "seidel"}:
+        raise ValueError("Update rule must be 'jacobi' or 'seidel'.")
     if len(set(cfg.investor_order)) != len(cfg.investor_order):
         raise ValueError("Investor order contains duplicates.")
     if len(cfg.investor_order) < 2:
         raise ValueError("At least two investors are required for auction competition.")
-    if cfg.node_limit_mw <= 0.0:
-        raise ValueError("Nodal auction limit must be positive.")
-    if not 0.0 <= cfg.min_bid_price_eur_per_mw_day <= cfg.max_bid_price_eur_per_mw_day:
-        raise ValueError("Bid-price bounds must satisfy 0 <= minimum <= maximum.")
-    if cfg.tie_break_epsilon_eur_per_mw_day < 0.0:
-        raise ValueError("Tie-break epsilon must be nonnegative.")
-    if cfg.bid_price_tick_eur_per_mw_day < 0.0:
-        raise ValueError("Bid-price tick must be nonnegative.")
-    if cfg.bid_price_tick_eur_per_mw_day > 0.0:
-        if cfg.active_nodes is None or len(cfg.active_nodes) != 1:
-            raise ValueError("Tick enumeration requires exactly one active node.")
-        if cfg.tie_break_epsilon_eur_per_mw_day <= 0.0:
-            raise ValueError("Tick enumeration requires a positive tie-break epsilon.")
-        if cfg.damping != 1.0:
-            raise ValueError("Tick enumeration requires damping=1 so updated bids stay on-grid.")
+    if cfg.node_limit_mw <= 0.0 or cfg.max_bid_price_eur_per_mw_day <= 0.0:
+        raise ValueError("Nodal limit and maximum bid price must be positive.")
     if cfg.max_iterations <= 0 or cfg.max_cpu_time <= 0.0:
         raise ValueError("Iteration and CPU-time limits must be positive.")
-    if not 0.0 < cfg.damping <= 1.0:
-        raise ValueError("Damping must be in (0, 1].")
+    if cfg.price_bound_eur_per_mwh <= 0.0 or cfg.dual_bound_eur_per_mwh <= 0.0:
+        raise ValueError("Price and internal-dual bounds must be positive.")
+    if cfg.solver_tol <= 0.0 or cfg.capacity_cleanup_tol_mw < 0.0:
+        raise ValueError("Solver tolerance must be positive and cleanup tolerance nonnegative.")
+    if not 0.0 < cfg.zero_bid_numerical_quantity_mw <= cfg.node_limit_mw:
+        raise ValueError(
+            "Zero-bid numerical quantity must be positive and no greater than the nodal limit."
+        )
+    if not 0.0 < cfg.zero_bid_numerical_price_eur_per_mw_day <= cfg.max_bid_price_eur_per_mw_day:
+        raise ValueError(
+            "Zero-bid numerical price must be positive and no greater than the bid-price cap."
+        )
     if min(
         cfg.quantity_tolerance_mw,
+        cfg.award_tolerance_mw,
         cfg.price_tolerance_eur_per_mw_day,
         cfg.duration_tolerance_hours,
-        cfg.award_tolerance_mw,
-        cfg.active_award_zero_tolerance_mw,
-        cfg.outside_option_tolerance_eur_per_day,
     ) < 0.0:
-        raise ValueError("Convergence and outside-option tolerances must be nonnegative.")
+        raise ValueError("Convergence tolerances must be nonnegative.")
     if cfg.max_consecutive_failures <= 0:
         raise ValueError("Maximum consecutive failures must be positive.")
+    if cfg.bid_price_tick_eur_per_mw_day < 0.0:
+        raise ValueError("Bid-price tick must be nonnegative.")
+    if cfg.tie_break_epsilon_eur_per_mw_day < 0.0:
+        raise ValueError("Tie-break epsilon must be nonnegative.")
+    if cfg.bid_price_tick_eur_per_mw_day > 0.0:
+        if cfg.active_nodes is None or len(cfg.active_nodes) != 1:
+            raise ValueError("Exact tick enumeration requires exactly one active node.")
+        if cfg.tie_break_epsilon_eur_per_mw_day <= 0.0:
+            raise ValueError("Tick enumeration requires a positive merit offset.")
+        maximum_priority_gap = (
+            cfg.tie_break_epsilon_eur_per_mw_day * (len(cfg.investor_order) - 1)
+        )
+        if maximum_priority_gap >= cfg.bid_price_tick_eur_per_mw_day:
+            raise ValueError("The maximum priority gap must be smaller than one bid tick.")
+        if cfg.price_tolerance_eur_per_mw_day >= cfg.bid_price_tick_eur_per_mw_day:
+            raise ValueError("Grid-mode price tolerance must be smaller than one bid tick.")
+
+
+def _empty_nested(investors: tuple[str, ...], nodes: Any) -> dict[str, dict[str, float]]:
+    return {investor: {node: 0.0 for node in nodes} for investor in investors}
+
+
+def _cleanup_strategy(state: StrategyState, cfg: GaussSeidelConfig) -> None:
+    active_nodes = None if cfg.active_nodes is None else set(cfg.active_nodes)
+    for investor in cfg.investor_order:
+        for node in state.quantity_mw[investor]:
+            outside_scope = active_nodes is not None and node not in active_nodes
+            negligible = state.quantity_mw[investor][node] <= cfg.capacity_cleanup_tol_mw
+            if outside_scope or negligible:
+                state.quantity_mw[investor][node] = 0.0
+                state.price_eur_per_mw_day[investor][node] = 0.0
+                state.awards_mw[investor][node] = 0.0
 
 
 def initial_state(
     data: MarketData,
     investor_order: tuple[str, ...],
     initial_bids_path: Path,
+    cfg: GaussSeidelConfig,
 ) -> StrategyState:
     records = load_rival_bid_vector(initial_bids_path)
     indexed = {(bid.investor, bid.node): bid for bid in records}
@@ -122,23 +157,24 @@ def initial_state(
     missing = expected - set(indexed)
     if missing:
         raise ValueError(f"Initial bid file is missing investor-node records: {sorted(missing)}")
-    quantity = {
-        investor: {node: float(indexed[investor, node].quantity_mw) for node in data.nodes}
-        for investor in investor_order
-    }
-    price = {
-        investor: {node: float(indexed[investor, node].price_eur_per_mw_day) for node in data.nodes}
-        for investor in investor_order
-    }
-    duration = {
-        investor: {node: float(indexed[investor, node].duration_hours) for node in data.nodes}
-        for investor in investor_order
-    }
-    return StrategyState(quantity, price, duration, _empty_nested(investor_order, data.nodes))
-
-
-def _empty_nested(investors: tuple[str, ...], nodes: Any) -> dict[str, dict[str, float]]:
-    return {investor: {node: 0.0 for node in nodes} for investor in investors}
+    state = StrategyState(
+        quantity_mw={
+            investor: {node: float(indexed[investor, node].quantity_mw) for node in data.nodes}
+            for investor in investor_order
+        },
+        price_eur_per_mw_day={
+            investor: {node: float(indexed[investor, node].price_eur_per_mw_day) for node in data.nodes}
+            for investor in investor_order
+        },
+        duration_hours={
+            investor: {node: float(indexed[investor, node].duration_hours) for node in data.nodes}
+            for investor in investor_order
+        },
+        awards_mw=_empty_nested(investor_order, data.nodes),
+    )
+    _cleanup_strategy(state, cfg)
+    state.awards_mw = clear_initial_auction(state, data, cfg)
+    return state
 
 
 def state_from_checkpoint(path: Path, data: MarketData, cfg: GaussSeidelConfig) -> StrategyState:
@@ -151,22 +187,26 @@ def state_from_checkpoint(path: Path, data: MarketData, cfg: GaussSeidelConfig) 
             for i, row in state_raw["price_eur_per_mw_day"].items()
         },
         duration_hours={
-            i: {n: float(v) for n, v in row.items()} for i, row in state_raw["duration_hours"].items()
+            i: {n: float(v) for n, v in row.items()}
+            for i, row in state_raw["duration_hours"].items()
         },
-        awards_mw={i: {n: float(v) for n, v in row.items()} for i, row in state_raw["awards_mw"].items()},
+        awards_mw={
+            i: {n: float(v) for n, v in row.items()}
+            for i, row in state_raw["awards_mw"].items()
+        },
         completed_iteration=int(state_raw["completed_iteration"]),
     )
-    expected_investors = set(cfg.investor_order)
-    if set(state.quantity_mw) != expected_investors:
+    if set(state.quantity_mw) != set(cfg.investor_order):
         raise ValueError("Checkpoint investors do not match configured investor order.")
     for investor in cfg.investor_order:
         if set(state.quantity_mw[investor]) != set(data.nodes):
             raise ValueError(f"Checkpoint nodes do not match market data for {investor}.")
+    _cleanup_strategy(state, cfg)
     return state
 
 
-def state_bids(state: StrategyState, data: MarketData) -> list[Bid]:
-    return [
+def state_bids(state: StrategyState, data: MarketData, cleanup_tol_mw: float) -> list[Bid]:
+    bids = [
         Bid(
             investor,
             node,
@@ -175,27 +215,47 @@ def state_bids(state: StrategyState, data: MarketData) -> list[Bid]:
         )
         for investor in state.quantity_mw
         for node in data.nodes
+        if state.quantity_mw[investor][node] > cleanup_tol_mw
     ]
+    if not bids:
+        first_investor = next(iter(state.quantity_mw))
+        bids.append(Bid(first_investor, data.nodes[0], 0.0, 0.0))
+    return bids
 
 
-def clear_auction(
+def clear_initial_auction(
     state: StrategyState,
     data: MarketData,
-    node_limit_mw: float,
-    max_cpu_time: float,
-    tie_break_epsilon_eur_per_mw_day: float,
+    cfg: GaussSeidelConfig,
 ) -> dict[str, dict[str, float]]:
-    limits = {node: float(node_limit_mw) for node in data.nodes}
+    limits = {node: cfg.node_limit_mw for node in data.nodes}
     auction = build_auction_primal(
-        state_bids(state, data), limits, tie_break_epsilon_eur_per_mw_day
+        state_bids(state, data, cfg.capacity_cleanup_tol_mw),
+        limits,
+        cfg.tie_break_epsilon_eur_per_mw_day
+        if cfg.bid_price_tick_eur_per_mw_day > 0.0
+        else 0.0,
     )
-    result = get_ipopt_solver({"max_cpu_time": min(max_cpu_time, 60.0)}).solve(auction, tee=False)
-    termination = str(result.solver.termination_condition)
+    solver = get_ipopt_solver(
+        {
+            "max_cpu_time": min(cfg.max_cpu_time, 60.0),
+            "tol": min(cfg.solver_tol, 1.0e-9),
+            "acceptable_tol": min(cfg.solver_tol, 1.0e-8),
+        }
+    )
+    termination = str(solver.solve(auction, tee=False).solver.termination_condition)
     if termination != "optimal":
-        raise RuntimeError(f"Independent auction clearing failed: {termination}")
+        raise RuntimeError(f"Initial auction clearing failed: {termination}")
     flat = awarded_mw(auction)
     return {
-        investor: {node: max(0.0, flat.get((investor, node), 0.0)) for node in data.nodes}
+        investor: {
+            node: (
+                max(0.0, flat.get((investor, node), 0.0))
+                if flat.get((investor, node), 0.0) > cfg.capacity_cleanup_tol_mw
+                else 0.0
+            )
+            for node in data.nodes
+        }
         for investor in state.quantity_mw
     }
 
@@ -204,6 +264,7 @@ def rivals_from_state(
     state: StrategyState,
     active_investor: str,
     data: MarketData,
+    cleanup_tol_mw: float,
 ) -> list[RivalBid]:
     return [
         RivalBid(
@@ -216,53 +277,62 @@ def rivals_from_state(
         for investor in state.quantity_mw
         if investor != active_investor
         for node in data.nodes
+        if state.quantity_mw[investor][node] > cleanup_tol_mw
     ]
 
 
-def _solve_response_model(
+def _solve_response_at_price(
     data: MarketData,
     cfg: GaussSeidelConfig,
     state: StrategyState,
     investor_profile: Any,
-    *,
-    force_zero_bid: bool,
     fixed_bid_price: float | None = None,
 ) -> SolveRecord:
     investor = investor_profile.investor_id
+    numerical_initial_quantity = {
+        node: (
+            state.quantity_mw[investor][node]
+            if state.quantity_mw[investor][node] > cfg.capacity_cleanup_tol_mw
+            else cfg.zero_bid_numerical_quantity_mw
+        )
+        for node in data.nodes
+    }
+    numerical_initial_price = {
+        node: (
+            state.price_eur_per_mw_day[investor][node]
+            if state.quantity_mw[investor][node] > cfg.capacity_cleanup_tol_mw
+            else cfg.zero_bid_numerical_price_eur_per_mw_day
+        )
+        for node in data.nodes
+    }
     model = build_one_leader_two_follower_mpec(
         data,
-        rivals_from_state(state, investor, data),
+        rivals_from_state(state, investor, data, cfg.capacity_cleanup_tol_mw),
         active_investor=investor_profile,
         active_nodes=cfg.active_nodes,
         node_limit_mw=cfg.node_limit_mw,
-        min_bid_price_eur_per_mw_day=cfg.min_bid_price_eur_per_mw_day,
         max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
-        initial_bid_quantity_mw=state.quantity_mw[investor],
-        initial_bid_price_eur_per_mw_day=state.price_eur_per_mw_day[investor],
+        initial_bid_quantity_mw=numerical_initial_quantity,
+        initial_bid_price_eur_per_mw_day=numerical_initial_price,
         initial_duration_hours=state.duration_hours[investor],
-        dual_bound_scale=cfg.dual_bound_scale,
-        tie_break_epsilon_eur_per_mw_day=cfg.tie_break_epsilon_eur_per_mw_day,
+        price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
+        dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
+        capacity_cleanup_tol_mw=cfg.capacity_cleanup_tol_mw,
+        tie_break_epsilon_eur_per_mw_day=(
+            cfg.tie_break_epsilon_eur_per_mw_day
+            if cfg.bid_price_tick_eur_per_mw_day > 0.0
+            else 0.0
+        ),
     )
-    if force_zero_bid:
-        for node in data.nodes:
-            model.active_bid_quantity[node].fix(0.0)
-            model.active_bid_price[node].fix(cfg.min_bid_price_eur_per_mw_day)
-            model.active_energy[node].fix(0.0)
-    elif fixed_bid_price is not None:
-        active_node = cfg.active_nodes[0]
-        model.active_bid_price[active_node].fix(fixed_bid_price)
+    if fixed_bid_price is not None:
+        model.active_bid_price[cfg.active_nodes[0]].fix(fixed_bid_price)
     initialize_from_independent_followers(model)
     started = time.perf_counter()
-    termination = solve_mpec(model, cfg.max_cpu_time, tee=cfg.tee)
+    termination = solve_mpec(model, cfg.max_cpu_time, cfg.solver_tol, tee=cfg.tee)
     seconds = time.perf_counter() - started
-    return SolveRecord(
-        termination=termination,
-        seconds=seconds,
-        profit_eur_per_day=value(model.active_profit),
-        auction_gap=value(model.auction_primal_value) - value(model.auction_dual_value),
-        spot_gap=value(model.spot_primal_value) - value(model.spot_dual_value),
-        model=model,
-    )
+    summary = summarize(model, termination)
+    summary["solve_seconds"] = seconds
+    return SolveRecord(termination, seconds, model, summary)
 
 
 def solve_response_model(
@@ -270,211 +340,216 @@ def solve_response_model(
     cfg: GaussSeidelConfig,
     state: StrategyState,
     investor_profile: Any,
-    *,
-    force_zero_bid: bool,
 ) -> SolveRecord:
-    """Solve one response, enumerating valid grid prices when a tick is active."""
-
+    """Solve one continuous response or enumerate exact tick-grid prices."""
     if cfg.bid_price_tick_eur_per_mw_day <= 0.0:
-        return _solve_response_model(
-            data,
-            cfg,
-            state,
-            investor_profile,
-            force_zero_bid=force_zero_bid,
-        )
+        return _solve_response_at_price(data, cfg, state, investor_profile)
 
     started = time.perf_counter()
-    if force_zero_bid:
-        record = _solve_response_model(
-            data,
-            cfg,
-            state,
-            investor_profile,
-            force_zero_bid=True,
-        )
-        summary = summarize(record.model, record.termination)
-        diagnostic = pay_as_bid_tick_candidate_diagnostic(
-            summary,
-            record.seconds,
-            label="zero_quantity_outside_option",
-            fixed_bid_price=None,
-        )
-        termination = record.termination if diagnostic["valid"] else "invalid_outside_option"
-        return SolveRecord(
-            termination=termination,
-            seconds=time.perf_counter() - started,
-            profit_eur_per_day=record.profit_eur_per_day,
-            auction_gap=record.auction_gap,
-            spot_gap=record.spot_gap,
-            model=record.model,
-            summary=summary,
-            selected_tick_candidate=diagnostic["label"],
-            tick_candidate_diagnostics=(diagnostic,),
-        )
-
     investor = investor_profile.investor_id
-    active_node = cfg.active_nodes[0]
-    rivals = rivals_from_state(state, investor, data)
+    rivals = rivals_from_state(state, investor, data, cfg.capacity_cleanup_tol_mw)
     prices = pay_as_bid_tick_candidates(
         active_investor=investor,
-        active_node=active_node,
+        active_node=cfg.active_nodes[0],
         rivals=rivals,
-        min_bid_price_eur_per_mw_day=cfg.min_bid_price_eur_per_mw_day,
         max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
         bid_price_tick_eur_per_mw_day=cfg.bid_price_tick_eur_per_mw_day,
         tie_break_epsilon_eur_per_mw_day=cfg.tie_break_epsilon_eur_per_mw_day,
     )
-    records: list[tuple[SolveRecord, dict[str, object], dict[str, object]]] = []
+    records: list[tuple[SolveRecord, dict[str, object]]] = []
     for price in prices:
         print(f"    {investor} tick candidate: {price:.12g} EUR/MW/day")
-        record = _solve_response_model(
-            data,
-            cfg,
-            state,
-            investor_profile,
-            force_zero_bid=False,
-            fixed_bid_price=price,
+        response = _solve_response_at_price(
+            data, cfg, state, investor_profile, fixed_bid_price=price
         )
-        summary = summarize(record.model, record.termination)
-        diagnostic = pay_as_bid_tick_candidate_diagnostic(
-            summary,
-            record.seconds,
-            label=f"price_{price:.12g}",
-            fixed_bid_price=price,
-        )
+        diagnostic = tick_candidate_diagnostic(response.summary, response.seconds, price)
         print(
-            f"      termination={record.termination}, valid={diagnostic['valid']}, "
-            f"profit={record.profit_eur_per_day:,.2f} EUR/day"
+            f"      termination={response.termination}, valid={diagnostic['valid']}, "
+            f"profit={response.summary['profit_eur_per_day']:,.2f} EUR/day"
         )
-        records.append((record, summary, diagnostic))
-
-    valid_records = [entry for entry in records if entry[2]["valid"]]
+        records.append((response, diagnostic))
+    valid_records = [record for record in records if record[1]["valid"]]
     selected_pool = valid_records or records
-    selected_record, selected_summary, selected_diagnostic = max(
-        selected_pool,
-        key=lambda entry: entry[0].profit_eur_per_day,
+    selected_response, selected_diagnostic = max(
+        selected_pool, key=lambda record: record[0].summary["profit_eur_per_day"]
     )
-    termination = selected_record.termination if valid_records else "no_valid_tick_candidate"
+    termination = selected_response.termination if valid_records else "no_valid_tick_candidate"
     return SolveRecord(
         termination=termination,
         seconds=time.perf_counter() - started,
-        profit_eur_per_day=selected_record.profit_eur_per_day,
-        auction_gap=selected_record.auction_gap,
-        spot_gap=selected_record.spot_gap,
-        model=selected_record.model,
-        summary=selected_summary,
-        selected_tick_candidate=(selected_diagnostic["label"] if valid_records else None),
-        tick_candidate_diagnostics=tuple(entry[2] for entry in records),
+        model=selected_response.model,
+        summary=selected_response.summary,
+        selected_tick_price_eur_per_mw_day=(
+            selected_diagnostic["fixed_bid_price_eur_per_mw_day"]
+            if valid_records
+            else None
+        ),
+        tick_candidate_diagnostics=tuple(record[1] for record in records),
     )
 
 
-def candidate_target(
-    candidate: SolveRecord,
-    baseline: SolveRecord | None,
-    state: StrategyState,
-    active_investor: str,
-    data: MarketData,
-    cfg: GaussSeidelConfig,
-) -> tuple[str, dict[str, float], dict[str, float], dict[str, float]]:
-    zero_quantity = {node: 0.0 for node in data.nodes}
-    zero_price = {node: 0.0 for node in data.nodes}
-    old_duration = dict(state.duration_hours[active_investor])
-    if candidate.termination != "optimal":
-        if baseline is not None and baseline.termination == "optimal":
-            return "zero_after_candidate_failure", zero_quantity, zero_price, old_duration
-        return (
-            "retain_after_solver_failure",
-            dict(state.quantity_mw[active_investor]),
-            dict(state.price_eur_per_mw_day[active_investor]),
-            old_duration,
-        )
-    if cfg.use_outside_option and (baseline is None or baseline.termination != "optimal"):
-        return (
-            "retain_after_baseline_failure",
-            dict(state.quantity_mw[active_investor]),
-            dict(state.price_eur_per_mw_day[active_investor]),
-            old_duration,
-        )
-
-    total_award = sum(max(0.0, value(candidate.model.award[active_investor, n])) for n in data.nodes)
-    baseline_dominates = baseline is not None and (
-        candidate.profit_eur_per_day
-        <= baseline.profit_eur_per_day + cfg.outside_option_tolerance_eur_per_day
-    )
-    if total_award <= cfg.active_award_zero_tolerance_mw or baseline_dominates:
-        reason = "zero_negligible_award" if total_award <= cfg.active_award_zero_tolerance_mw else "zero_dominates_candidate"
-        return reason, zero_quantity, zero_price, old_duration
-
-    target_quantity: dict[str, float] = {}
-    target_price: dict[str, float] = {}
-    target_duration: dict[str, float] = {}
-    profile = candidate.model._active_investor
-    for node in data.nodes:
-        award = max(0.0, value(candidate.model.award[active_investor, node]))
-        if award <= cfg.active_award_zero_tolerance_mw:
-            target_quantity[node] = 0.0
-            target_price[node] = 0.0
-            target_duration[node] = old_duration[node]
-            continue
-        target_quantity[node] = max(0.0, value(candidate.model.active_bid_quantity[node]))
-        target_price[node] = max(0.0, value(candidate.model.active_bid_price[node]))
-        duration = value(candidate.model.active_energy[node]) / award
-        target_duration[node] = min(max(duration, profile.ratio_min), profile.ratio_max)
-    return "candidate", target_quantity, target_price, target_duration
-
-
-def apply_target(
+def apply_response(
     state: StrategyState,
     investor: str,
-    target_quantity: Mapping[str, float],
-    target_price: Mapping[str, float],
-    target_duration: Mapping[str, float],
+    response: SolveRecord,
+    data: MarketData,
     cfg: GaussSeidelConfig,
-) -> dict[str, float]:
-    max_quantity_change = 0.0
-    max_price_change = 0.0
-    max_duration_change = 0.0
-    for node in state.quantity_mw[investor]:
-        old_q = state.quantity_mw[investor][node]
-        old_p = state.price_eur_per_mw_day[investor][node]
-        old_h = state.duration_hours[investor][node]
-        new_q = (1.0 - cfg.damping) * old_q + cfg.damping * float(target_quantity[node])
-        new_p = (1.0 - cfg.damping) * old_p + cfg.damping * float(target_price[node])
-        new_h = (1.0 - cfg.damping) * old_h + cfg.damping * float(target_duration[node])
-        if new_q <= cfg.active_award_zero_tolerance_mw:
-            new_q = 0.0
-            new_p = 0.0
-        state.quantity_mw[investor][node] = new_q
-        state.price_eur_per_mw_day[investor][node] = new_p
-        state.duration_hours[investor][node] = new_h
-        max_quantity_change = max(max_quantity_change, abs(new_q - old_q))
-        max_price_change = max(max_price_change, abs(new_p - old_p))
-        max_duration_change = max(max_duration_change, abs(new_h - old_h))
-    return {
-        "max_quantity_change_mw": max_quantity_change,
-        "max_price_change_eur_per_mw_day": max_price_change,
-        "max_duration_change_hours": max_duration_change,
+    *,
+    update_awards: bool = True,
+    reference_awards: Mapping[str, Mapping[str, float]] | None = None,
+) -> tuple[str, dict[str, float]]:
+    if response.termination != "optimal":
+        return "retain_after_solver_failure", {
+            "max_quantity_change_mw": 0.0,
+            "max_price_change_eur_per_mw_day": 0.0,
+            "max_duration_change_hours": 0.0,
+            "max_award_change_mw": 0.0,
+        }
+
+    old_quantity = dict(state.quantity_mw[investor])
+    old_price = dict(state.price_eur_per_mw_day[investor])
+    old_duration = dict(state.duration_hours[investor])
+    old_awards = (
+        {i: dict(row) for i, row in reference_awards.items()}
+        if reference_awards is not None
+        else {i: dict(row) for i, row in state.awards_mw.items()}
+    )
+    model = response.model
+    for node in data.nodes:
+        quantity = max(0.0, value(model.active_bid_quantity[node]))
+        price = max(0.0, value(model.active_bid_price[node]))
+        award = max(0.0, value(model.award[investor, node]))
+        if quantity <= cfg.capacity_cleanup_tol_mw:
+            quantity = 0.0
+            price = 0.0
+            award = 0.0
+        state.quantity_mw[investor][node] = quantity
+        state.price_eur_per_mw_day[investor][node] = price
+        if award > cfg.capacity_cleanup_tol_mw:
+            duration = value(model.active_energy[node]) / award
+            state.duration_hours[investor][node] = min(
+                max(duration, model._active_investor.ratio_min),
+                model._active_investor.ratio_max,
+            )
+
+    embedded_awards = _empty_nested(tuple(state.quantity_mw), data.nodes)
+    for awarded_investor, node in model.A:
+        embedded_awards[awarded_investor][node] = max(
+            0.0, value(model.award[awarded_investor, node])
+        )
+    if update_awards:
+        state.awards_mw = embedded_awards
+    _cleanup_strategy(state, cfg)
+    return "candidate", {
+        "max_quantity_change_mw": max(
+            abs(state.quantity_mw[investor][n] - old_quantity[n]) for n in data.nodes
+        ),
+        "max_price_change_eur_per_mw_day": max(
+            abs(state.price_eur_per_mw_day[investor][n] - old_price[n]) for n in data.nodes
+        ),
+        "max_duration_change_hours": max(
+            abs(state.duration_hours[investor][n] - old_duration[n]) for n in data.nodes
+        ),
+        "max_award_change_mw": max(
+            abs(embedded_awards[i][n] - old_awards[i][n])
+            for i in embedded_awards
+            for n in data.nodes
+        ),
     }
 
 
-def award_change(
-    old_awards: Mapping[str, Mapping[str, float]],
-    new_awards: Mapping[str, Mapping[str, float]],
+def copy_state(state: StrategyState) -> StrategyState:
+    return StrategyState(
+        quantity_mw={i: dict(row) for i, row in state.quantity_mw.items()},
+        price_eur_per_mw_day={i: dict(row) for i, row in state.price_eur_per_mw_day.items()},
+        duration_hours={i: dict(row) for i, row in state.duration_hours.items()},
+        awards_mw={i: dict(row) for i, row in state.awards_mw.items()},
+        completed_iteration=state.completed_iteration,
+    )
+
+
+def max_award_difference(
+    left: Mapping[str, Mapping[str, float]],
+    right: Mapping[str, Mapping[str, float]],
+    investors: tuple[str, ...],
+    nodes: Any,
 ) -> float:
     return max(
-        abs(float(new_awards[investor][node]) - float(old_awards[investor][node]))
-        for investor in new_awards
-        for node in new_awards[investor]
+        abs(left[investor][node] - right[investor][node])
+        for investor in investors
+        for node in nodes
     )
+
+
+def record_response(
+    *,
+    iteration: int,
+    investor: str,
+    response: SolveRecord,
+    selection: str,
+    changes: Mapping[str, float],
+    common_award_change_mw: float,
+    state: StrategyState,
+    cfg: GaussSeidelConfig,
+    history: list[dict[str, Any]],
+    history_path: Path,
+) -> None:
+    row = {
+        "iteration": iteration,
+        "investor": investor,
+        "update_rule": cfg.update_rule,
+        "selection": selection,
+        "termination": response.termination,
+        "solve_seconds": response.seconds,
+        "profit_eur_per_day": response.summary["profit_eur_per_day"],
+        "selected_tick_price_eur_per_mw_day": response.selected_tick_price_eur_per_mw_day,
+        "access_payment_eur_per_day": response.summary["access_payment_eur_per_day"],
+        "auction_strong_duality_gap": response.summary["auction_strong_duality_gap"],
+        "spot_strong_duality_gap": response.summary["spot_strong_duality_gap"],
+        "max_abs_price_dual_fraction_of_bound": response.summary[
+            "max_abs_price_dual_fraction_of_bound"
+        ],
+        "max_abs_internal_dual_fraction_of_bound": response.summary[
+            "max_abs_internal_dual_fraction_of_bound"
+        ],
+        "embedded_storage_pair_count": response.summary["embedded_storage_pair_count"],
+        "variable_count": response.summary["variable_count"],
+        "constraint_count": response.summary["constraint_count"],
+        "selected_total_bid_quantity_mw": sum(state.quantity_mw[investor].values()),
+        "embedded_active_award_mw": sum(
+            node_row["active_award_mw"] for node_row in response.summary["nodes"].values()
+        ),
+        "selected_total_award_mw": sum(state.awards_mw[investor].values()),
+        "common_reclear_max_award_change_mw": common_award_change_mw,
+        **changes,
+    }
+    history.append(row)
+    response_dir = cfg.output_dir / "iterations" / f"iteration_{iteration:03d}"
+    response_dir.mkdir(parents=True, exist_ok=True)
+    response_payload = {
+        **row,
+        "response_summary": response.summary,
+        "tick_candidate_diagnostics": response.tick_candidate_diagnostics,
+        "selected_strategy": {
+            "quantity_mw": state.quantity_mw[investor],
+            "price_eur_per_mw_day": state.price_eur_per_mw_day[investor],
+            "duration_hours": state.duration_hours[investor],
+            "common_awards_mw": state.awards_mw[investor],
+        },
+    }
+    (response_dir / f"{investor}.json").write_text(
+        json.dumps(_jsonable(response_payload), indent=2), encoding="utf-8"
+    )
+    write_history(history_path, history)
 
 
 def write_history(path: Path, history: list[dict[str, Any]]) -> None:
     if not history:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(dict.fromkeys(key for row in history for key in row))
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(history[0]))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(history)
 
@@ -496,7 +571,10 @@ def write_checkpoint(
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[StrategyState, list[dict[str, Any]], str]:
+def run_gauss_seidel(
+    data: MarketData,
+    cfg: GaussSeidelConfig,
+) -> tuple[StrategyState, list[dict[str, Any]], str]:
     validate_config(cfg)
     from epec_diagonalization import four_investor_portfolio_profiles
 
@@ -512,129 +590,112 @@ def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[Strategy
     state = (
         state_from_checkpoint(cfg.resume_path, data, cfg)
         if cfg.resume_path is not None
-        else initial_state(data, cfg.investor_order, cfg.initial_bids_path)
-    )
-    state.awards_mw = clear_auction(
-        state,
-        data,
-        cfg.node_limit_mw,
-        cfg.max_cpu_time,
-        cfg.tie_break_epsilon_eur_per_mw_day,
+        else initial_state(data, cfg.investor_order, cfg.initial_bids_path, cfg)
     )
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     (cfg.output_dir / "run_config.json").write_text(
         json.dumps(_jsonable(asdict(cfg)), indent=2), encoding="utf-8"
     )
 
+    history_path = cfg.output_dir / "iteration_history.csv"
     history: list[dict[str, Any]] = []
+    if cfg.resume_path is not None and history_path.is_file():
+        with history_path.open(newline="", encoding="utf-8") as handle:
+            history = list(csv.DictReader(handle))
     consecutive_failures = {investor: 0 for investor in cfg.investor_order}
     stop_reason = "max_iterations"
     start_iteration = state.completed_iteration + 1
-
     for iteration in range(start_iteration, cfg.max_iterations + 1):
-        previous_quantity = {i: dict(row) for i, row in state.quantity_mw.items()}
-        previous_price = {i: dict(row) for i, row in state.price_eur_per_mw_day.items()}
-        previous_duration = {i: dict(row) for i, row in state.duration_hours.items()}
-        previous_awards = {i: dict(row) for i, row in state.awards_mw.items()}
+        previous_state = copy_state(state)
+        previous_quantity = previous_state.quantity_mw
+        previous_price = previous_state.price_eur_per_mw_day
+        previous_duration = previous_state.duration_hours
+        previous_awards = previous_state.awards_mw
         sweep_had_failure = False
-        print(f"Iteration {iteration}")
+        outcomes: list[
+            tuple[str, SolveRecord, str, dict[str, float]]
+        ] = []
+        abort_investor: str | None = None
+        print(f"Iteration {iteration} [{cfg.update_rule}]")
 
+        response_state = previous_state if cfg.update_rule == "jacobi" else state
+        solved_responses: list[tuple[str, SolveRecord]] = []
         for investor in cfg.investor_order:
-            print(f"  {investor}: candidate best response")
-            candidate = solve_response_model(data, cfg, state, profiles[investor], force_zero_bid=False)
-            baseline = None
-            if cfg.use_outside_option:
-                print(f"  {investor}: zero-bid outside option")
-                baseline = solve_response_model(data, cfg, state, profiles[investor], force_zero_bid=True)
-            candidate_summary = candidate.summary or summarize(
-                candidate.model, candidate.termination
+            response_mode = (
+                "tick-grid best response"
+                if cfg.bid_price_tick_eur_per_mw_day > 0.0
+                else "continuous best response"
             )
-            selection, target_q, target_p, target_h = candidate_target(
-                candidate, baseline, state, investor, data, cfg
-            )
-            changes = apply_target(state, investor, target_q, target_p, target_h, cfg)
-            old_awards = {i: dict(row) for i, row in state.awards_mw.items()}
-            state.awards_mw = clear_auction(
-                state,
-                data,
-                cfg.node_limit_mw,
-                cfg.max_cpu_time,
-                cfg.tie_break_epsilon_eur_per_mw_day,
-            )
-            response_award_change = award_change(old_awards, state.awards_mw)
-
-            response_ok = candidate.termination == "optimal" and (
-                not cfg.use_outside_option
-                or (baseline is not None and baseline.termination == "optimal")
-            )
-            if response_ok:
+            snapshot_note = " against common snapshot" if cfg.update_rule == "jacobi" else ""
+            print(f"  {investor}: {response_mode}{snapshot_note}")
+            response = solve_response_model(data, cfg, response_state, profiles[investor])
+            solved_responses.append((investor, response))
+            if response.termination == "optimal":
                 consecutive_failures[investor] = 0
             else:
                 consecutive_failures[investor] += 1
                 sweep_had_failure = True
-            baseline_term = baseline.termination if baseline is not None else "skipped"
-            baseline_profit = baseline.profit_eur_per_day if baseline is not None else float("nan")
-            active_award = sum(state.awards_mw[investor].values())
-            row = {
-                "iteration": iteration,
-                "investor": investor,
-                "selection": selection,
-                "candidate_termination": candidate.termination,
-                "candidate_seconds": candidate.seconds,
-                "candidate_profit_eur_per_day": candidate.profit_eur_per_day,
-                "selected_tick_candidate": candidate.selected_tick_candidate,
-                "candidate_access_payment_eur_per_day": candidate_summary["access_payment_eur_per_day"],
-                "candidate_max_embedded_vs_reclear_award_difference_mw": candidate_summary[
-                    "max_embedded_vs_reclear_award_difference_mw"
-                ],
-                "candidate_auction_gap": candidate.auction_gap,
-                "candidate_spot_gap": candidate.spot_gap,
-                "baseline_termination": baseline_term,
-                "baseline_profit_eur_per_day": baseline_profit,
-                "selected_total_award_mw": active_award,
-                **changes,
-                "response_max_award_change_mw": response_award_change,
-            }
-            history.append(row)
-            response_dir = cfg.output_dir / "iterations" / f"iteration_{iteration:03d}"
-            response_dir.mkdir(parents=True, exist_ok=True)
-            response_payload = {
-                **row,
-                "candidate_summary": candidate_summary,
-                "tick_candidate_diagnostics": candidate.tick_candidate_diagnostics,
-                "baseline": None
-                if baseline is None
-                else {
-                    "termination": baseline.termination,
-                    "seconds": baseline.seconds,
-                    "profit_eur_per_day": baseline.profit_eur_per_day,
-                    "auction_gap": baseline.auction_gap,
-                    "spot_gap": baseline.spot_gap,
-                },
-                "selected_strategy": {
-                    "quantity_mw": state.quantity_mw[investor],
-                    "price_eur_per_mw_day": state.price_eur_per_mw_day[investor],
-                    "duration_hours": state.duration_hours[investor],
-                    "awards_mw": state.awards_mw[investor],
-                },
-            }
-            (response_dir / f"{investor}.json").write_text(
-                json.dumps(_jsonable(response_payload), indent=2), encoding="utf-8"
-            )
-            write_history(cfg.output_dir / "iteration_history.csv", history)
-            print(
-                f"    candidate={candidate.termination}, baseline={baseline_term}, "
-                f"selection={selection}, award={active_award:.3f} MW"
-            )
             if consecutive_failures[investor] >= cfg.max_consecutive_failures:
-                stop_reason = f"repeated_solver_failure_{investor}"
-                state.quantity_mw = previous_quantity
-                state.price_eur_per_mw_day = previous_price
-                state.duration_hours = previous_duration
-                state.awards_mw = previous_awards
-                state.completed_iteration = iteration - 1
-                write_checkpoint(cfg.output_dir / "checkpoint.json", cfg, state, stop_reason, False)
-                return state, history, stop_reason
+                abort_investor = investor
+                break
+            if cfg.update_rule == "seidel":
+                selection, changes = apply_response(state, investor, response, data, cfg)
+                outcomes.append((investor, response, selection, changes))
+
+        if abort_investor is not None:
+            stop_reason = f"repeated_solver_failure_{abort_investor}"
+            state = previous_state
+            write_checkpoint(cfg.output_dir / "checkpoint.json", cfg, state, stop_reason, False)
+            return state, history, stop_reason
+
+        if cfg.update_rule == "jacobi":
+            for investor, response in solved_responses:
+                selection, changes = apply_response(
+                    state,
+                    investor,
+                    response,
+                    data,
+                    cfg,
+                    update_awards=False,
+                    reference_awards=previous_awards,
+                )
+                outcomes.append((investor, response, selection, changes))
+
+        # The definitive sweep allocation is always obtained by one common
+        # auction over the complete updated bid vector. In Jacobi this is the
+        # only market clearing after simultaneous sealed-bid proposals.
+        state.awards_mw = clear_initial_auction(state, data, cfg)
+        _cleanup_strategy(state, cfg)
+        common_award_change = max_award_difference(
+            state.awards_mw, previous_awards, cfg.investor_order, data.nodes
+        )
+        max_unilateral_award_change = max(
+            (changes["max_award_change_mw"] for _, _, _, changes in outcomes),
+            default=0.0,
+        )
+
+        for investor, response, selection, changes in outcomes:
+            record_response(
+                iteration=iteration,
+                investor=investor,
+                response=response,
+                selection=selection,
+                changes=changes,
+                common_award_change_mw=common_award_change,
+                state=state,
+                cfg=cfg,
+                history=history,
+                history_path=history_path,
+            )
+            embedded_award = sum(
+                row["active_award_mw"] for row in response.summary["nodes"].values()
+            )
+            print(
+                f"    {investor}: termination={response.termination}, "
+                f"bid={sum(state.quantity_mw[investor].values()):.3f} MW, "
+                f"embedded award={embedded_award:.3f} MW, "
+                f"common award={sum(state.awards_mw[investor].values()):.3f} MW"
+            )
 
         state.completed_iteration = iteration
         max_quantity_change = max(
@@ -652,18 +713,19 @@ def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[Strategy
             for i in cfg.investor_order
             for n in data.nodes
         )
-        max_award_change = award_change(previous_awards, state.awards_mw)
         converged = (
             not sweep_had_failure
             and max_quantity_change <= cfg.quantity_tolerance_mw
+            and common_award_change <= cfg.award_tolerance_mw
+            and max_unilateral_award_change <= cfg.award_tolerance_mw
             and max_price_change <= cfg.price_tolerance_eur_per_mw_day
             and max_duration_change <= cfg.duration_tolerance_hours
-            and max_award_change <= cfg.award_tolerance_mw
         )
         print(
             f"  sweep changes: q={max_quantity_change:.4f} MW, "
-            f"p={max_price_change:.4f}, h={max_duration_change:.4f} h, "
-            f"award={max_award_change:.4f} MW"
+            f"common award={common_award_change:.4f} MW, "
+            f"max unilateral award={max_unilateral_award_change:.4f} MW, "
+            f"p={max_price_change:.4f} EUR/MW/day, h={max_duration_change:.4f} h"
         )
         write_checkpoint(
             cfg.output_dir / "checkpoint.json",
@@ -690,6 +752,25 @@ def main() -> int:
     cfg = parse_gauss_seidel_cli()
     data = load_market_data(cfg.data_path)
     state, history, stop_reason = run_gauss_seidel(data, cfg)
+    settlement = compute_joint_auction_settlement(data, cfg, state, history)
+    state.awards_mw = settlement["awards_mw"]
+    write_checkpoint(
+        cfg.output_dir / "final_state.json",
+        cfg,
+        state,
+        stop_reason,
+        stop_reason == "converged",
+    )
+    export_joint_auction_settlement(
+        cfg.output_dir,
+        data,
+        cfg,
+        state,
+        history,
+        stop_reason,
+        settlement,
+    )
+    print_joint_auction_summary(stop_reason, settlement)
     print(
         f"Stopped after iteration {state.completed_iteration}: {stop_reason}; "
         f"{len(history)} investor responses recorded in {cfg.output_dir}"

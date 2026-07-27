@@ -1,11 +1,17 @@
-"""Primal LP for nodal access allocation with deterministic merit priority."""
+"""Primal LP for continuous pay-as-bid nodal access allocation."""
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Mapping
 
 import pyomo.environ as pyo
+
+_MODEL_DIR = Path(__file__).resolve().parent.parent
+if str(_MODEL_DIR) not in sys.path:
+    sys.path.append(str(_MODEL_DIR))
 
 from solver_utils import get_ipopt_solver
 
@@ -44,12 +50,14 @@ def validate_inputs(bids: Iterable[Bid], limits: Mapping[str, float]) -> Auction
 
 
 def priority_offsets(investors: Iterable[str], epsilon: float) -> dict[str, float]:
-    """Return deterministic lexicographic bid adders smaller than ``epsilon * count``."""
-
+    """Return deterministic sub-tick merit adders for unique auction ranking."""
     if epsilon < 0.0:
         raise ValueError("Tie-break epsilon must be nonnegative.")
     ordered = sorted(set(investors))
-    return {investor: epsilon * (len(ordered) - rank) for rank, investor in enumerate(ordered)}
+    return {
+        investor: epsilon * (len(ordered) - rank)
+        for rank, investor in enumerate(ordered)
+    }
 
 
 def build_primal(
@@ -68,10 +76,13 @@ def build_primal(
         (bid.investor for bid in data.bids), tie_break_epsilon_eur_per_mw_day
     )
     model.award = pyo.Var(model.K, domain=pyo.NonNegativeReals, initialize=0.0)
-    model.node_limit = pyo.Constraint(
-        model.N,
-        rule=lambda m, n: sum(m.award[k] for k in m.K if m.bid[k].node == n) <= m.limit[n],
-    )
+    def node_limit_rule(m: pyo.ConcreteModel, node: str):
+        node_bids = [k for k in m.K if m.bid[k].node == node]
+        if not node_bids:
+            return pyo.Constraint.Feasible
+        return sum(m.award[k] for k in node_bids) <= m.limit[node]
+
+    model.node_limit = pyo.Constraint(model.N, rule=node_limit_rule)
     model.bid_limit = pyo.Constraint(
         model.K,
         rule=lambda m, k: m.award[k] <= m.bid[k].quantity_mw,
@@ -79,7 +90,8 @@ def build_primal(
     model.bid_value_by_node = pyo.Expression(
         model.N,
         rule=lambda m, n: sum(
-            (m.bid[k].price_eur_per_mw + m.priority_offset[m.bid[k].investor]) * m.award[k]
+            (m.bid[k].price_eur_per_mw + m.priority_offset[m.bid[k].investor])
+            * m.award[k]
             for k in m.K
             if m.bid[k].node == n
         )

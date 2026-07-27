@@ -1,4 +1,4 @@
-"""Small dual LP for the pay-as-bid nodal access auction."""
+"""Dual LP for the continuous pay-as-bid nodal access auction."""
 
 from __future__ import annotations
 
@@ -13,18 +13,13 @@ from solver_utils import get_ipopt_solver
 def build_dual(
     bids: Iterable[Bid],
     limits: Mapping[str, float],
+    dual_bound_eur_per_mw_day: float = 10_000.0,
     tie_break_epsilon_eur_per_mw_day: float = 0.0,
-    optimal_bid_value_by_node: Mapping[str, float] | None = None,
 ) -> pyo.ConcreteModel:
-    """Build the auction dual, optionally selecting minimum supporting prices.
-
-    Without ``optimal_bid_value_by_node`` this is the ordinary auction dual.
-    When optimal primal values are supplied, the dual is restricted to that
-    optimal face and minimizes the sum of nodal capacity duals. This implements
-    the right-hand/minimum-shadow-price convention at degenerate capacity
-    breakpoints.
-    """
+    """Build the ordinary auction dual without a secondary dual-selection rule."""
     data = validate_inputs(bids, limits)
+    if dual_bound_eur_per_mw_day <= 0.0:
+        raise ValueError("Dual bound must be positive.")
     model = pyo.ConcreteModel(name="nodal_access_auction_dual")
     model.N = pyo.Set(initialize=list(data.limits), ordered=True)
     model.K = pyo.RangeSet(0, len(data.bids) - 1)
@@ -33,8 +28,12 @@ def build_dual(
     model.priority_offset = priority_offsets(
         (bid.investor for bid in data.bids), tie_break_epsilon_eur_per_mw_day
     )
-    model.capacity_dual = pyo.Var(model.N, domain=pyo.NonNegativeReals, initialize=0.0)
-    model.quantity_dual = pyo.Var(model.K, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.capacity_dual = pyo.Var(
+        model.N, bounds=(0.0, dual_bound_eur_per_mw_day), initialize=0.0
+    )
+    model.quantity_dual = pyo.Var(
+        model.K, bounds=(0.0, dual_bound_eur_per_mw_day), initialize=0.0
+    )
     model.dual_feasibility = pyo.Constraint(
         model.K,
         rule=lambda m, k: m.capacity_dual[m.bid[k].node] + m.quantity_dual[k]
@@ -50,25 +49,7 @@ def build_dual(
         ),
     )
     model.dual_cost = pyo.Expression(expr=sum(model.dual_cost_by_node[n] for n in model.N))
-    if optimal_bid_value_by_node is None:
-        model.objective = pyo.Objective(expr=model.dual_cost, sense=pyo.minimize)
-    else:
-        missing = set(data.limits) - set(optimal_bid_value_by_node)
-        if missing:
-            raise ValueError(f"Missing optimal auction values for nodes {sorted(missing)}")
-        optimal_value = {n: float(optimal_bid_value_by_node[n]) for n in data.limits}
-        optimal_face_tolerance = {
-            n: 1.0e-7 * max(1.0, abs(optimal_value[n])) for n in data.limits
-        }
-        model.optimal_dual_face = pyo.Constraint(
-            model.N,
-            rule=lambda m, n: m.dual_cost_by_node[n]
-            <= optimal_value[n] + optimal_face_tolerance[n],
-        )
-        model.objective = pyo.Objective(
-            expr=sum(model.capacity_dual[n] for n in model.N),
-            sense=pyo.minimize,
-        )
+    model.objective = pyo.Objective(expr=model.dual_cost, sense=pyo.minimize)
     return model
 
 

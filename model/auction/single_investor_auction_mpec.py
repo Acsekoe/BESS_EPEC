@@ -1,22 +1,15 @@
-"""One strategic BESS investor with embedded access-auction and spot followers.
+"""One-leader, two-follower MPEC for strategic nodal BESS access bids.
 
-The active investor chooses one access-bid quantity and pay-as-bid price at
-every node. Rival bid quantities, prices, and storage durations are exogenous
-input vectors. The model embeds two convex lower-level problems:
+The leader chooses continuous pay-as-bid access quantities and prices plus its
+energy capacity. Follower 1 is the nodal access-auction LP. Follower 2 is the
+fixed-demand spot-market LP. Each follower is embedded only through primal
+feasibility, dual feasibility/stationarity, and strong duality.
 
-1. the nodal access-auction LP, using primal feasibility, dual feasibility,
-   and strong duality; and
-2. the fixed-demand spot-market LP, using primal feasibility, dual
-   feasibility/stationarity, and strong duality.
-
-Auction awards are the installed BESS power capacities. The active investor
-chooses its awarded energy capacity inside the 2-8 hour envelope. Rival energy
-capacity is ``fixed duration * endogenous auction award``, so a change in the
-active bid cannot leave a rival with a physically inconsistent MW/MWh pair.
-
-This is an optimistic MPEC whenever the auction allocation or spot-market
-prices are non-unique. Ipopt provides a local solution candidate, not a proof
-of a global Stackelberg optimum.
+There is no dispatch regularizer, load shedding, objective penalty, or auxiliary
+outside-option problem. An optional external bid-price enumeration fixes the
+active raw bid to exact grid ticks; a smaller deterministic merit offset then
+orders equal raw bids without changing pay-as-bid settlement. Electricity-price
+nonuniqueness retains the optimistic MPEC convention.
 """
 
 from __future__ import annotations
@@ -31,8 +24,6 @@ from typing import Iterable, Mapping
 
 import pyomo.environ as pyo
 
-# The auction formulation lives in its own experimental folder while the spot
-# formulation and common solver helpers remain in the maintained model tree.
 _AUCTION_DIR = Path(__file__).resolve().parent
 _MODEL_DIR = _AUCTION_DIR.parent
 _PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
@@ -40,22 +31,21 @@ for module_dir in (_MODEL_DIR, _PRIMAL_DUAL_DIR):
     if module_dir.is_dir() and str(module_dir) not in sys.path:
         sys.path.append(str(module_dir))
 
-from nodal_access_auction_dual import build_dual as build_auction_dual
-from nodal_access_auction_primal import (
-    Bid,
-    awarded_mw,
-    build_primal as build_auction_primal,
-    priority_offsets,
-)
 from config import (
+    DEFAULT_CAPACITY_CLEANUP_TOL_MW,
+    DEFAULT_DUAL_BOUND_EUR_PER_MWH,
     DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY,
+    DEFAULT_NODE_LIMIT_MW,
+    DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+    DEFAULT_SOLVER_TOL,
     parse_single_mpec_cli,
 )
+from nodal_access_auction_dual import build_dual as build_auction_dual
+from nodal_access_auction_primal import Bid, awarded_mw, build_primal as build_auction_primal
+from nodal_access_auction_primal import priority_offsets
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_mpec import (
     DEFAULT_DEGRADATION_EUR_PER_MWH,
-    DEFAULT_FIXED_DEMAND_DUAL_BOUND_EUR_PER_MWH,
-    DEFAULT_NODE_LIMIT_MW,
     InvestorConfig,
     build_fixed_demand_primal_model,
     capital_recovery_factor,
@@ -64,18 +54,16 @@ from single_investor_mpec import (
 from solver_utils import get_ipopt_solver
 
 
-MODEL_NAME = "One-Leader Two-Follower Access and Spot MPEC"
+MODEL_NAME = "Clean One-Leader Two-Follower Access Auction MPEC"
 ACTIVE_INVESTOR_ID = "I1"
-TICK_AWARD_RECLEAR_TOLERANCE_MW = 1.0e-4
+SPARSE_GENERATION_CAPACITY_TOL = 1.0e-8
+TICK_AWARD_RECLEAR_TOLERANCE_MW = 1.0e-3
 TICK_AUCTION_GAP_TOLERANCE = 1.0e-5
-TICK_SPOT_GAP_TOLERANCE = 1.0e-4
-MPEC_IPOPT_TOLERANCE = 1.0e-4
+TICK_SPOT_GAP_TOLERANCE = 1.0e-2
 
 
 @dataclass(frozen=True)
 class RivalBid:
-    """One fixed rival bid block at one node."""
-
     investor: str
     node: str
     quantity_mw: float
@@ -86,8 +74,7 @@ class RivalBid:
 def demo_rival_bid_vector(
     nodes: Iterable[str], active_id: str = ACTIVE_INVESTOR_ID
 ) -> list[RivalBid]:
-    """Made-up sparse rival vectors for a runnable IEEE-9 demonstration."""
-
+    """Sparse runnable demonstration used only when no bid file is supplied."""
     node_set = set(nodes)
     offers = {
         ("I1", "N3"): (35.0, 13.0, 4.0),
@@ -111,30 +98,31 @@ def demo_rival_bid_vector(
 
 
 def load_rival_bid_vector(path: Path) -> list[RivalBid]:
-    """Read a record list or compact all-investor nodal-vector JSON object."""
-
+    """Read either record-list or compact all-investor bid JSON."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, dict) and "investors" in raw:
-        records = []
+        records: list[dict[str, object]] = []
         for investor, profile in raw["investors"].items():
             quantities = profile["quantity_mw_by_node"]
             prices = profile["price_eur_per_mw_day_by_node"]
             if set(quantities) != set(prices):
                 raise ValueError(f"Quantity and price nodes differ for {investor}.")
+            duration_input = profile["duration_hours"]
             for node in quantities:
+                duration = duration_input[node] if isinstance(duration_input, dict) else duration_input
                 records.append(
                     {
                         "investor": investor,
                         "node": node,
                         "quantity_mw": quantities[node],
                         "price_eur_per_mw_day": prices[node],
-                        "duration_hours": profile["duration_hours"],
+                        "duration_hours": duration,
                     }
                 )
     else:
         records = raw["rival_bids"] if isinstance(raw, dict) else raw
     if not isinstance(records, list):
-        raise ValueError("Rival-bid JSON must be a list or contain a 'rival_bids' list.")
+        raise ValueError("Bid JSON must be a list or contain an 'investors'/'rival_bids' block.")
     return [RivalBid(**record) for record in records]
 
 
@@ -152,10 +140,14 @@ def _normalize_rival_bids(
     active_id: str,
     ratio_min: float,
     ratio_max: float,
-) -> tuple[list[str], dict[tuple[str, str], float], dict[tuple[str, str], float], dict[tuple[str, str], float]]:
+    cleanup_tol_mw: float,
+) -> tuple[
+    list[str],
+    dict[tuple[str, str], float],
+    dict[tuple[str, str], float],
+    dict[tuple[str, str], float],
+]:
     records = list(rival_bids)
-    if not records:
-        raise ValueError("At least one rival bid is required.")
     node_set = set(data.nodes)
     seen: set[tuple[str, str]] = set()
     rival_ids: list[str] = []
@@ -175,13 +167,14 @@ def _normalize_rival_bids(
         if bid.investor not in rival_ids:
             rival_ids.append(bid.investor)
 
-    quantity = {(investor, node): 0.0 for investor in rival_ids for node in data.nodes}
-    price = {(investor, node): 0.0 for investor in rival_ids for node in data.nodes}
-    duration = {(investor, node): ratio_min for investor in rival_ids for node in data.nodes}
+    quantity = {(i, n): 0.0 for i in rival_ids for n in data.nodes}
+    price = {(i, n): 0.0 for i in rival_ids for n in data.nodes}
+    duration = {(i, n): ratio_min for i in rival_ids for n in data.nodes}
     for bid in records:
         key = (bid.investor, bid.node)
-        quantity[key] = float(bid.quantity_mw)
-        price[key] = float(bid.price_eur_per_mw_day)
+        clean_quantity = 0.0 if bid.quantity_mw <= cleanup_tol_mw else float(bid.quantity_mw)
+        quantity[key] = clean_quantity
+        price[key] = 0.0 if clean_quantity == 0.0 else float(bid.price_eur_per_mw_day)
         duration[key] = float(bid.duration_hours)
     return rival_ids, quantity, price, duration
 
@@ -193,45 +186,53 @@ def build_one_leader_two_follower_mpec(
     active_investor: InvestorConfig | None = None,
     active_nodes: Iterable[str] | None = None,
     node_limit_mw: float | Mapping[str, float] = DEFAULT_NODE_LIMIT_MW,
-    min_bid_price_eur_per_mw_day: float = 0.0,
     max_bid_price_eur_per_mw_day: float = DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY,
     initial_bid_quantity_mw: float | Mapping[str, float] = 10.0,
     initial_bid_price_eur_per_mw_day: float | Mapping[str, float] = 10.0,
     initial_duration_hours: float | Mapping[str, float] = 4.0,
     rival_degradation_eur_per_mwh: float = DEFAULT_DEGRADATION_EUR_PER_MWH,
-    dual_bound_scale: float = 10.0,
+    price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+    dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH,
+    capacity_cleanup_tol_mw: float = DEFAULT_CAPACITY_CLEANUP_TOL_MW,
     tie_break_epsilon_eur_per_mw_day: float = 0.0,
 ) -> pyo.ConcreteModel:
-    """Build one investor's MPEC against fixed rival bid vectors."""
-
+    """Build the clean continuous best-response MPEC against fixed rival bids."""
     inv = active_investor or InvestorConfig(investor_id=ACTIVE_INVESTOR_ID)
-    rival_bids = list(rival_bids)
-    if not 0.0 <= min_bid_price_eur_per_mw_day <= max_bid_price_eur_per_mw_day:
-        raise ValueError("Bid-price bounds must satisfy 0 <= minimum <= maximum.")
-    if dual_bound_scale <= 0.0:
-        raise ValueError("dual_bound_scale must be positive.")
+    if max_bid_price_eur_per_mw_day <= 0.0:
+        raise ValueError("Maximum bid price must be positive.")
+    if price_bound_eur_per_mwh <= 0.0 or dual_bound_eur_per_mwh <= 0.0:
+        raise ValueError("Price and internal-dual bounds must be positive.")
+    if capacity_cleanup_tol_mw < 0.0:
+        raise ValueError("Capacity cleanup tolerance must be nonnegative.")
     if tie_break_epsilon_eur_per_mw_day < 0.0:
         raise ValueError("Tie-break epsilon must be nonnegative.")
     if rival_degradation_eur_per_mwh < 0.0:
         raise ValueError("Rival degradation cost must be nonnegative.")
-    if isinstance(node_limit_mw, Mapping):
-        limits = {node: float(node_limit_mw[node]) for node in data.nodes}
-    else:
-        limits = {node: float(node_limit_mw) for node in data.nodes}
+
+    limits = (
+        {node: float(node_limit_mw[node]) for node in data.nodes}
+        if isinstance(node_limit_mw, Mapping)
+        else {node: float(node_limit_mw) for node in data.nodes}
+    )
     if any(limit <= 0.0 for limit in limits.values()):
         raise ValueError("Every nodal auction limit must be positive.")
 
     def nodal_initial(value_or_map: float | Mapping[str, float], node: str) -> float:
         return float(value_or_map[node] if isinstance(value_or_map, Mapping) else value_or_map)
 
-    initial_quantity = {node: nodal_initial(initial_bid_quantity_mw, node) for node in data.nodes}
-    initial_price = {node: nodal_initial(initial_bid_price_eur_per_mw_day, node) for node in data.nodes}
-    initial_duration = {node: nodal_initial(initial_duration_hours, node) for node in data.nodes}
-    if any(not inv.ratio_min <= duration <= inv.ratio_max for duration in initial_duration.values()):
-        raise ValueError("Initial duration is outside the active investor's duration envelope.")
+    initial_quantity = {n: nodal_initial(initial_bid_quantity_mw, n) for n in data.nodes}
+    initial_price = {n: nodal_initial(initial_bid_price_eur_per_mw_day, n) for n in data.nodes}
+    initial_duration = {n: nodal_initial(initial_duration_hours, n) for n in data.nodes}
+    if any(not inv.ratio_min <= hours <= inv.ratio_max for hours in initial_duration.values()):
+        raise ValueError("Initial duration is outside the active investor duration envelope.")
 
     rivals, rival_quantity, rival_price, rival_duration = _normalize_rival_bids(
-        data, rival_bids, inv.investor_id, inv.ratio_min, inv.ratio_max
+        data,
+        rival_bids,
+        inv.investor_id,
+        inv.ratio_min,
+        inv.ratio_max,
+        capacity_cleanup_tol_mw,
     )
     permitted_active_nodes = set(data.nodes if active_nodes is None else active_nodes)
     unknown_active_nodes = permitted_active_nodes - set(data.nodes)
@@ -239,29 +240,53 @@ def build_one_leader_two_follower_mpec(
         raise ValueError(f"Unknown active-investor nodes: {sorted(unknown_active_nodes)}")
     if not permitted_active_nodes:
         raise ValueError("At least one active-investor node must be enabled.")
-    investors = [inv.investor_id, *rivals]
-    priority_offset = priority_offsets(investors, tie_break_epsilon_eur_per_mw_day)
+
+    active_pairs = [(inv.investor_id, node) for node in data.nodes]
+    rival_pairs = [
+        (rival, node)
+        for rival in rivals
+        for node in data.nodes
+        if rival_quantity[rival, node] > capacity_cleanup_tol_mw
+    ]
+    storage_pairs = active_pairs + rival_pairs
+    storage_pairs_at_node = {
+        node: [(investor, n) for investor, n in storage_pairs if n == node]
+        for node in data.nodes
+    }
+    positive_generator_hours = [
+        (generator, time)
+        for generator in data.generators
+        for time in data.times
+        if data.generation_capacity[generator, time] > SPARSE_GENERATION_CAPACITY_TOL
+    ]
+    generator_hours_at_node_time = {
+        (node, time): [
+            generator
+            for generator in data.generators_at_node.get(node, [])
+            if (generator, time) in positive_generator_hours
+        ]
+        for node in data.nodes
+        for time in data.times
+    }
+    gen_nodes = _generator_nodes(data)
     degradation = {inv.investor_id: inv.degradation_eur_per_mwh}
     degradation.update({rival: rival_degradation_eur_per_mwh for rival in rivals})
-    gen_nodes = _generator_nodes(data)
+    priority_offset = priority_offsets(
+        [inv.investor_id, *rivals], tie_break_epsilon_eur_per_mw_day
+    )
     last_t = max(data.times)
     eta = data.eta
-    dual_bound = dual_bound_scale * max(
-        DEFAULT_FIXED_DEMAND_DUAL_BOUND_EUR_PER_MWH,
-        float(data.voll),
-        max(data.generation_cost.values(), default=0.0),
-    )
 
     model = pyo.ConcreteModel(name=MODEL_NAME)
     model.N = pyo.Set(initialize=data.nodes, ordered=True)
-    model.G = pyo.Set(initialize=data.generators, ordered=True)
-    model.I = pyo.Set(initialize=investors, ordered=True)
     model.R = pyo.Set(initialize=rivals, ordered=True)
+    model.A = pyo.Set(dimen=2, initialize=storage_pairs, ordered=True)
+    model.IN = pyo.Set(dimen=2, initialize=storage_pairs, ordered=True)
+    model.GT = pyo.Set(dimen=2, initialize=positive_generator_hours, ordered=True)
     model.T = pyo.Set(initialize=data.times, ordered=True)
     model.T_SOC = pyo.Set(initialize=data.soc_times, ordered=True)
     model.L = pyo.Set(initialize=data.lines, ordered=True)
 
-    # Upper-level decisions of the active investor.
     model.active_bid_quantity = pyo.Var(
         model.N,
         bounds=lambda m, n: (0.0, limits[n]),
@@ -269,20 +294,21 @@ def build_one_leader_two_follower_mpec(
     )
     model.active_bid_price = pyo.Var(
         model.N,
-        bounds=(min_bid_price_eur_per_mw_day, max_bid_price_eur_per_mw_day),
-        initialize=lambda m, n: min(
-            max(initial_price[n], min_bid_price_eur_per_mw_day), max_bid_price_eur_per_mw_day
-        ),
+        bounds=(0.0, max_bid_price_eur_per_mw_day),
+        initialize=lambda m, n: min(max(initial_price[n], 0.0), max_bid_price_eur_per_mw_day),
     )
     model.active_energy = pyo.Var(
         model.N,
         bounds=lambda m, n: (0.0, inv.ratio_max * limits[n]),
-        initialize=0.0,
+        initialize=lambda m, n: min(
+            inv.ratio_max * limits[n],
+            max(0.0, initial_duration[n] * initial_quantity[n]),
+        ),
     )
     for node in data.nodes:
         if node not in permitted_active_nodes:
             model.active_bid_quantity[node].fix(0.0)
-            model.active_bid_price[node].fix(min_bid_price_eur_per_mw_day)
+            model.active_bid_price[node].fix(0.0)
             model.active_energy[node].fix(0.0)
 
     def bid_quantity(m: pyo.ConcreteModel, investor: str, node: str):
@@ -294,53 +320,40 @@ def build_one_leader_two_follower_mpec(
     def effective_bid_price(m: pyo.ConcreteModel, investor: str, node: str):
         return bid_price(m, investor, node) + priority_offset[investor]
 
-    # ------------------------------------------------------------------
-    # Follower 1: access auction primal, dual, and strong duality.
-    # ------------------------------------------------------------------
-    model.award = pyo.Var(model.I, model.N, domain=pyo.NonNegativeReals, initialize=0.0)
+    # Follower 1: auction primal, dual, and strong duality.
+    model.award = pyo.Var(model.A, domain=pyo.NonNegativeReals, initialize=0.0)
     model.auction_capacity = pyo.Constraint(
         model.N,
-        rule=lambda m, n: sum(m.award[i, n] for i in m.I) <= limits[n],
+        rule=lambda m, n: sum(m.award[i, node] for i, node in storage_pairs_at_node[n]) <= limits[n],
     )
     model.auction_bid_limit = pyo.Constraint(
-        model.I,
-        model.N,
+        model.A,
         rule=lambda m, i, n: m.award[i, n] <= bid_quantity(m, i, n),
     )
-    model.auction_capacity_dual = pyo.Var(model.N, domain=pyo.NonNegativeReals, initialize=0.0)
-    model.auction_quantity_dual = pyo.Var(model.I, model.N, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.auction_capacity_dual = pyo.Var(
+        model.N, bounds=(0.0, dual_bound_eur_per_mwh), initialize=0.0
+    )
+    model.auction_quantity_dual = pyo.Var(
+        model.A, bounds=(0.0, dual_bound_eur_per_mwh), initialize=0.0
+    )
     model.auction_dual_feasibility = pyo.Constraint(
-        model.I,
-        model.N,
+        model.A,
         rule=lambda m, i, n: m.auction_capacity_dual[n] + m.auction_quantity_dual[i, n]
         >= effective_bid_price(m, i, n),
     )
     model.auction_primal_value = pyo.Expression(
-        expr=sum(
-            effective_bid_price(model, i, n) * model.award[i, n]
-            for i in model.I
-            for n in model.N
-        )
+        expr=sum(effective_bid_price(model, i, n) * model.award[i, n] for i, n in model.A)
     )
     model.auction_dual_value = pyo.Expression(
         expr=sum(limits[n] * model.auction_capacity_dual[n] for n in model.N)
         + sum(
             bid_quantity(model, i, n) * model.auction_quantity_dual[i, n]
-            for i in model.I
-            for n in model.N
+            for i, n in model.A
         )
     )
     model.auction_strong_duality = pyo.Constraint(
         expr=model.auction_primal_value == model.auction_dual_value
     )
-    # Eliminate structurally absent rival blocks from the NLP. If both their
-    # quantity and price are zero, award=0 and quantity-dual=0 always admit an
-    # optimal auction primal-dual pair.
-    for rival in rivals:
-        for node in data.nodes:
-            if rival_quantity[rival, node] == 0.0 and rival_price[rival, node] == 0.0:
-                model.award[rival, node].fix(0.0)
-                model.auction_quantity_dual[rival, node].fix(0.0)
 
     model.active_energy_min = pyo.Constraint(
         model.N,
@@ -355,42 +368,34 @@ def build_one_leader_two_follower_mpec(
         return m.award[investor, node]
 
     def energy_capacity(m: pyo.ConcreteModel, investor: str, node: str):
-        if investor == inv.investor_id:
-            return m.active_energy[node]
-        return rival_duration[investor, node] * m.award[investor, node]
+        return (
+            m.active_energy[node]
+            if investor == inv.investor_id
+            else rival_duration[investor, node] * m.award[investor, node]
+        )
 
-    # ------------------------------------------------------------------
     # Follower 2: fixed-demand spot-market primal feasibility.
-    # ------------------------------------------------------------------
-    model.P_gen = pyo.Var(model.G, model.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    model.P_charge = pyo.Var(model.I, model.N, model.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    model.P_discharge = pyo.Var(model.I, model.N, model.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    model.SOC = pyo.Var(model.I, model.N, model.T_SOC, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.P_gen = pyo.Var(model.GT, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.P_charge = pyo.Var(model.IN, model.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.P_discharge = pyo.Var(model.IN, model.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.SOC = pyo.Var(model.IN, model.T_SOC, domain=pyo.NonNegativeReals, initialize=0.0)
     model.NetInjection = pyo.Var(model.N, model.T, domain=pyo.Reals, initialize=0.0)
-    for rival in rivals:
-        for node in data.nodes:
-            if rival_quantity[rival, node] == 0.0:
-                for time in data.times:
-                    model.P_charge[rival, node, time].fix(0.0)
-                    model.P_discharge[rival, node, time].fix(0.0)
-                for tau in data.soc_times:
-                    model.SOC[rival, node, tau].fix(0.0)
-
     model.nodal_balance = pyo.Constraint(
         model.N,
         model.T,
-        rule=lambda m, n, t: sum(m.P_gen[g, t] for g in data.generators_at_node.get(n, []))
-        + sum(m.P_discharge[i, n, t] - m.P_charge[i, n, t] for i in m.I)
+        rule=lambda m, n, t: sum(m.P_gen[g, t] for g in generator_hours_at_node_time[n, t])
+        + sum(
+            m.P_discharge[i, node, t] - m.P_charge[i, node, t]
+            for i, node in storage_pairs_at_node[n]
+        )
         - data.demand_el[n, t]
         == m.NetInjection[n, t],
     )
     model.system_balance = pyo.Constraint(
-        model.T,
-        rule=lambda m, t: sum(m.NetInjection[n, t] for n in m.N) == 0.0,
+        model.T, rule=lambda m, t: sum(m.NetInjection[n, t] for n in m.N) == 0.0
     )
     model.generation_capacity_bound = pyo.Constraint(
-        model.G,
-        model.T,
+        model.GT,
         rule=lambda m, g, t: m.P_gen[g, t] <= data.generation_capacity[g, t],
     )
     model.line_upper_bound = pyo.Constraint(
@@ -406,66 +411,64 @@ def build_one_leader_two_follower_mpec(
         >= -data.line_limit[line],
     )
     model.charge_power_bound = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         model.T,
         rule=lambda m, i, n, t: m.P_charge[i, n, t] <= power_capacity(m, i, n),
     )
     model.discharge_power_bound = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         model.T,
         rule=lambda m, i, n, t: m.P_discharge[i, n, t] <= power_capacity(m, i, n),
     )
     model.soc_transition = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         model.T,
         rule=lambda m, i, n, t: m.SOC[i, n, t]
         == m.SOC[i, n, t - 1] + eta * m.P_charge[i, n, t] - m.P_discharge[i, n, t] / eta,
     )
     model.soc_capacity_bound = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         model.T_SOC,
         rule=lambda m, i, n, tau: m.SOC[i, n, tau] <= energy_capacity(m, i, n),
     )
     model.soc_periodicity = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         rule=lambda m, i, n: m.SOC[i, n, 0] == m.SOC[i, n, last_t],
     )
 
-    # Spot-market dual variables. Bounds are numerical safeguards and are
-    # checked after solve; a binding bound invalidates the economic result.
-    model.lam = pyo.Var(model.N, model.T, bounds=(-dual_bound, dual_bound), initialize=80.0)
-    model.lam_sys = pyo.Var(model.T, bounds=(-dual_bound, dual_bound), initialize=80.0)
-    model.nu_gen = pyo.Var(model.G, model.T, bounds=(-dual_bound, 0.0), initialize=0.0)
-    model.mu_up = pyo.Var(model.L, model.T, bounds=(-dual_bound, 0.0), initialize=0.0)
-    model.mu_dn = pyo.Var(model.L, model.T, bounds=(0.0, dual_bound), initialize=0.0)
-    model.rho_ch = pyo.Var(model.I, model.N, model.T, bounds=(-dual_bound, 0.0), initialize=0.0)
-    model.sig_dis = pyo.Var(model.I, model.N, model.T, bounds=(-dual_bound, 0.0), initialize=0.0)
-    model.gam = pyo.Var(model.I, model.N, model.T, bounds=(-dual_bound, dual_bound), initialize=0.0)
-    model.del_soc = pyo.Var(model.I, model.N, model.T_SOC, bounds=(-dual_bound, 0.0), initialize=0.0)
-    model.rho_per = pyo.Var(model.I, model.N, bounds=(-dual_bound, dual_bound), initialize=0.0)
+    # Spot duals: exact maintained EPEC bounds.
+    model.lam = pyo.Var(
+        model.N, model.T, bounds=(-price_bound_eur_per_mwh, price_bound_eur_per_mwh), initialize=80.0
+    )
+    model.lam_sys = pyo.Var(
+        model.T, bounds=(-price_bound_eur_per_mwh, price_bound_eur_per_mwh), initialize=80.0
+    )
+    model.nu_gen = pyo.Var(model.GT, bounds=(-dual_bound_eur_per_mwh, 0.0), initialize=0.0)
+    model.mu_up = pyo.Var(model.L, model.T, bounds=(-dual_bound_eur_per_mwh, 0.0), initialize=0.0)
+    model.mu_dn = pyo.Var(model.L, model.T, bounds=(0.0, dual_bound_eur_per_mwh), initialize=0.0)
+    model.rho_ch = pyo.Var(model.IN, model.T, bounds=(-dual_bound_eur_per_mwh, 0.0), initialize=0.0)
+    model.sig_dis = pyo.Var(model.IN, model.T, bounds=(-dual_bound_eur_per_mwh, 0.0), initialize=0.0)
+    model.gam = pyo.Var(
+        model.IN, model.T, bounds=(-dual_bound_eur_per_mwh, dual_bound_eur_per_mwh), initialize=0.0
+    )
+    model.del_soc = pyo.Var(model.IN, model.T_SOC, bounds=(-dual_bound_eur_per_mwh, 0.0), initialize=0.0)
+    model.rho_per = pyo.Var(
+        model.IN, bounds=(-dual_bound_eur_per_mwh, dual_bound_eur_per_mwh), initialize=0.0
+    )
 
-    # Spot-market dual feasibility/stationarity.
     model.gen_stationarity = pyo.Constraint(
-        model.G,
-        model.T,
+        model.GT,
         rule=lambda m, g, t: sum(m.lam[n, t] for n in gen_nodes.get(g, [])) + m.nu_gen[g, t]
         <= data.generation_cost[g],
     )
     model.charge_stationarity = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         model.T,
         rule=lambda m, i, n, t: -m.lam[n, t] + m.rho_ch[i, n, t] - eta * m.gam[i, n, t]
         <= 0.5 * degradation[i],
     )
     model.discharge_stationarity = pyo.Constraint(
-        model.I,
-        model.N,
+        model.IN,
         model.T,
         rule=lambda m, i, n, t: m.lam[n, t] + m.sig_dis[i, n, t] + m.gam[i, n, t] / eta
         <= 0.5 * degradation[i],
@@ -491,20 +494,18 @@ def build_one_leader_two_follower_mpec(
             expression -= m.rho_per[investor, node]
         return expression <= 0.0
 
-    model.soc_stationarity = pyo.Constraint(model.I, model.N, model.T_SOC, rule=soc_stationarity)
-
+    model.soc_stationarity = pyo.Constraint(model.IN, model.T_SOC, rule=soc_stationarity)
     model.spot_primal_value = pyo.Expression(
-        expr=sum(data.generation_cost[g] * model.P_gen[g, t] for g in model.G for t in model.T)
+        expr=sum(data.generation_cost[g] * model.P_gen[g, t] for g, t in model.GT)
         + sum(
             0.5 * degradation[i] * (model.P_charge[i, n, t] + model.P_discharge[i, n, t])
-            for i in model.I
-            for n in model.N
+            for i, n in model.IN
             for t in model.T
         )
     )
     model.spot_dual_value = pyo.Expression(
         expr=sum(data.demand_el[n, t] * model.lam[n, t] for n in model.N for t in model.T)
-        + sum(data.generation_capacity[g, t] * model.nu_gen[g, t] for g in model.G for t in model.T)
+        + sum(data.generation_capacity[g, t] * model.nu_gen[g, t] for g, t in model.GT)
         + sum(
             data.line_limit[line] * (model.mu_up[line, t] - model.mu_dn[line, t])
             for line in model.L
@@ -512,14 +513,12 @@ def build_one_leader_two_follower_mpec(
         )
         + sum(
             power_capacity(model, i, n) * (model.rho_ch[i, n, t] + model.sig_dis[i, n, t])
-            for i in model.I
-            for n in model.N
+            for i, n in model.IN
             for t in model.T
         )
         + sum(
             energy_capacity(model, i, n) * model.del_soc[i, n, tau]
-            for i in model.I
-            for n in model.N
+            for i, n in model.IN
             for tau in model.T_SOC
         )
     )
@@ -527,9 +526,7 @@ def build_one_leader_two_follower_mpec(
         expr=model.spot_primal_value == model.spot_dual_value
     )
 
-    # ------------------------------------------------------------------
-    # Active investor objective.
-    # ------------------------------------------------------------------
+    # Leader objective.
     crf_daily = capital_recovery_factor(inv.wacc, inv.lifetime_years) / 365.0
     gen_node = {g: (gen_nodes.get(g) or [None])[0] for g in data.generators}
     model.active_spot_revenue = pyo.Expression(
@@ -545,7 +542,7 @@ def build_one_leader_two_follower_mpec(
             share * (model.lam[gen_node[g], t] - data.generation_cost[g]) * model.P_gen[g, t]
             for g, share in inv.owned_generation_shares.items()
             for t in model.T
-            if share != 0.0 and gen_node.get(g) is not None
+            if share != 0.0 and gen_node.get(g) is not None and (g, t) in model.GT
         )
     )
     model.active_degradation_cost = pyo.Expression(
@@ -583,77 +580,68 @@ def build_one_leader_two_follower_mpec(
     model._market_data = data
     model._active_investor = inv
     model._active_id = inv.investor_id
+    model._investors = [inv.investor_id, *rivals]
     model._rival_quantity = rival_quantity
     model._rival_price = rival_price
     model._rival_duration = rival_duration
     model._node_limits = limits
     model._degradation = degradation
-    model._dual_bound = dual_bound
     model._initial_duration_hours = initial_duration
     model._permitted_active_nodes = sorted(permitted_active_nodes)
-    model._tie_break_epsilon_eur_per_mw_day = tie_break_epsilon_eur_per_mw_day
+    model._price_bound_eur_per_mwh = float(price_bound_eur_per_mwh)
+    model._dual_bound_eur_per_mwh = float(dual_bound_eur_per_mwh)
+    model._capacity_cleanup_tol_mw = float(capacity_cleanup_tol_mw)
+    model._tie_break_epsilon_eur_per_mw_day = float(tie_break_epsilon_eur_per_mw_day)
     model._priority_offset_eur_per_mw_day = priority_offset
+    model._storage_pairs = tuple(storage_pairs)
+    model._positive_generator_hours = tuple(positive_generator_hours)
     return model
 
 
 def _current_fixed_bids(model: pyo.ConcreteModel) -> list[Bid]:
     bids: list[Bid] = []
-    active_id = model._active_id
-    for node in model.N:
-        bids.append(
-            Bid(
-                active_id,
-                node,
-                max(0.0, value(model.active_bid_quantity[node])),
-                max(0.0, value(model.active_bid_price[node])),
-            )
-        )
-    for rival in model.R:
-        for node in model.N:
-            bids.append(
-                Bid(
-                    rival,
-                    node,
-                    model._rival_quantity[rival, node],
-                    model._rival_price[rival, node],
-                )
-            )
+    for investor, node in model.A:
+        if investor == model._active_id:
+            quantity = max(0.0, value(model.active_bid_quantity[node]))
+            price = max(0.0, value(model.active_bid_price[node]))
+        else:
+            quantity = model._rival_quantity[investor, node]
+            price = model._rival_price[investor, node]
+        bids.append(Bid(investor, node, quantity, price))
     return bids
 
 
 def initialize_from_independent_followers(model: pyo.ConcreteModel) -> None:
-    """Warm-start awards and spot dispatch from separate follower solves."""
-
+    """Warm-start the embedded variables without imposing a secondary selection rule."""
     bids = _current_fixed_bids(model)
-    primal = build_auction_primal(
-        bids, model._node_limits, model._tie_break_epsilon_eur_per_mw_day
-    )
     solver = get_ipopt_solver({"max_cpu_time": 60.0})
-    primal_result = solver.solve(primal, tee=False)
-    if primal_result.solver.termination_condition != pyo.TerminationCondition.optimal:
-        return
-    optimal_bid_value_by_node = {n: value(primal.bid_value_by_node[n]) for n in primal.N}
-    dual = build_auction_dual(
+    primal = build_auction_primal(
         bids,
         model._node_limits,
         model._tie_break_epsilon_eur_per_mw_day,
-        optimal_bid_value_by_node,
+    )
+    primal_result = solver.solve(primal, tee=False)
+    if primal_result.solver.termination_condition != pyo.TerminationCondition.optimal:
+        return
+    dual = build_auction_dual(
+        bids,
+        model._node_limits,
+        dual_bound_eur_per_mw_day=model._dual_bound_eur_per_mwh,
+        tie_break_epsilon_eur_per_mw_day=model._tie_break_epsilon_eur_per_mw_day,
     )
     dual_result = solver.solve(dual, tee=False)
 
     awards = awarded_mw(primal)
-    for investor in model.I:
-        for node in model.N:
-            model.award[investor, node].set_value(awards.get((investor, node), 0.0))
+    for investor, node in model.A:
+        model.award[investor, node].set_value(awards.get((investor, node), 0.0))
     if dual_result.solver.termination_condition == pyo.TerminationCondition.optimal:
         for node in model.N:
             model.auction_capacity_dual[node].set_value(max(0.0, value(dual.capacity_dual[node])))
         bid_index = {(dual.bid[k].investor, dual.bid[k].node): k for k in dual.K}
-        for investor in model.I:
-            for node in model.N:
-                model.auction_quantity_dual[investor, node].set_value(
-                    max(0.0, value(dual.quantity_dual[bid_index[investor, node]]))
-                )
+        for investor, node in model.A:
+            model.auction_quantity_dual[investor, node].set_value(
+                max(0.0, value(dual.quantity_dual[bid_index[investor, node]]))
+            )
 
     active_id = model._active_id
     for node in model.N:
@@ -661,19 +649,19 @@ def initialize_from_independent_followers(model: pyo.ConcreteModel) -> None:
             model._initial_duration_hours[node] * value(model.award[active_id, node])
         )
 
-    x_power = {(i, n): value(model.award[i, n]) for i in model.I for n in model.N}
-    x_energy = {
-        (i, n): (
-            value(model.active_energy[n])
-            if i == active_id
-            else model._rival_duration[i, n] * value(model.award[i, n])
+    x_power = {(i, n): 0.0 for i in model._investors for n in model.N}
+    x_energy = {(i, n): 0.0 for i in model._investors for n in model.N}
+    for investor, node in model.IN:
+        award = value(model.award[investor, node])
+        x_power[investor, node] = award
+        x_energy[investor, node] = (
+            value(model.active_energy[node])
+            if investor == active_id
+            else model._rival_duration[investor, node] * award
         )
-        for i in model.I
-        for n in model.N
-    }
     spot_data = replace(
         model._market_data,
-        storage_units=list(model.I),
+        storage_units=list(model._investors),
         x_power=x_power,
         x_energy=x_energy,
     )
@@ -687,43 +675,76 @@ def initialize_from_independent_followers(model: pyo.ConcreteModel) -> None:
         return
     prices = fixed_demand_reference_lambda(reference)
     gen_nodes = _generator_nodes(spot_data)
-    for g in model.G:
-        for t in model.T:
-            model.P_gen[g, t].set_value(max(0.0, value(reference.P_gen[g, t])))
-            marginal_price = sum(prices[n, t] for n in gen_nodes.get(g, []))
-            model.nu_gen[g, t].set_value(min(0.0, spot_data.generation_cost[g] - marginal_price))
+    for g, t in model.GT:
+        model.P_gen[g, t].set_value(max(0.0, value(reference.P_gen[g, t])))
+        marginal_price = sum(prices[n, t] for n in gen_nodes.get(g, []))
+        model.nu_gen[g, t].set_value(
+            max(-model._dual_bound_eur_per_mwh, min(0.0, spot_data.generation_cost[g] - marginal_price))
+        )
     for n in model.N:
         for t in model.T:
             model.NetInjection[n, t].set_value(value(reference.NetInjection[n, t]))
-            model.lam[n, t].set_value(prices[n, t])
+            model.lam[n, t].set_value(
+                min(model._price_bound_eur_per_mwh, max(-model._price_bound_eur_per_mwh, prices[n, t]))
+            )
     for t in model.T:
-        model.lam_sys[t].set_value(sum(prices[n, t] for n in model.N) / max(1, len(list(model.N))))
-    for i in model.I:
-        for n in model.N:
-            for t in model.T:
-                model.P_charge[i, n, t].set_value(max(0.0, value(reference.P_charge[i, n, t])))
-                model.P_discharge[i, n, t].set_value(max(0.0, value(reference.P_discharge[i, n, t])))
-                model.gam[i, n, t].set_value(-prices[n, t])
-            for tau in model.T_SOC:
-                model.SOC[i, n, tau].set_value(max(0.0, value(reference.SOC[i, n, tau])))
+        average_price = sum(prices[n, t] for n in model.N) / max(1, len(list(model.N)))
+        model.lam_sys[t].set_value(
+            min(model._price_bound_eur_per_mwh, max(-model._price_bound_eur_per_mwh, average_price))
+        )
+    for investor, node in model.IN:
+        for t in model.T:
+            model.P_charge[investor, node, t].set_value(
+                max(0.0, value(reference.P_charge[investor, node, t]))
+            )
+            model.P_discharge[investor, node, t].set_value(
+                max(0.0, value(reference.P_discharge[investor, node, t]))
+            )
+            model.gam[investor, node, t].set_value(-prices[node, t])
+        for tau in model.T_SOC:
+            model.SOC[investor, node, tau].set_value(
+                max(0.0, value(reference.SOC[investor, node, tau]))
+            )
 
 
 def solve_mpec(
     model: pyo.ConcreteModel,
     max_cpu_time: float,
+    solver_tol: float = DEFAULT_SOLVER_TOL,
     tee: bool = False,
 ) -> str:
-    """Solve one continuous MPEC response at the current price treatment."""
-
     solver = get_ipopt_solver(
         {
             "max_cpu_time": max_cpu_time,
-            "tol": MPEC_IPOPT_TOLERANCE,
-            "acceptable_tol": MPEC_IPOPT_TOLERANCE,
+            "tol": solver_tol,
+            "acceptable_tol": solver_tol,
         }
     )
-    result = solver.solve(model, tee=tee)
-    return str(result.solver.termination_condition)
+    result = solver.solve(model, tee=tee, load_solutions=False)
+    status = str(result.solver.status)
+    termination = str(result.solver.termination_condition)
+    message = str(result.solver.message or "")
+    model._solver_status = status
+    model._solver_message = message
+    if len(result.solution) > 0:
+        try:
+            model.solutions.load_from(result)
+        except ValueError:
+            # A failed tick candidate must not abort the remaining price search.
+            # Its initialized values are retained only for diagnostic export.
+            pass
+    return termination
+
+
+def _max_abs_component(component: pyo.Var) -> tuple[float, str | None]:
+    maximum = 0.0
+    name: str | None = None
+    for index in component:
+        magnitude = abs(value(component[index]))
+        if magnitude > maximum:
+            maximum = magnitude
+            name = f"{component.name}[{index!r}]"
+    return maximum, name
 
 
 def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
@@ -739,28 +760,28 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
             "active_bid_price_eur_per_mw_day": value(model.active_bid_price[node]),
             "active_award_mw": award,
             "active_energy_mwh": energy,
-            "active_duration_hours": energy / award if award > 1e-7 else None,
-            "total_award_mw": sum(max(0.0, value(model.award[i, node])) for i in model.I),
-            "auction_capacity_dual_eur_per_mw_day": value(
-                model.auction_capacity_dual[node]
+            "active_duration_hours": energy / award if award > model._capacity_cleanup_tol_mw else None,
+            "total_award_mw": sum(
+                max(0.0, value(model.award[i, n]))
+                for i, n in model.A
+                if n == node
             ),
+            "auction_capacity_dual_eur_per_mw_day": value(model.auction_capacity_dual[node]),
             "rival_awards_mw": {
-                rival: max(0.0, value(model.award[rival, node])) for rival in model.R
+                rival: max(0.0, value(model.award[rival, node]))
+                for rival in model.R
+                if (rival, node) in model.A
             },
         }
 
-    # Independent reclear at the final bids diagnoses optimistic/tied auction
-    # allocation. It does not alter the MPEC result.
     fixed_bids = _current_fixed_bids(model)
     independent = build_auction_primal(
-        fixed_bids, model._node_limits, model._tie_break_epsilon_eur_per_mw_day
+        fixed_bids,
+        model._node_limits,
+        model._tie_break_epsilon_eur_per_mw_day,
     )
     independent_solver = get_ipopt_solver(
-        {
-            "max_cpu_time": 60.0,
-            "tol": 1.0e-9,
-            "acceptable_tol": 1.0e-8,
-        }
+        {"max_cpu_time": 60.0, "tol": 1.0e-9, "acceptable_tol": 1.0e-8}
     )
     independent_term = str(
         independent_solver.solve(independent, tee=False).solver.termination_condition
@@ -769,19 +790,40 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
     max_award_difference = max(
         (
             abs(value(model.award[i, n]) - reclear_awards.get((i, n), 0.0))
-            for i in model.I
-            for n in model.N
+            for i, n in model.A
         ),
         default=0.0,
     )
-    dual_bound = model._dual_bound
-    dual_values = [abs(value(model.lam[n, t])) for n in model.N for t in model.T]
-    dual_bound_fraction = max(dual_values, default=0.0) / dual_bound
+
+    price_components = (model.lam, model.lam_sys)
+    internal_components = (
+        model.auction_capacity_dual,
+        model.auction_quantity_dual,
+        model.nu_gen,
+        model.mu_up,
+        model.mu_dn,
+        model.rho_ch,
+        model.sig_dis,
+        model.gam,
+        model.del_soc,
+        model.rho_per,
+    )
+    price_candidates = [_max_abs_component(component) for component in price_components]
+    internal_candidates = [_max_abs_component(component) for component in internal_components]
+    max_price, max_price_name = max(
+        price_candidates, key=lambda candidate: candidate[0], default=(0.0, None)
+    )
+    max_internal, max_internal_name = max(
+        internal_candidates, key=lambda candidate: candidate[0], default=(0.0, None)
+    )
     return {
         "termination": termination,
-        "interpretation": "local optimistic MPEC candidate",
+        "solver_status": getattr(model, "_solver_status", None),
+        "solver_message": getattr(model, "_solver_message", None),
+        "interpretation": "local optimistic continuous-bid MPEC candidate",
+        "formulation": "leader + auction primal/dual/strong-duality + spot primal/dual/strong-duality",
         "payment_rule": "pay_as_bid",
-        "tie_break_epsilon_eur_per_mw_day": model._tie_break_epsilon_eur_per_mw_day,
+        "bid_merit_tie_break_epsilon_eur_per_mw_day": model._tie_break_epsilon_eur_per_mw_day,
         "priority_offset_eur_per_mw_day": model._priority_offset_eur_per_mw_day,
         "active_investor": active_id,
         "permitted_active_nodes": model._permitted_active_nodes,
@@ -799,7 +841,18 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
         "spot_strong_duality_gap": spot_gap,
         "independent_auction_termination": independent_term,
         "max_embedded_vs_reclear_award_difference_mw": max_award_difference,
-        "max_lmp_fraction_of_numerical_bound": dual_bound_fraction,
+        "price_bound_eur_per_mwh": model._price_bound_eur_per_mwh,
+        "dual_bound_eur_per_mwh": model._dual_bound_eur_per_mwh,
+        "max_abs_price_dual": max_price,
+        "max_abs_price_dual_name": max_price_name,
+        "max_abs_price_dual_fraction_of_bound": max_price / model._price_bound_eur_per_mwh,
+        "max_abs_internal_dual": max_internal,
+        "max_abs_internal_dual_name": max_internal_name,
+        "max_abs_internal_dual_fraction_of_bound": max_internal / model._dual_bound_eur_per_mwh,
+        "embedded_storage_pair_count": len(model._storage_pairs),
+        "positive_generator_hour_count": len(model._positive_generator_hours),
+        "variable_count": model.nvariables(),
+        "constraint_count": model.nconstraints(),
         "nodes": nodes,
     }
 
@@ -807,10 +860,9 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
 def print_summary(summary: Mapping[str, object]) -> None:
     print(f"Termination: {summary['termination']}")
     print(f"Interpretation: {summary['interpretation']}")
-    print(f"Access payment rule: {summary['payment_rule']}")
     print(f"Active profit: {summary['profit_eur_per_day']:,.2f} EUR/day")
     print(
-        "  spot revenue {0:,.2f} + generation rent {1:,.2f} - degradation {2:,.2f} "
+        "  spot {0:,.2f} + generation {1:,.2f} - degradation {2:,.2f} "
         "- CAPEX {3:,.2f} - access {4:,.2f}".format(
             summary["spot_revenue_eur_per_day"],
             summary["generation_rent_eur_per_day"],
@@ -822,19 +874,18 @@ def print_summary(summary: Mapping[str, object]) -> None:
     print(f"Auction strong-duality gap: {summary['auction_strong_duality_gap']:.3e}")
     print(f"Spot strong-duality gap: {summary['spot_strong_duality_gap']:.3e}")
     print(
-        "Embedded vs independent auction max award difference: "
-        f"{summary['max_embedded_vs_reclear_award_difference_mw']:.3e} MW"
+        f"Model size: {summary['variable_count']} variables / "
+        f"{summary['constraint_count']} constraints"
     )
     print("Active bids and awards:")
     for node, row in summary["nodes"].items():
-        if row["active_bid_quantity_mw"] > 1e-5 or row["active_award_mw"] > 1e-5:
+        if row["active_bid_quantity_mw"] > 1.0e-5 or row["active_award_mw"] > 1.0e-5:
             duration = row["active_duration_hours"]
             duration_text = "-" if duration is None else f"{duration:.2f} h"
             print(
                 f"  {node}: bid {row['active_bid_quantity_mw']:.3f} MW @ "
                 f"{row['active_bid_price_eur_per_mw_day']:.3f} EUR/MW/day; "
-                f"award {row['active_award_mw']:.3f} MW, "
-                f"capacity dual {row['auction_capacity_dual_eur_per_mw_day']:.3f} EUR/MW/day, "
+                f"award {row['active_award_mw']:.3f} MW; "
                 f"energy {row['active_energy_mwh']:.3f} MWh ({duration_text})"
             )
 
@@ -849,33 +900,25 @@ def pay_as_bid_tick_candidates(
     active_investor: str,
     active_node: str,
     rivals: Iterable[RivalBid],
-    min_bid_price_eur_per_mw_day: float,
     max_bid_price_eur_per_mw_day: float,
     bid_price_tick_eur_per_mw_day: float,
     tie_break_epsilon_eur_per_mw_day: float,
 ) -> list[float]:
-    """Return all economically distinct active prices on the declared grid."""
-
+    """Return the economically distinct raw bid prices on the exact grid."""
     tick = bid_price_tick_eur_per_mw_day
     if tick <= 0.0:
-        raise ValueError("The bid-price tick must be positive in grid mode.")
+        raise ValueError("Bid-price tick must be positive in grid mode.")
     if tie_break_epsilon_eur_per_mw_day <= 0.0:
-        raise ValueError("Grid mode requires a positive deterministic tie-break epsilon.")
-
+        raise ValueError("Grid mode requires a positive deterministic merit offset.")
     rival_list = list(rivals)
     investors = {active_investor, *(bid.investor for bid in rival_list)}
-    maximum_priority_gap = (
-        tie_break_epsilon_eur_per_mw_day * max(0, len(investors) - 1)
-    )
+    maximum_priority_gap = tie_break_epsilon_eur_per_mw_day * max(0, len(investors) - 1)
     if maximum_priority_gap >= tick:
         raise ValueError(
             "The maximum deterministic priority gap must be smaller than one bid tick."
         )
 
-    minimum_tick = math.ceil(
-        (min_bid_price_eur_per_mw_day - 1.0e-12) / tick
-    )
-    candidate_ticks = {max(0, minimum_tick)}
+    candidate_ticks = {0}
     for rival in rival_list:
         if rival.node != active_node or rival.quantity_mw <= 1.0e-9:
             continue
@@ -886,63 +929,17 @@ def pay_as_bid_tick_candidates(
             )
         rival_tick = round(rival.price_eur_per_mw_day / tick)
         candidate_ticks.update({rival_tick, rival_tick + 1})
-
     return sorted(
         round(index * tick, 12)
         for index in candidate_ticks
-        if min_bid_price_eur_per_mw_day - 1.0e-12
-        <= index * tick
-        <= max_bid_price_eur_per_mw_day + 1.0e-12
+        if 0.0 <= index * tick <= max_bid_price_eur_per_mw_day + 1.0e-12
     )
 
 
-def _solve_cli_response(
-    data: MarketData,
-    rivals: list[RivalBid],
-    active: InvestorConfig,
-    cfg,
-    *,
-    fixed_bid_price: float | None = None,
-    force_zero_quantity: bool = False,
-) -> tuple[dict[str, object], float]:
-    model = build_one_leader_two_follower_mpec(
-        data,
-        rivals,
-        active_investor=active,
-        active_nodes=None if cfg.active_node is None else [cfg.active_node],
-        node_limit_mw=cfg.node_limit_mw,
-        min_bid_price_eur_per_mw_day=cfg.min_bid_price_eur_per_mw_day,
-        max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
-        initial_bid_quantity_mw=cfg.initial_bid_quantity_mw,
-        initial_bid_price_eur_per_mw_day=(
-            cfg.initial_bid_price_eur_per_mw_day
-            if fixed_bid_price is None
-            else fixed_bid_price
-        ),
-        initial_duration_hours=cfg.initial_duration_hours,
-        dual_bound_scale=cfg.dual_bound_scale,
-        tie_break_epsilon_eur_per_mw_day=cfg.tie_break_epsilon_eur_per_mw_day,
-    )
-    if fixed_bid_price is not None:
-        model.active_bid_price[cfg.active_node].fix(fixed_bid_price)
-    if force_zero_quantity:
-        for node in data.nodes:
-            model.active_bid_quantity[node].fix(0.0)
-            model.active_bid_price[node].fix(cfg.min_bid_price_eur_per_mw_day)
-            model.active_energy[node].fix(0.0)
-    initialize_from_independent_followers(model)
-    started = time.perf_counter()
-    termination = solve_mpec(model, cfg.max_cpu_time, tee=cfg.tee)
-    elapsed = time.perf_counter() - started
-    return summarize(model, termination), elapsed
-
-
-def pay_as_bid_tick_candidate_diagnostic(
+def tick_candidate_diagnostic(
     summary: Mapping[str, object],
     elapsed_seconds: float,
-    *,
-    label: str,
-    fixed_bid_price: float | None,
+    fixed_bid_price: float,
 ) -> dict[str, object]:
     payment_check = sum(
         row["active_bid_price_eur_per_mw_day"] * row["active_award_mw"]
@@ -961,9 +958,10 @@ def pay_as_bid_tick_candidate_diagnostic(
     if abs(payment_residual) > 1.0e-6:
         rejection_reasons.append("pay_as_bid_payment_mismatch")
     return {
-        "label": label,
         "fixed_bid_price_eur_per_mw_day": fixed_bid_price,
         "termination": summary["termination"],
+        "solver_status": summary.get("solver_status"),
+        "solver_message": summary.get("solver_message"),
         "valid": not rejection_reasons,
         "rejection_reasons": rejection_reasons,
         "elapsed_seconds": elapsed_seconds,
@@ -978,116 +976,127 @@ def pay_as_bid_tick_candidate_diagnostic(
     }
 
 
-def _run_pay_as_bid_tick_search(
+def solve_fixed_price_response(
+    data: MarketData,
+    rivals: list[RivalBid],
+    active: InvestorConfig,
+    cfg,
+    fixed_bid_price: float | None = None,
+) -> tuple[pyo.ConcreteModel, dict[str, object], float]:
+    active_nodes = None if cfg.active_node is None else [cfg.active_node]
+    model = build_one_leader_two_follower_mpec(
+        data,
+        rivals,
+        active_investor=active,
+        active_nodes=active_nodes,
+        node_limit_mw=cfg.node_limit_mw,
+        max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
+        initial_bid_quantity_mw=cfg.initial_bid_quantity_mw,
+        initial_bid_price_eur_per_mw_day=cfg.initial_bid_price_eur_per_mw_day,
+        initial_duration_hours=cfg.initial_duration_hours,
+        price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
+        dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
+        capacity_cleanup_tol_mw=cfg.capacity_cleanup_tol_mw,
+        tie_break_epsilon_eur_per_mw_day=(
+            cfg.tie_break_epsilon_eur_per_mw_day
+            if cfg.bid_price_tick_eur_per_mw_day > 0.0
+            else 0.0
+        ),
+    )
+    if fixed_bid_price is not None:
+        model.active_bid_price[cfg.active_node].fix(fixed_bid_price)
+    initialize_from_independent_followers(model)
+    started = time.perf_counter()
+    termination = solve_mpec(model, cfg.max_cpu_time, cfg.solver_tol, tee=cfg.tee)
+    elapsed = time.perf_counter() - started
+    summary = summarize(model, termination)
+    summary["solve_seconds"] = elapsed
+    return model, summary, elapsed
+
+
+def run_tick_search(
     data: MarketData,
     rivals: list[RivalBid],
     active: InvestorConfig,
     cfg,
 ) -> tuple[dict[str, object], bool]:
     if cfg.active_node is None:
-        raise ValueError("Bid-price enumeration currently requires exactly one active node.")
+        raise ValueError("Exact bid-price enumeration requires exactly one active node.")
     prices = pay_as_bid_tick_candidates(
         active_investor=cfg.active_investor,
         active_node=cfg.active_node,
         rivals=rivals,
-        min_bid_price_eur_per_mw_day=cfg.min_bid_price_eur_per_mw_day,
         max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
         bid_price_tick_eur_per_mw_day=cfg.bid_price_tick_eur_per_mw_day,
         tie_break_epsilon_eur_per_mw_day=cfg.tie_break_epsilon_eur_per_mw_day,
     )
     records: list[tuple[dict[str, object], dict[str, object]]] = []
     for price in prices:
-        print(f"\nPay-as-bid grid candidate: {price:.12g} EUR/MW/day")
-        summary, elapsed = _solve_cli_response(
-            data,
-            rivals,
-            active,
-            cfg,
-            fixed_bid_price=price,
+        print(f"Pay-as-bid grid candidate: {price:.12g} EUR/MW/day")
+        _, summary, elapsed = solve_fixed_price_response(
+            data, rivals, active, cfg, fixed_bid_price=price
         )
-        print_summary(summary)
-        diagnostic = pay_as_bid_tick_candidate_diagnostic(
-            summary,
-            elapsed,
-            label=f"price_{price:.12g}",
-            fixed_bid_price=price,
+        diagnostic = tick_candidate_diagnostic(summary, elapsed, price)
+        print(
+            f"  termination={summary['termination']}, valid={diagnostic['valid']}, "
+            f"profit={summary['profit_eur_per_day']:,.2f} EUR/day"
         )
         records.append((summary, diagnostic))
-
-    print("\nPay-as-bid grid candidate: zero-quantity outside option")
-    outside_summary, outside_elapsed = _solve_cli_response(
-        data,
-        rivals,
-        active,
-        cfg,
-        force_zero_quantity=True,
-    )
-    print_summary(outside_summary)
-    outside_diagnostic = pay_as_bid_tick_candidate_diagnostic(
-        outside_summary,
-        outside_elapsed,
-        label="zero_quantity_outside_option",
-        fixed_bid_price=None,
-    )
-    records.append((outside_summary, outside_diagnostic))
-
     valid_records = [record for record in records if record[1]["valid"]]
     if not valid_records:
         return {
             "termination": "no_valid_tick_candidate",
             "interpretation": "pay-as-bid tick search failed",
-            "payment_rule": "pay_as_bid",
             "bid_price_tick_eur_per_mw_day": cfg.bid_price_tick_eur_per_mw_day,
             "candidate_prices_eur_per_mw_day": prices,
             "tick_candidate_diagnostics": [record[1] for record in records],
         }, False
-
     selected_summary, selected_diagnostic = max(
-        valid_records,
-        key=lambda record: record[0]["profit_eur_per_day"],
+        valid_records, key=lambda record: record[0]["profit_eur_per_day"]
     )
-    output = {
+    return {
         **selected_summary,
-        "interpretation": "local optimistic MPEC candidate selected on pay-as-bid price grid",
+        "interpretation": "local MPEC candidate selected on exact pay-as-bid grid",
         "bid_price_selection_mode": "pay_as_bid_tick_enumeration",
         "bid_price_tick_eur_per_mw_day": cfg.bid_price_tick_eur_per_mw_day,
         "candidate_prices_eur_per_mw_day": prices,
-        "selected_tick_candidate": selected_diagnostic["label"],
+        "selected_tick_price_eur_per_mw_day": selected_diagnostic[
+            "fixed_bid_price_eur_per_mw_day"
+        ],
         "tick_candidate_diagnostics": [record[1] for record in records],
-    }
-    return output, True
+    }, True
 
 
 def main() -> int:
     cfg = parse_single_mpec_cli()
     data = load_market_data(cfg.data_path)
-    if cfg.active_node is not None and cfg.active_node not in data.nodes:
-        raise SystemExit(f"Unknown active node {cfg.active_node!r}; choose from {list(data.nodes)}")
+    from epec_diagonalization import four_investor_portfolio_profiles
+
+    profiles = {profile.investor_id: profile for profile in four_investor_portfolio_profiles(data)}
+    active = profiles[cfg.active_investor]
     if cfg.rival_bids_path:
         all_input_bids = load_rival_bid_vector(cfg.rival_bids_path)
         rivals = [bid for bid in all_input_bids if bid.investor != cfg.active_investor]
     else:
         rivals = demo_rival_bid_vector(data.nodes, cfg.active_investor)
-    # Import locally so this best-response module remains safe to import from a
-    # future Gauss-Seidel driver without creating a module-import cycle.
-    from epec_diagonalization import four_investor_portfolio_profiles
-
-    profiles = {profile.investor_id: profile for profile in four_investor_portfolio_profiles(data)}
-    active = profiles[cfg.active_investor]
     if cfg.bid_price_tick_eur_per_mw_day > 0.0:
-        summary, succeeded = _run_pay_as_bid_tick_search(data, rivals, active, cfg)
+        summary, succeeded = run_tick_search(data, rivals, active, cfg)
     else:
-        summary, _ = _solve_cli_response(data, rivals, active, cfg)
-        print_summary(summary)
+        _, summary, _ = solve_fixed_price_response(data, rivals, active, cfg)
         succeeded = summary["termination"] == "optimal"
-    cfg.output_path.parent.mkdir(parents=True, exist_ok=True)
-    output = {
-        **summary,
+    summary["configuration"] = {
+        **asdict(cfg),
         "data_path": str(cfg.data_path),
-        "active_node_argument": cfg.active_node,
-        "rival_bids": [asdict(bid) for bid in rivals],
+        "rival_bids_path": None if cfg.rival_bids_path is None else str(cfg.rival_bids_path),
+        "output_path": str(cfg.output_path),
     }
-    cfg.output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+    summary["rival_bids"] = [asdict(bid) for bid in rivals]
+    cfg.output_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if succeeded:
+        print_summary(summary)
+    else:
+        print(f"Termination: {summary['termination']}")
     print(f"Wrote {cfg.output_path}")
     return 0 if succeeded else 1
 

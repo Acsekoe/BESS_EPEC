@@ -1,48 +1,78 @@
-# Isolated auction-MPEC experiment
+# Clean strategic nodal-access auction EPEC
 
-This folder contains the two-follower access-auction experiment. All code, case
-data, and generated results for this branch stay below `model/auction/`; the
-maintained thesis workflow remains `model/epec_diagonalization.py`.
+This folder contains the experimental two-follower auction EPEC. For each best
+response, one BESS investor is the leader and chooses continuous nodal access
+bid quantities, pay-as-bid prices, and awarded energy capacity. The model embeds
+exactly two followers:
 
-For each best response, one BESS investor is the leader and the model embeds:
+1. the nodal access-auction LP through primal feasibility, dual feasibility,
+   and strong duality; and
+2. the fixed-demand electricity spot-market LP through primal feasibility,
+   dual feasibility/stationarity, and strong duality.
 
-1. a nodal access-allocation auction; and
-2. the electricity spot-market dispatch.
+The leader maximizes storage spot revenue plus any owned-generator rent minus
+degradation, annualized BESS CAPEX, and its pay-as-bid access payment.
 
-Sequentially solving the investor best responses therefore approximates a
-multi-leader/two-follower EPEC by Gauss--Seidel diagonalization. It is a local,
-optimistic MPEC calculation rather than a proof that a global equilibrium
-exists.
+The multi-investor driver uses the same four thesis investors as the normal
+EPEC: merchant investors I1/I2 and the wind-heavy/solar-heavy portfolio
+investors I3/I4. It applies their best responses immediately in Gauss--Seidel
+order. After the final sweep it independently re-clears the auction once and
+clears one common spot market containing all four awarded fleets. Consequently,
+the consolidated output distinguishes each investor's last optimistic
+best-response profit from profit under the final common settlement.
 
-Access settlement is pay-as-bid: awarded MW are charged at the active
-investor's submitted price. `--tie-break-epsilon` adds a fixed lexicographic
-merit offset so equal submitted prices allocate reproducibly; it changes only
-auction ranking, not the submitted-price payment.
+The core MPEC has no dispatch regularization, load shedding, objective penalty,
+damping, or outside-option solve. Bid prices can either remain continuous or be
+selected on an exact external grid. With `--bid-price-tick 0.01`, the driver
+enumerates zero, each rival price, and one tick above each rival, solves one MPEC
+per candidate, rejects candidates that fail the independent auction reclear or
+strong-duality checks, and selects the highest-profit valid response. A solver
+error for one price is stored in that candidate's diagnostics and does not abort
+the remaining price candidates.
 
-For a fully continuous pay-as-bid diagnostic, set the merit perturbation to
-zero. Both the active bid quantity and submitted price then remain continuous
-upper-level decisions, and awarded access is charged at the active investor's
-own bid:
+Equal raw grid bids use a deterministic `0.001` EUR/MW/day merit offset ordered
+by investor ID. The offset affects auction ranking only; access payment remains
+the raw submitted bid. Since the largest four-investor priority gap is `0.003`,
+it is smaller than one `0.01` tick and can never reverse two different raw bids.
 
-```powershell
-python model\auction\single_investor_auction_mpec.py `
-  --active-investor I1 `
-  --active-node N8 `
-  --rival-bids model\auction\data\auction_mpec_cases\two_investor_n8_uniform.json `
-  --tie-break-epsilon 0 `
-  --initial-bid-quantity 70 `
-  --initial-bid-price 30 `
-  --initial-duration 4 `
-  --max-cpu-time 180 `
-  --output model\auction\output\single_investor_auction_mpec\two_investor_n8_uniform\I1_pay_as_bid_continuous.json
-```
+## Maintained numerical formulation
 
-This diagnostic deliberately permits exact and near bid ties. Its output is
-acceptable only if the embedded award is reproduced by the independent auction
-reclear; a mismatch identifies optimistic allocation on a nonunique tie face.
+- electricity-price variables `lam` and `lam_sys`: `[-500, 500]` EUR/MWh;
+- every other follower dual, including auction duals: absolute bound 10,000
+  with the appropriate sign restriction;
+- Ipopt `tol=acceptable_tol=1e-4` and sparse MUMPS;
+- fixed demand and zero dispatch regularization;
+- active investor represented at every enabled node;
+- rival auction/storage blocks created only for bid quantities above `1e-4` MW;
+- generator-hour blocks created only for strictly positive available capacity;
+- bid quantities at or below `1e-4` MW normalized to exact zero between
+  Gauss--Seidel responses.
+- optional exact bid tick `0.01` EUR/MW/day with a `0.001` sub-tick merit
+  priority for unique ranking.
+- convergence requires bid quantity, raw bid price, duration, and auction award
+  changes all to satisfy their respective tolerances;
+- the default raw-price tolerance is `0.001`, below the `0.01` grid step, so a
+  one-tick strategic price movement cannot be reported as convergence.
 
-For the maintained pay-as-bid tick experiment, add a positive grid size and a
-smaller deterministic merit offset for exact raw-price ties:
+The active and rival batteries remain separate storage units in the embedded
+spot market. Rivals are never collapsed into a virtual aggregate battery.
+
+## Important interpretation
+
+In continuous mode (`--bid-price-tick 0`), equal bids can still leave auction
+awards non-unique and the MPEC remains optimistic. In tick mode, the sub-tick
+priority gives every raw-price tie a unique ranking. For the two-investor N8
+case, I1 wins at the tied raw price of 30.00 because it has higher deterministic
+priority; I2 must bid 30.01 to outrank I1.
+
+Continuous pay-as-bid competition can also have a best-response discontinuity:
+an investor may prefer an arbitrarily small increment above a rival bid without
+an attained optimum. Treat an Ipopt result as a local optimistic candidate, not
+as proof of a pure-strategy equilibrium.
+
+## Single best response
+
+From the repository root:
 
 ```powershell
 python model\auction\single_investor_auction_mpec.py `
@@ -54,140 +84,80 @@ python model\auction\single_investor_auction_mpec.py `
   --initial-bid-quantity 70 `
   --initial-bid-price 30 `
   --initial-duration 4 `
-  --max-cpu-time 180 `
-  --output model\auction\output\single_investor_auction_mpec\two_investor_n8_uniform\I1_pay_as_bid_tick001.json
+  --max-cpu-time 120 `
+  --output model\auction\output\single_investor_auction_mpec\clean_I1_N8.json
 ```
 
-Grid mode currently requires one active node. It evaluates the minimum grid
-price, every fixed rival price at that node, and one tick above each rival, with
-continuous bid quantity and energy in every MPEC. A separate zero-quantity
-outside option is mandatory. Candidates with a non-optimal solve, an auction
-award reclear difference above `1e-4` MW, an excessive strong-duality gap, or a
-payment mismatch are rejected before the highest-profit valid response is
-selected. Rival bids must lie on the same grid, and the maximum priority offset
-must remain smaller than one price tick.
+Omit `--active-node` to allow the active investor to bid at all IEEE-9 nodes.
 
-## Two-investor N8 diagnostic
+## Four-investor auction EPEC
 
-`data/auction_mpec_cases/two_investor_n8_uniform.json` starts I1 and I2 with
-equal 70 MW bids at N8, where the auction limit is 100 MW. The deliberate tie
-tests the deterministic priority rule.
+`--update-rule jacobi` represents simultaneous sealed-bid proposals in the
+diagonalization algorithm: all four MPECs see the same pre-sweep rival-bid
+snapshot, their proposed bids are applied together, and one common auction
+assigns awards. `--update-rule seidel` instead applies each response immediately.
+Only a converged fixed point is interpreted as an EPEC solution; intermediate
+iteration snapshots are numerical conjectures, not public bid disclosure.
 
-Solve I1's tick-constrained best response against I2:
-
-```powershell
-python model\auction\single_investor_auction_mpec.py `
-  --active-investor I1 `
-  --active-node N8 `
-  --rival-bids model\auction\data\auction_mpec_cases\two_investor_n8_i2_100mw_30.json `
-  --bid-price-tick 0.01 `
-  --tie-break-epsilon 0.001 `
-  --initial-bid-quantity 100 `
-  --initial-bid-price 30 `
-  --initial-duration 4 `
-  --max-cpu-time 180 `
-  --output model\auction\output\single_investor_auction_mpec\two_investor_n8_i2_100mw_30\I1.json
-```
-
-The Gauss--Seidel driver uses the same tick-price enumeration and candidate
-validity checks when `--bid-price-tick` is positive. Grid mode currently
-requires one active node and damping equal to one:
+Run the continuous-pay-as-bid Jacobi experiment from zero bids:
 
 ```powershell
 python model\auction\gauss_seidel.py `
-  --initial-bids model\auction\data\auction_mpec_cases\two_investor_n8_uniform.json `
-  --investor-order I1 I2 `
+  --initial-bids model\auction\data\auction_mpec_cases\zero_competition.json `
+  --investor-order I1 I2 I3 I4 `
+  --update-rule jacobi `
   --active-nodes N8 `
-  --bid-price-tick 0.01 `
-  --tie-break-epsilon 0.001 `
-  --max-iterations 1 `
-  --max-cpu-time 180 `
-  --output-dir model\auction\output\gauss_seidel\two_investor_n8_uniform_iter1
+  --bid-price-tick 0 `
+  --zero-bid-numerical-quantity 70 `
+  --zero-bid-numerical-price 0.01 `
+  --price-tol 0.001 `
+  --quantity-tol 0.05 `
+  --award-tol 0.05 `
+  --duration-tol 0.01 `
+  --max-iterations 3 `
+  --max-cpu-time 120 `
+  --output-dir model\auction\output\gauss_seidel\portfolio4_N8_zero_continuous_jacobi_3iters
 ```
 
-The sweep compares each strategic response with an explicit zero-bid outside
-option. In this two-investor case, each response evaluates three grid prices
-plus the outside option, so one sweep requires eight MPEC solves. For a faster
-solver smoke test only, add `--skip-outside-option`.
-
-Inspect `iteration_history.csv`, each investor JSON below `iterations/`, and
-`final_state.json`. In addition to termination and strong-duality gaps, the
-investor JSON reports independently recleared awards. A material embedded-
-versus-reclear award difference identifies an optimistic or tied allocation
-that the standalone auction does not reproduce.
-
-## Archived four-investor cases
-
-Each JSON file contains the fixed bid vectors for all four thesis investors at
-all nine IEEE-9 nodes. When one investor is selected as strategic, its records
-are automatically removed from the fixed input and the other three investors
-remain as rivals.
-
-The profiles are:
-
-- `low_competition.json`: substantial residual access capacity;
-- `balanced_competition.json`: moderate competition and congestion at the main
-  storage nodes;
-- `high_competition.json`: every node is oversubscribed by the three rivals.
-
-Run one case from the repository root:
-
-```powershell
-python model\auction\single_investor_auction_mpec.py `
-  --active-investor I3 `
-  --active-node N8 `
-  --rival-bids model\auction\data\auction_mpec_cases\balanced_competition.json `
-  --output model\auction\output\single_investor_auction_mpec\tests\balanced_I3_N8.json
-```
-
-Run the balanced profile for every investor and every node:
-
-```powershell
-$investors = @("I1", "I2", "I3", "I4")
-$nodes = 1..9 | ForEach-Object { "N$_" }
-$case = "balanced_competition"
-
-foreach ($investor in $investors) {
-  foreach ($node in $nodes) {
-    python model\auction\single_investor_auction_mpec.py `
-      --active-investor $investor `
-      --active-node $node `
-      --rival-bids "model\auction\data\auction_mpec_cases\$case.json" `
-      --output "model\auction\output\single_investor_auction_mpec\tests\$case\${investor}_${node}.json"
-  }
-}
-```
-
-To run all three profiles, wrap the same loop in:
-
-```powershell
-foreach ($case in @("low_competition", "balanced_competition", "high_competition")) {
-  # investor/node loop from above
-}
-```
-
-Every output records solver termination, active bid and award, profit,
-strong-duality residuals, and the maximum difference between the embedded and
-independently recleared auction awards. Treat only `optimal` runs as usable
-local optimistic MPEC candidates.
-
-### Gauss--Seidel diagonalization
-
-Run the four investors sequentially from the balanced starting bids:
+Run the four-investor tick-grid EPEC at N8 from the balanced bid profile:
 
 ```powershell
 python model\auction\gauss_seidel.py `
   --initial-bids model\auction\data\auction_mpec_cases\balanced_competition.json `
-  --output-dir model\auction\output\gauss_seidel\balanced
+  --active-nodes N8 `
+  --bid-price-tick 0.01 `
+  --tie-break-epsilon 0.001 `
+  --price-tol 0.001 `
+  --award-tol 0.05 `
+  --max-iterations 20 `
+  --max-cpu-time 120 `
+  --output-dir model\auction\output\gauss_seidel\portfolio4_N8_tick001
 ```
 
-The default CPU limit is 60 seconds per MPEC solve. Each investor response is
-also compared with its explicit zero-bid outside option, so a complete sweep
-normally solves eight MPECs. Continue an interrupted run from its last completed
-sweep with:
+For a neutral start in which every investor submits `(0 MW, 0 EUR/MW/day)` at
+every node, replace the initial-bid path with
+`model\auction\data\auction_mpec_cases\zero_competition.json`. The stored
+4-hour duration is only a valid numerical energy-ratio seed; initial awarded MW
+and MWh remain zero. When an economic bid quantity is zero, the NLP variable is
+initialized at 70 MW by default (`--zero-bid-numerical-quantity 70`). This is a
+warm start only: it neither changes the zero bid state nor imposes a positive
+lower bound. The analogous numerical price guess is `0.01` EUR/MW/day. Both
+avoid starting the auxiliary auction/spot warm start from an infeasible
+zero-storage dispatch while preserving the economic `(0,0)` state.
 
-```powershell
-python model\auction\gauss_seidel.py `
-  --resume model\auction\output\gauss_seidel\balanced\checkpoint.json `
-  --output-dir model\auction\output\gauss_seidel\balanced
-```
+Continue a checkpoint by setting `--resume` and increasing `--max-iterations`
+to the desired total iteration number. The output contains `run_config.json`,
+`iteration_history.csv`, a checkpoint after every completed sweep, one JSON
+summary per investor response, `final_bids_and_awards.csv`,
+`joint_node_hour_prices.csv`, `joint_storage_hour_operation.csv`,
+`joint_settlement.json`, and a consolidated `summary.json`.
+
+A run that stops at `max_iterations` is a feasible diagnostic iterate, not a
+computed equilibrium. The final common re-clear is still useful for checking
+auction feasibility, common electricity prices, access payments, and settled
+profits, but it does not turn a nonconverged bidding path into an equilibrium.
+
+Exact enumeration currently requires exactly one active node. Joint enumeration
+across nine nodal prices would require the Cartesian product of all candidate
+ticks and is intentionally not approximated by rounding independent continuous
+solutions.

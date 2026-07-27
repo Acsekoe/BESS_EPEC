@@ -1,9 +1,4 @@
-"""Central command-line configuration for auction-MPEC workflows.
-
-Model formulation stays in ``single_investor_auction_mpec.py`` and the
-Gauss-Seidel algorithm stays in ``gauss_seidel.py``. This module owns their
-paths, run defaults, argument parsers, and immutable run-configuration objects.
-"""
+"""Command-line configuration for the clean auction EPEC workflow."""
 
 from __future__ import annotations
 
@@ -18,15 +13,18 @@ MODEL_DIR = AUCTION_DIR.parent
 DEFAULT_IEEE9_DATA_PATH = MODEL_DIR / "data" / "processed" / "market_data_IEEE_9Bus_congestion.json"
 DEFAULT_BALANCED_BIDS_PATH = AUCTION_DIR / "data" / "auction_mpec_cases" / "balanced_competition.json"
 DEFAULT_SINGLE_MPEC_OUTPUT_PATH = AUCTION_DIR / "output" / "single_investor_auction_mpec" / "summary.json"
-DEFAULT_GAUSS_SEIDEL_OUTPUT_DIR = AUCTION_DIR / "output" / "gauss_seidel"
+DEFAULT_GAUSS_SEIDEL_OUTPUT_DIR = AUCTION_DIR / "output" / "gauss_seidel" / "portfolio4"
 
 DEFAULT_INVESTOR_ORDER = ("I1", "I2", "I3", "I4")
 DEFAULT_NODE_LIMIT_MW = 100.0
 DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY = 100.0
-DEFAULT_MAX_CPU_TIME_SECONDS = 60.0
-DEFAULT_DUAL_BOUND_SCALE = 10.0
-DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY = 0.0
+DEFAULT_MAX_CPU_TIME_SECONDS = 120.0
+DEFAULT_PRICE_BOUND_EUR_PER_MWH = 500.0
+DEFAULT_DUAL_BOUND_EUR_PER_MWH = 10_000.0
+DEFAULT_CAPACITY_CLEANUP_TOL_MW = 1.0e-4
+DEFAULT_SOLVER_TOL = 1.0e-4
 DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY = 0.0
+DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY = 0.001
 
 
 @dataclass(frozen=True)
@@ -36,15 +34,17 @@ class SingleMpecCliConfig:
     active_node: str | None
     rival_bids_path: Path | None
     node_limit_mw: float
-    min_bid_price_eur_per_mw_day: float
     max_bid_price_eur_per_mw_day: float
-    tie_break_epsilon_eur_per_mw_day: float
-    bid_price_tick_eur_per_mw_day: float
     initial_bid_quantity_mw: float
     initial_bid_price_eur_per_mw_day: float
     initial_duration_hours: float
     max_cpu_time: float
-    dual_bound_scale: float
+    price_bound_eur_per_mwh: float
+    dual_bound_eur_per_mwh: float
+    capacity_cleanup_tol_mw: float
+    solver_tol: float
+    bid_price_tick_eur_per_mw_day: float
+    tie_break_epsilon_eur_per_mw_day: float
     output_path: Path
     tee: bool
 
@@ -54,84 +54,87 @@ class GaussSeidelConfig:
     data_path: Path
     initial_bids_path: Path
     output_dir: Path
+    update_rule: str = "seidel"
     investor_order: tuple[str, ...] = DEFAULT_INVESTOR_ORDER
     active_nodes: tuple[str, ...] | None = None
     node_limit_mw: float = DEFAULT_NODE_LIMIT_MW
-    min_bid_price_eur_per_mw_day: float = 0.0
     max_bid_price_eur_per_mw_day: float = DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY
-    tie_break_epsilon_eur_per_mw_day: float = DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY
-    bid_price_tick_eur_per_mw_day: float = DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY
     max_iterations: int = 20
     max_cpu_time: float = DEFAULT_MAX_CPU_TIME_SECONDS
-    dual_bound_scale: float = DEFAULT_DUAL_BOUND_SCALE
-    damping: float = 1.0
+    price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH
+    dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH
+    capacity_cleanup_tol_mw: float = DEFAULT_CAPACITY_CLEANUP_TOL_MW
+    solver_tol: float = DEFAULT_SOLVER_TOL
+    bid_price_tick_eur_per_mw_day: float = DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY
+    tie_break_epsilon_eur_per_mw_day: float = DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY
+    zero_bid_numerical_quantity_mw: float = 70.0
+    zero_bid_numerical_price_eur_per_mw_day: float = 0.01
     quantity_tolerance_mw: float = 0.05
-    price_tolerance_eur_per_mw_day: float = 0.05
-    duration_tolerance_hours: float = 0.01
     award_tolerance_mw: float = 0.05
-    active_award_zero_tolerance_mw: float = 1.0e-4
-    outside_option_tolerance_eur_per_day: float = 0.01
+    price_tolerance_eur_per_mw_day: float = 0.001
+    duration_tolerance_hours: float = 0.01
     max_consecutive_failures: int = 3
-    use_outside_option: bool = True
     resume_path: Path | None = None
     tee: bool = False
 
 
-def parse_single_mpec_cli(argv: Sequence[str] | None = None) -> SingleMpecCliConfig:
-    parser = argparse.ArgumentParser(
-        description="Solve one strategic investor's embedded auction-and-spot MPEC."
-    )
-    parser.add_argument("--data", type=Path, default=DEFAULT_IEEE9_DATA_PATH)
+def _add_common_numerical_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--max-cpu-time", type=float, default=DEFAULT_MAX_CPU_TIME_SECONDS)
     parser.add_argument(
-        "--active-investor",
-        choices=DEFAULT_INVESTOR_ORDER,
-        default="I1",
-        help="Thesis investor whose bid is optimized.",
-    )
-    parser.add_argument(
-        "--active-node",
-        default=None,
-        help="Restrict the strategic investor to one node; omit to open all nodes.",
-    )
-    parser.add_argument(
-        "--rival-bids",
-        type=Path,
-        default=None,
-        help="JSON rival-bid vector; the built-in demonstration is used when omitted.",
-    )
-    parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
-    parser.add_argument(
-        "--min-bid-price",
+        "--price-bound-eur-per-mwh",
         type=float,
-        default=0.0,
-        help="Optional active-bid floor in EUR/MW/day; zero preserves the stated auction.",
+        default=DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+        help="Absolute bound for lambda and lambda_system (default: 500).",
     )
     parser.add_argument(
-        "--max-bid-price",
+        "--dual-bound-eur-per-mwh",
         type=float,
-        default=DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY,
-        help="Upper bound on the active access bid in EUR/MW/day.",
+        default=DEFAULT_DUAL_BOUND_EUR_PER_MWH,
+        help="Absolute bound for every other embedded follower dual (default: 10000).",
+    )
+    parser.add_argument(
+        "--capacity-cleanup-tol",
+        type=float,
+        default=DEFAULT_CAPACITY_CLEANUP_TOL_MW,
+        help="Bid quantities at or below this tolerance are normalized to zero.",
+    )
+    parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
+    parser.add_argument(
+        "--bid-price-tick",
+        type=float,
+        default=DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY,
+        help="Exact external bid-price grid; use 0.01 for tick enumeration, zero for continuous bids.",
     )
     parser.add_argument(
         "--tie-break-epsilon",
         type=float,
         default=DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY,
-        help="Fixed lexicographic merit adder in EUR/MW/day; zero reproduces the archive.",
+        help="Deterministic merit offset for equal raw bids; it is not included in payment.",
     )
+
+
+def parse_single_mpec_cli(argv: Sequence[str] | None = None) -> SingleMpecCliConfig:
+    parser = argparse.ArgumentParser(
+        description="Solve one continuous strategic access-bid MPEC with auction and spot followers."
+    )
+    parser.add_argument("--data", type=Path, default=DEFAULT_IEEE9_DATA_PATH)
+    parser.add_argument("--active-investor", choices=DEFAULT_INVESTOR_ORDER, default="I1")
     parser.add_argument(
-        "--bid-price-tick",
+        "--active-node",
+        default=None,
+        help="Restrict the strategic bid to one node; omitted enables every node.",
+    )
+    parser.add_argument("--rival-bids", type=Path, default=None)
+    parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
+    parser.add_argument(
+        "--max-bid-price",
         type=float,
-        default=DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY,
-        help=(
-            "Pay-as-bid price grid in EUR/MW/day. A positive value enumerates "
-            "economically distinct grid prices; zero keeps price continuous."
-        ),
+        default=DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY,
     )
     parser.add_argument("--initial-bid-quantity", type=float, default=10.0)
     parser.add_argument("--initial-bid-price", type=float, default=10.0)
     parser.add_argument("--initial-duration", type=float, default=4.0)
-    parser.add_argument("--max-cpu-time", type=float, default=DEFAULT_MAX_CPU_TIME_SECONDS)
-    parser.add_argument("--dual-bound-scale", type=float, default=DEFAULT_DUAL_BOUND_SCALE)
+    _add_common_numerical_arguments(parser)
     parser.add_argument("--output", type=Path, default=DEFAULT_SINGLE_MPEC_OUTPUT_PATH)
     parser.add_argument("--tee", action="store_true")
     args = parser.parse_args(argv)
@@ -141,15 +144,17 @@ def parse_single_mpec_cli(argv: Sequence[str] | None = None) -> SingleMpecCliCon
         active_node=args.active_node,
         rival_bids_path=args.rival_bids,
         node_limit_mw=args.node_limit_mw,
-        min_bid_price_eur_per_mw_day=args.min_bid_price,
         max_bid_price_eur_per_mw_day=args.max_bid_price,
-        tie_break_epsilon_eur_per_mw_day=args.tie_break_epsilon,
-        bid_price_tick_eur_per_mw_day=args.bid_price_tick,
         initial_bid_quantity_mw=args.initial_bid_quantity,
         initial_bid_price_eur_per_mw_day=args.initial_bid_price,
         initial_duration_hours=args.initial_duration,
         max_cpu_time=args.max_cpu_time,
-        dual_bound_scale=args.dual_bound_scale,
+        price_bound_eur_per_mwh=args.price_bound_eur_per_mwh,
+        dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
+        capacity_cleanup_tol_mw=args.capacity_cleanup_tol,
+        solver_tol=args.solver_tol,
+        bid_price_tick_eur_per_mw_day=args.bid_price_tick,
+        tie_break_epsilon_eur_per_mw_day=args.tie_break_epsilon,
         output_path=args.output,
         tee=args.tee,
     )
@@ -157,56 +162,60 @@ def parse_single_mpec_cli(argv: Sequence[str] | None = None) -> SingleMpecCliCon
 
 def parse_gauss_seidel_cli(argv: Sequence[str] | None = None) -> GaussSeidelConfig:
     parser = argparse.ArgumentParser(
-        description="Gauss-Seidel diagonalization of configurable investor auction MPECs."
+        description="Gauss-Jacobi or Gauss-Seidel diagonalization of the clean auction EPEC."
     )
     parser.add_argument("--data", type=Path, default=DEFAULT_IEEE9_DATA_PATH)
     parser.add_argument("--initial-bids", type=Path, default=DEFAULT_BALANCED_BIDS_PATH)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_GAUSS_SEIDEL_OUTPUT_DIR)
+    parser.add_argument(
+        "--update-rule",
+        choices=("jacobi", "seidel"),
+        default="seidel",
+        help="Jacobi applies sealed-bid best responses simultaneously; Seidel applies them immediately.",
+    )
     parser.add_argument(
         "--investor-order",
         nargs="+",
         choices=DEFAULT_INVESTOR_ORDER,
         default=list(DEFAULT_INVESTOR_ORDER),
     )
-    parser.add_argument(
-        "--active-nodes",
-        nargs="+",
-        default=None,
-        help="Nodes at which strategic bids may change; omitted opens all nodes.",
-    )
+    parser.add_argument("--active-nodes", nargs="+", default=None)
     parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
-    parser.add_argument("--min-bid-price", type=float, default=0.0)
-    parser.add_argument("--max-bid-price", type=float, default=DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY)
     parser.add_argument(
-        "--tie-break-epsilon",
+        "--max-bid-price",
         type=float,
-        default=DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY,
-    )
-    parser.add_argument(
-        "--bid-price-tick",
-        type=float,
-        default=DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY,
-        help=(
-            "Pay-as-bid price grid in EUR/MW/day. A positive value enumerates "
-            "valid response prices and currently requires one active node."
-        ),
+        default=DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY,
     )
     parser.add_argument("--max-iterations", type=int, default=20)
-    parser.add_argument("--max-cpu-time", type=float, default=DEFAULT_MAX_CPU_TIME_SECONDS)
-    parser.add_argument("--dual-bound-scale", type=float, default=DEFAULT_DUAL_BOUND_SCALE)
-    parser.add_argument("--damping", type=float, default=1.0)
-    parser.add_argument("--quantity-tol", type=float, default=0.05)
-    parser.add_argument("--price-tol", type=float, default=0.05)
-    parser.add_argument("--duration-tol", type=float, default=0.01)
-    parser.add_argument("--award-tol", type=float, default=0.05)
-    parser.add_argument("--active-award-zero-tol", type=float, default=1.0e-4)
-    parser.add_argument("--outside-option-tol", type=float, default=0.01)
-    parser.add_argument("--max-consecutive-failures", type=int, default=3)
+    _add_common_numerical_arguments(parser)
     parser.add_argument(
-        "--skip-outside-option",
-        action="store_true",
-        help="Skip the explicit zero-bid comparison; intended only for diagnostics.",
+        "--zero-bid-numerical-quantity",
+        type=float,
+        default=70.0,
+        help=(
+            "Positive variable initialization used when an investor's economic bid quantity "
+            "is zero; it does not change the saved bid state or impose a lower bound."
+        ),
     )
+    parser.add_argument(
+        "--zero-bid-numerical-price",
+        type=float,
+        default=0.01,
+        help=(
+            "Positive price initialization used with a zero economic bid; it does not "
+            "change the saved bid state or impose a lower bound."
+        ),
+    )
+    parser.add_argument("--quantity-tol", type=float, default=0.05)
+    parser.add_argument("--award-tol", type=float, default=0.05)
+    parser.add_argument(
+        "--price-tol",
+        type=float,
+        default=0.001,
+        help="Raw-bid convergence tolerance; keep this below --bid-price-tick in grid mode.",
+    )
+    parser.add_argument("--duration-tol", type=float, default=0.01)
+    parser.add_argument("--max-consecutive-failures", type=int, default=3)
     parser.add_argument("--resume", type=Path, default=None)
     parser.add_argument("--tee", action="store_true")
     args = parser.parse_args(argv)
@@ -214,25 +223,26 @@ def parse_gauss_seidel_cli(argv: Sequence[str] | None = None) -> GaussSeidelConf
         data_path=args.data,
         initial_bids_path=args.initial_bids,
         output_dir=args.output_dir,
+        update_rule=args.update_rule,
         investor_order=tuple(args.investor_order),
         active_nodes=None if args.active_nodes is None else tuple(args.active_nodes),
         node_limit_mw=args.node_limit_mw,
-        min_bid_price_eur_per_mw_day=args.min_bid_price,
         max_bid_price_eur_per_mw_day=args.max_bid_price,
-        tie_break_epsilon_eur_per_mw_day=args.tie_break_epsilon,
-        bid_price_tick_eur_per_mw_day=args.bid_price_tick,
         max_iterations=args.max_iterations,
         max_cpu_time=args.max_cpu_time,
-        dual_bound_scale=args.dual_bound_scale,
-        damping=args.damping,
+        price_bound_eur_per_mwh=args.price_bound_eur_per_mwh,
+        dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
+        capacity_cleanup_tol_mw=args.capacity_cleanup_tol,
+        solver_tol=args.solver_tol,
+        bid_price_tick_eur_per_mw_day=args.bid_price_tick,
+        tie_break_epsilon_eur_per_mw_day=args.tie_break_epsilon,
+        zero_bid_numerical_quantity_mw=args.zero_bid_numerical_quantity,
+        zero_bid_numerical_price_eur_per_mw_day=args.zero_bid_numerical_price,
         quantity_tolerance_mw=args.quantity_tol,
+        award_tolerance_mw=args.award_tol,
         price_tolerance_eur_per_mw_day=args.price_tol,
         duration_tolerance_hours=args.duration_tol,
-        award_tolerance_mw=args.award_tol,
-        active_award_zero_tolerance_mw=args.active_award_zero_tol,
-        outside_option_tolerance_eur_per_day=args.outside_option_tol,
         max_consecutive_failures=args.max_consecutive_failures,
-        use_outside_option=not args.skip_outside_option,
         resume_path=args.resume,
         tee=args.tee,
     )

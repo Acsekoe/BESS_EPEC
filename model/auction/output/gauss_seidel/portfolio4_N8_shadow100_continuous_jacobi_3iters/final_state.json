@@ -1,0 +1,225 @@
+{
+  "config": {
+    "data_path": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_congestion.json",
+    "initial_bids_path": "model\\auction\\data\\auction_mpec_cases\\n8_shadow_informed_100mw.json",
+    "output_dir": "model\\auction\\output\\gauss_seidel\\portfolio4_N8_shadow100_continuous_jacobi_3iters",
+    "update_rule": "jacobi",
+    "investor_order": [
+      "I1",
+      "I2",
+      "I3",
+      "I4"
+    ],
+    "active_nodes": [
+      "N8"
+    ],
+    "node_limit_mw": 100.0,
+    "max_bid_price_eur_per_mw_day": 100.0,
+    "max_iterations": 3,
+    "max_cpu_time": 120.0,
+    "price_bound_eur_per_mwh": 500.0,
+    "dual_bound_eur_per_mwh": 10000.0,
+    "capacity_cleanup_tol_mw": 0.0001,
+    "solver_tol": 0.0001,
+    "bid_price_tick_eur_per_mw_day": 0.0,
+    "tie_break_epsilon_eur_per_mw_day": 0.001,
+    "zero_bid_numerical_quantity_mw": 70.0,
+    "zero_bid_numerical_price_eur_per_mw_day": 0.01,
+    "quantity_tolerance_mw": 0.05,
+    "award_tolerance_mw": 0.05,
+    "price_tolerance_eur_per_mw_day": 0.001,
+    "duration_tolerance_hours": 0.01,
+    "max_consecutive_failures": 3,
+    "resume_path": null,
+    "tee": false
+  },
+  "state": {
+    "quantity_mw": {
+      "I1": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 99.99999252771104,
+        "N9": 0.0
+      },
+      "I2": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 99.99999911771658,
+        "N9": 0.0
+      },
+      "I3": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 99.99999789958895,
+        "N9": 0.0
+      },
+      "I4": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 99.99999787936146,
+        "N9": 0.0
+      }
+    },
+    "price_eur_per_mw_day": {
+      "I1": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 35.47999951440342,
+        "N9": 0.0
+      },
+      "I2": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 35.47999947696698,
+        "N9": 0.0
+      },
+      "I3": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 35.47999951488229,
+        "N9": 0.0
+      },
+      "I4": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 35.47999951522084,
+        "N9": 0.0
+      }
+    },
+    "duration_hours": {
+      "I1": {
+        "N1": 4.0,
+        "N2": 4.0,
+        "N3": 4.0,
+        "N4": 4.0,
+        "N5": 4.0,
+        "N6": 4.0,
+        "N7": 4.0,
+        "N8": 4.711263207223508,
+        "N9": 4.0
+      },
+      "I2": {
+        "N1": 4.0,
+        "N2": 4.0,
+        "N3": 4.0,
+        "N4": 4.0,
+        "N5": 4.0,
+        "N6": 4.0,
+        "N7": 4.0,
+        "N8": 4.711263218570567,
+        "N9": 4.0
+      },
+      "I3": {
+        "N1": 4.0,
+        "N2": 4.0,
+        "N3": 4.0,
+        "N4": 4.0,
+        "N5": 4.0,
+        "N6": 4.0,
+        "N7": 4.0,
+        "N8": 4.7112633354682085,
+        "N9": 4.0
+      },
+      "I4": {
+        "N1": 4.0,
+        "N2": 4.0,
+        "N3": 4.0,
+        "N4": 4.0,
+        "N5": 4.0,
+        "N6": 4.0,
+        "N7": 4.0,
+        "N8": 4.711263335756153,
+        "N9": 4.0
+      }
+    },
+    "awards_mw": {
+      "I1": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 0.16521416478074957,
+        "N9": 0.0
+      },
+      "I2": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 0.0023931739979300695,
+        "N9": 0.0
+      },
+      "I3": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 0.3777679215142733,
+        "N9": 0.0
+      },
+      "I4": {
+        "N1": 0.0,
+        "N2": 0.0,
+        "N3": 0.0,
+        "N4": 0.0,
+        "N5": 0.0,
+        "N6": 0.0,
+        "N7": 0.0,
+        "N8": 99.45462573970448,
+        "N9": 0.0
+      }
+    },
+    "completed_iteration": 3
+  },
+  "stop_reason": "max_iterations",
+  "converged": false
+}

@@ -1,0 +1,28 @@
+{
+  "data_path": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_congestion.json",
+  "initial_bids_path": "model\\auction\\data\\auction_mpec_cases\\two_investor_n8_uniform.json",
+  "output_dir": "model\\auction\\output\\gauss_seidel\\two_investor_n8_tick001",
+  "investor_order": [
+    "I1",
+    "I2"
+  ],
+  "active_nodes": [
+    "N8"
+  ],
+  "node_limit_mw": 100.0,
+  "max_bid_price_eur_per_mw_day": 100.0,
+  "max_iterations": 1,
+  "max_cpu_time": 120.0,
+  "price_bound_eur_per_mwh": 500.0,
+  "dual_bound_eur_per_mwh": 10000.0,
+  "capacity_cleanup_tol_mw": 0.0001,
+  "solver_tol": 0.0001,
+  "bid_price_tick_eur_per_mw_day": 0.01,
+  "tie_break_epsilon_eur_per_mw_day": 0.001,
+  "quantity_tolerance_mw": 0.05,
+  "price_tolerance_eur_per_mw_day": 0.05,
+  "duration_tolerance_hours": 0.01,
+  "max_consecutive_failures": 3,
+  "resume_path": null,
+  "tee": false
+}

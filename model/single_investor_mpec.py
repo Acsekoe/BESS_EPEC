@@ -10,14 +10,19 @@ The quadratic demand curve can be re-enabled for feasibility experiments.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pyomo.environ as pyo
 
+_MODEL_DIR = Path(__file__).resolve().parent
+_PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
+if _PRIMAL_DUAL_DIR.is_dir() and str(_PRIMAL_DUAL_DIR) not in sys.path:
+    sys.path.append(str(_PRIMAL_DUAL_DIR))
+
 from primal_market_clearing_model import (
-    DEFAULT_DATA_PATH,
     MarketData,
     build_primal_market_clearing_model,
     load_market_data,
@@ -30,9 +35,14 @@ from solver_utils import get_ipopt_solver
 MODEL_NAME = "Single Investor Primal-Dual MPEC"
 INVESTOR_ID = "I1"
 EXISTING_ID = "E0"
-# Experiment inputs (alternative capacities, stress cases, ...) live in a
-# separate JSON so the baseline market_data.json stays the untouched benchmark.
-EXPERIMENT_DATA_PATH = DEFAULT_DATA_PATH.with_name("market_data_euro.json")
+# Maintained IEEE-9 thesis input. Historical and sensitivity datasets remain
+# available through the explicit --data option.
+EXPERIMENT_DATA_PATH = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "processed"
+    / "market_data_IEEE_9Bus_congestion.json"
+)
 DEFAULT_WACC = 0.08
 DEFAULT_LIFETIME_YEARS = 15
 DEFAULT_NODE_LIMIT_MW = 100.0
@@ -41,17 +51,21 @@ DEFAULT_RATIO_MAX = 8.0
 DEFAULT_BESS_COST_POWER_EUR_PER_MW = 6_600.0
 DEFAULT_BESS_COST_ENERGY_EUR_PER_MWH = 18_800.0
 DEFAULT_DEGRADATION_EUR_PER_MWH = 15.0
-# Neutral strictly-convex tie-break in the lower-level dispatch objective.
-# At 1,000 MW its marginal contribution is 0.1 EUR/MWh, so it selects among
-# otherwise equivalent dispatches without materially replacing market costs.
-DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H = 1.0e-4
+# Optional strictly-convex tie-break in the lower-level dispatch objective.
+# The maintained base model leaves it disabled; robustness runs can enable it
+# explicitly through the CLI/configuration.
+DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H = 0.0
+DEFAULT_SOLVER_TOL = 1.0e-4
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "single_investor_mpec"
-USE_DEMAND_CURVE = True
-DEFAULT_INITIAL_POWER_MW = DEFAULT_NODE_LIMIT_MW if not USE_DEMAND_CURVE else 10.0
-DEFAULT_INITIAL_RATIO_HOURS = DEFAULT_RATIO_MAX if not USE_DEMAND_CURVE else DEFAULT_RATIO_MIN
+USE_DEMAND_CURVE = False
+DEFAULT_INITIAL_POWER_MW = 10.0
+DEFAULT_INITIAL_RATIO_HOURS = DEFAULT_RATIO_MIN
 DEFAULT_DEMAND_CURVE_ALPHA = 4000
 DEFAULT_DEMAND_CURVE_BETA = 10000
-DEFAULT_FIXED_DEMAND_DUAL_BOUND_EUR_PER_MWH = 30_000.0
+DEFAULT_PRICE_BOUND_EUR_PER_MWH = 500.0
+DEFAULT_DUAL_BOUND_EUR_PER_MWH = 10_000.0
+SPARSE_RIVAL_CAPACITY_TOL = 1.0e-8
+SPARSE_GENERATION_CAPACITY_TOL = 1.0e-8
 # Below this shed level a node-hour counts as "no curtailment": the demand
 # curve does not pin the price there and the QP solver dual is used instead.
 SHED_INTERIOR_TOL_MW = 1e-4
@@ -197,12 +211,9 @@ def build_fixed_demand_primal_model(
     if dispatch_regularization_eur_per_mw2h < 0.0:
         raise ValueError("Dispatch regularization must be non-negative.")
 
-    m = build_primal_market_clearing_model(data)
+    m = build_primal_market_clearing_model(data, include_load_shed=False)
     degradation = _storage_degradation_costs(data, storage_degradation_eur_per_mwh)
     reg = dispatch_regularization_eur_per_mw2h
-    for n in m.N:
-        for t in m.T:
-            m.P_shed[n, t].fix(0.0)
     generation_cost = sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
     storage_degradation_cost = sum(
         0.5 * degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
@@ -327,6 +338,8 @@ def single_storage_data(
     rival_id: str = EXISTING_ID,
     rival_power_mw: Mapping[str, float] | None = None,
     rival_energy_mwh: Mapping[str, float] | None = None,
+    rival_power_mw_by_unit: Mapping[str, Mapping[str, float]] | None = None,
+    rival_energy_mwh_by_unit: Mapping[str, Mapping[str, float]] | None = None,
     power_by_node: Mapping[str, float] | None = None,
     energy_by_node: Mapping[str, float] | None = None,
 ) -> MarketData:
@@ -342,14 +355,24 @@ def single_storage_data(
             x_energy = {(investor_id, node): max(0.0, float(energy_by_node[node])) for node in data.nodes}
         else:
             x_energy = {(investor_id, node): x_power[(investor_id, node)] * ratio_hours for node in data.nodes}
-    if rival_power_mw is None:
-        rival_power_mw = {node: existing_power_mw for node in data.nodes}
-        rival_energy_mwh = {node: existing_power_mw * existing_ratio_hours for node in data.nodes}
-    if any(v > 1e-9 for v in rival_power_mw.values()):
-        units.append(rival_id)
+    if rival_power_mw_by_unit is None:
+        if rival_power_mw is None:
+            rival_power_mw = {node: existing_power_mw for node in data.nodes}
+            rival_energy_mwh = {node: existing_power_mw * existing_ratio_hours for node in data.nodes}
+        rival_power_mw_by_unit = (
+            {rival_id: rival_power_mw} if any(v > 1e-9 for v in rival_power_mw.values()) else {}
+        )
+        rival_energy_mwh_by_unit = (
+            {rival_id: rival_energy_mwh} if rival_power_mw_by_unit else {}
+        )
+    elif rival_energy_mwh_by_unit is None:
+        raise ValueError("rival_energy_mwh_by_unit is required with rival_power_mw_by_unit.")
+    for unit, nodal_power in rival_power_mw_by_unit.items():
+        units.append(unit)
+        nodal_energy = rival_energy_mwh_by_unit[unit]
         for node in data.nodes:
-            x_power[(rival_id, node)] = float(rival_power_mw[node])
-            x_energy[(rival_id, node)] = float(rival_energy_mwh[node])
+            x_power[(unit, node)] = float(nodal_power[node])
+            x_energy[(unit, node)] = float(nodal_energy[node])
     return replace(data, storage_units=units, x_power=x_power, x_energy=x_energy)
 
 
@@ -361,11 +384,11 @@ def fixed_storage_data_from_solution(model: pyo.ConcreteModel) -> MarketData:
     units = [investor_id]
     x_power = {(investor_id, node): max(0.0, value(model.X_power[node])) for node in data.nodes}
     x_energy = {(investor_id, node): max(0.0, value(model.X_energy[node])) for node in data.nodes}
-    if any(v > 1e-9 for v in model._rival_power_mw.values()):
-        units.append(model._rival_id)
+    for rival_id in model._rival_ids:
+        units.append(rival_id)
         for node in data.nodes:
-            x_power[(model._rival_id, node)] = model._rival_power_mw[node]
-            x_energy[(model._rival_id, node)] = model._rival_energy_mwh[node]
+            x_power[(rival_id, node)] = model._rival_power_mw_by_unit[rival_id][node]
+            x_energy[(rival_id, node)] = model._rival_energy_mwh_by_unit[rival_id][node]
     return replace(data, storage_units=units, x_power=x_power, x_energy=x_energy)
 
 
@@ -387,7 +410,8 @@ def build_single_investor_mpec(
     initial_power_mw: float = DEFAULT_INITIAL_POWER_MW,
     initial_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS,
     fixed_power_mw: float | None = None,
-    dual_bound_scale: float = 10.0,
+    price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+    dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH,
     existing_power_mw: float = 0.0,
     existing_ratio_hours: float = 2.0,
     quad_demand: QuadraticDemandCurve,
@@ -396,36 +420,36 @@ def build_single_investor_mpec(
     rival_id: str = EXISTING_ID,
     rival_power_mw: Mapping[str, float] | None = None,
     rival_energy_mwh: Mapping[str, float] | None = None,
+    rival_power_mw_by_unit: Mapping[str, Mapping[str, float]] | None = None,
+    rival_energy_mwh_by_unit: Mapping[str, Mapping[str, float]] | None = None,
     rival_degradation_eur_per_mwh: float = DEFAULT_DEGRADATION_EUR_PER_MWH,
+    rival_degradation_eur_per_mwh_by_unit: Mapping[str, float] | None = None,
     dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
     system_price_settlement: bool = False,
-    capacity_price_eur_per_mw_day: Mapping[str, float] | None = None,
+    solver_tol: float = DEFAULT_SOLVER_TOL,
 ) -> pyo.ConcreteModel:
     """Build the one-investor MPEC.
 
-    The rival fleet (``rival_power_mw``/``rival_energy_mwh`` per node, or the
-    legacy uniform ``existing_power_mw``) is an exogenous, non-strategic BESS
-    unit inside the lower-level market clearing.
+    Rival batteries can be supplied separately through
+    ``rival_power_mw_by_unit``/``rival_energy_mwh_by_unit``. The legacy
+    single-rival inputs remain supported for standalone and archived callers.
 
-    By default (``capacity_price_eur_per_mw_day=None``) the shared nodal
-    connection limit is enforced as a private hard bound: the investor can only
-    add up to ``node_limit_mw - rival_power_mw[n]`` at each node. Passing
-    ``capacity_price_eur_per_mw_day`` switches to nodal access pricing: the
-    hard bound is dropped (only ``node_limit_mw`` remains as a generic
-    technical cap) and a capacity-access charge
-    ``sum_n capacity_price_eur_per_mw_day[n] * X_power[n]`` is added to the
-    investor's cost. The shared limit is then enforced only in aggregate, by
-    an outer price search around the diagonalization (see
-    ``epec_diagonalization.update_capacity_price``), not inside this MPEC.
+    The shared nodal connection limit is enforced as an explicit private
+    headroom constraint: the investor can only add up to
+    ``node_limit_mw - rival_power_mw[n]`` at each node. Its imported NLP
+    multiplier is the investor-specific endogenous marginal value of one more
+    MW of nodal access; it is not a common market-clearing access price.
 
-    If ``use_demand_curve`` is false, demand is fixed and ``P_shed`` is fixed
-    to zero for reporting only. If true, the lower level uses one quadratic
+    If ``use_demand_curve`` is false, demand is fixed and no load-shedding
+    primal or dual variables are created. If true, the lower level uses one quadratic
     curtailment variable per node-hour, marginal WTP
     ``alpha + beta*(shed/demand)``, and a Wolfe-dual strong-duality equality.
     """
 
-    if dual_bound_scale <= 0.0:
-        raise ValueError("dual_bound_scale must be positive.")
+    if price_bound_eur_per_mwh <= 0.0:
+        raise ValueError("price_bound_eur_per_mwh must be positive.")
+    if dual_bound_eur_per_mwh <= 0.0:
+        raise ValueError("dual_bound_eur_per_mwh must be positive.")
     if investor is not None and (wacc, ratio_min, ratio_max) != (DEFAULT_WACC, DEFAULT_RATIO_MIN, DEFAULT_RATIO_MAX):
         raise ValueError("Pass economic parameters through `investor`, not the legacy scalar kwargs.")
     inv = investor or InvestorConfig(wacc=wacc, ratio_min=ratio_min, ratio_max=ratio_max)
@@ -433,52 +457,117 @@ def build_single_investor_mpec(
         raise ValueError("Rival degradation cost must be non-negative.")
     if dispatch_regularization_eur_per_mw2h < 0.0:
         raise ValueError("Dispatch regularization must be non-negative.")
+    if solver_tol <= 0.0:
+        raise ValueError("solver_tol must be positive.")
     if existing_power_mw < 0.0:
         raise ValueError("existing_power_mw must be non-negative.")
-    if rival_power_mw is not None and existing_power_mw > 0.0:
-        raise ValueError("Pass either rival_power_mw per node or the legacy existing_power_mw scalar, not both.")
-    if rival_power_mw is None:
-        rival_power_mw = {node: existing_power_mw for node in data.nodes}
-        rival_energy_mwh = {node: existing_power_mw * existing_ratio_hours for node in data.nodes}
-    elif rival_energy_mwh is None:
-        raise ValueError("rival_energy_mwh is required when rival_power_mw is given.")
-    priced_access = capacity_price_eur_per_mw_day is not None
+    if rival_power_mw_by_unit is not None and (rival_power_mw is not None or existing_power_mw > 0.0):
+        raise ValueError("Pass separate rival units or the legacy single-rival inputs, not both.")
+    if rival_power_mw_by_unit is None:
+        if rival_power_mw is None:
+            rival_power_mw = {node: existing_power_mw for node in data.nodes}
+            rival_energy_mwh = {node: existing_power_mw * existing_ratio_hours for node in data.nodes}
+        elif rival_energy_mwh is None:
+            raise ValueError("rival_energy_mwh is required when rival_power_mw is given.")
+        rival_power_mw_by_unit = (
+            {rival_id: rival_power_mw} if any(v > 1e-9 for v in rival_power_mw.values()) else {}
+        )
+        rival_energy_mwh_by_unit = (
+            {rival_id: rival_energy_mwh} if rival_power_mw_by_unit else {}
+        )
+    elif rival_energy_mwh_by_unit is None:
+        raise ValueError("rival_energy_mwh_by_unit is required with rival_power_mw_by_unit.")
+
+    rival_ids = list(rival_power_mw_by_unit)
+    if inv.investor_id in rival_ids:
+        raise ValueError(f"Active investor {inv.investor_id} cannot also be a rival unit.")
+    if set(rival_energy_mwh_by_unit) != set(rival_ids):
+        raise ValueError("Rival power and energy unit identifiers must match.")
+    if (
+        rival_degradation_eur_per_mwh_by_unit is not None
+        and set(rival_degradation_eur_per_mwh_by_unit) != set(rival_ids)
+    ):
+        raise ValueError("Rival degradation-cost unit identifiers must match rival capacities.")
+    if (
+        rival_degradation_eur_per_mwh_by_unit is not None
+        and any(float(cost) < 0.0 for cost in rival_degradation_eur_per_mwh_by_unit.values())
+    ):
+        raise ValueError("Rival degradation costs must be non-negative.")
+    normalized_rival_power = {
+        unit: {node: float(rival_power_mw_by_unit[unit][node]) for node in data.nodes}
+        for unit in rival_ids
+    }
+    normalized_rival_energy = {
+        unit: {node: float(rival_energy_mwh_by_unit[unit][node]) for node in data.nodes}
+        for unit in rival_ids
+    }
+    for unit in rival_ids:
+        for node in data.nodes:
+            if normalized_rival_power[unit][node] < 0.0 or normalized_rival_energy[unit][node] < 0.0:
+                raise ValueError(f"Negative rival capacity for {unit} at node {node}.")
+    aggregate_rival_power = {
+        node: sum(normalized_rival_power[unit][node] for unit in rival_ids) for node in data.nodes
+    }
+    aggregate_rival_energy = {
+        node: sum(normalized_rival_energy[unit][node] for unit in rival_ids) for node in data.nodes
+    }
     for node in data.nodes:
-        if rival_power_mw[node] < 0.0 or rival_energy_mwh[node] < 0.0:
-            raise ValueError(f"Negative rival capacity at node {node}.")
-        # Under nodal access pricing the shared limit is enforced in aggregate
-        # by the outer price search, not per-investor, so rivals can transiently
-        # sit above node_limit_mw while the price tâtonnement is still moving.
-        if not priced_access and rival_power_mw[node] > node_limit_mw:
+        if aggregate_rival_power[node] > node_limit_mw + 1e-9:
             raise ValueError(f"Rival power at node {node} exceeds the nodal connection limit.")
-    if priced_access:
-        capacity_price = dict(capacity_price_eur_per_mw_day)
-        invest_limit = {node: node_limit_mw for node in data.nodes}
-    else:
-        capacity_price = {node: 0.0 for node in data.nodes}
-        invest_limit = {node: node_limit_mw - rival_power_mw[node] for node in data.nodes}
-    rival_active = any(v > 1e-9 for v in rival_power_mw.values())
-    storage_units = [inv.investor_id] + ([rival_id] if rival_active else [])
+    invest_limit = {node: max(0.0, node_limit_mw - aggregate_rival_power[node]) for node in data.nodes}
+    storage_units = [inv.investor_id] + rival_ids
+    storage_pairs = [(inv.investor_id, node) for node in data.nodes]
+    storage_pairs.extend(
+        (unit, node)
+        for unit in rival_ids
+        for node in data.nodes
+        if normalized_rival_power[unit][node] > SPARSE_RIVAL_CAPACITY_TOL
+        or normalized_rival_energy[unit][node] > SPARSE_RIVAL_CAPACITY_TOL
+    )
+    storage_units_at_node = {
+        node: [unit for unit, pair_node in storage_pairs if pair_node == node]
+        for node in data.nodes
+    }
     storage_degradation = {inv.investor_id: inv.degradation_eur_per_mwh}
-    if rival_active:
-        storage_degradation[rival_id] = rival_degradation_eur_per_mwh
+    for unit in rival_ids:
+        storage_degradation[unit] = (
+            float(rival_degradation_eur_per_mwh_by_unit[unit])
+            if rival_degradation_eur_per_mwh_by_unit is not None
+            else rival_degradation_eur_per_mwh
+        )
 
     gen_nodes = _nodes_of_generator(data)
+    generation_pairs = [
+        (generator, time)
+        for generator in data.generators
+        for time in data.times
+        if data.generation_capacity[generator, time] > SPARSE_GENERATION_CAPACITY_TOL
+    ]
+    generators_at_node_time = {
+        (node, time): [
+            generator
+            for generator in data.generators_at_node.get(node, [])
+            if (generator, time) in generation_pairs
+        ]
+        for node in data.nodes
+        for time in data.times
+    }
     last_t = max(data.times)
     eta = data.eta
     dispatch_reg = dispatch_regularization_eur_per_mw2h
     crf_daily = capital_recovery_factor(inv.wacc, inv.lifetime_years) / 365.25
-    # Congestion duals can be much larger than generator marginal costs under
-    # the PTDF formulation. In fixed-demand mode this bound is purely numerical;
-    # it is not a VOLL or load-shed price.
-    dual_bound_base = data.voll if use_demand_curve else DEFAULT_FIXED_DEMAND_DUAL_BOUND_EUR_PER_MWH
-    dual_bound = dual_bound_scale * dual_bound_base
+    # These are explicit absolute numerical bounds, not VOLL multipliers.
+    price_bound = float(price_bound_eur_per_mwh)
+    dual_bound = float(dual_bound_eur_per_mwh)
 
     m = pyo.ConcreteModel(name=MODEL_NAME)
+    m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
 
     m.N = pyo.Set(initialize=data.nodes, ordered=True)
     m.G = pyo.Set(initialize=data.generators, ordered=True)
+    m.GT = pyo.Set(dimen=2, initialize=generation_pairs, ordered=True)
     m.I = pyo.Set(initialize=storage_units, ordered=True)
+    m.IN = pyo.Set(dimen=2, initialize=storage_pairs, ordered=True)
     m.T = pyo.Set(initialize=data.times, ordered=True)
     m.T_SOC = pyo.Set(initialize=data.soc_times, ordered=True)
     m.L = pyo.Set(initialize=data.lines, ordered=True)
@@ -488,13 +577,17 @@ def build_single_investor_mpec(
     init_ratio = max(initial_ratio_hours, inv.ratio_min)
     m.X_power = pyo.Var(
         m.N,
-        bounds=lambda model, n: (0.0, invest_limit[n]),
+        domain=pyo.NonNegativeReals,
         initialize=lambda model, n: min(max(initial_power_mw, 0.0), invest_limit[n]),
     )
     m.X_energy = pyo.Var(
         m.N,
-        bounds=lambda model, n: (0.0, inv.ratio_max * invest_limit[n]),
+        domain=pyo.NonNegativeReals,
         initialize=lambda model, n: init_ratio * min(max(initial_power_mw, 0.0), invest_limit[n]),
+    )
+    m.investment_headroom = pyo.Constraint(
+        m.N,
+        rule=lambda model, n: model.X_power[n] <= invest_limit[n],
     )
     m.energy_ratio_min = pyo.Constraint(m.N, rule=lambda model, n: model.X_energy[n] >= inv.ratio_min * model.X_power[n])
     m.energy_ratio_max = pyo.Constraint(m.N, rule=lambda model, n: model.X_energy[n] <= inv.ratio_max * model.X_power[n])
@@ -506,37 +599,36 @@ def build_single_investor_mpec(
             m.X_energy[node].fix(init_ratio * fixed_power)
 
     # Lower-level primal variables.
-    m.P_gen = pyo.Var(m.G, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    if not use_demand_curve:
-        for node in data.nodes:
-            for time in data.times:
-                m.P_shed[node, time].fix(0.0)
-    m.P_charge = pyo.Var(m.I, m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    m.P_discharge = pyo.Var(m.I, m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    m.SOC = pyo.Var(m.I, m.N, m.T_SOC, domain=pyo.NonNegativeReals, initialize=0.0)
+    m.P_gen = pyo.Var(m.GT, domain=pyo.NonNegativeReals, initialize=0.0)
+    if use_demand_curve:
+        m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    m.P_charge = pyo.Var(m.IN, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    m.P_discharge = pyo.Var(m.IN, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    m.SOC = pyo.Var(m.IN, m.T_SOC, domain=pyo.NonNegativeReals, initialize=0.0)
     m.NetInjection = pyo.Var(m.N, m.T, domain=pyo.Reals, initialize=0.0)
 
     # Lower-level dual variables with broad finite bounds for Ipopt stability.
-    m.lam = pyo.Var(m.N, m.T, bounds=(-dual_bound, dual_bound), initialize=80.0)
-    m.lam_sys = pyo.Var(m.T, bounds=(-dual_bound, dual_bound), initialize=80.0)
-    m.nu_gen = pyo.Var(m.G, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
+    m.lam = pyo.Var(m.N, m.T, bounds=(-price_bound, price_bound), initialize=80.0)
+    m.lam_sys = pyo.Var(m.T, bounds=(-price_bound, price_bound), initialize=80.0)
+    m.nu_gen = pyo.Var(m.GT, bounds=(-dual_bound, 0.0), initialize=0.0)
     m.mu_up = pyo.Var(m.L, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
     m.mu_dn = pyo.Var(m.L, m.T, bounds=(0.0, dual_bound), initialize=0.0)
-    m.rho_ch = pyo.Var(m.I, m.N, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
-    m.sig_dis = pyo.Var(m.I, m.N, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
-    m.gam = pyo.Var(m.I, m.N, m.T, bounds=(-dual_bound, dual_bound), initialize=0.0)
-    m.del_soc = pyo.Var(m.I, m.N, m.T_SOC, bounds=(-dual_bound, 0.0), initialize=0.0)
-    m.rho_per = pyo.Var(m.I, m.N, bounds=(-dual_bound, dual_bound), initialize=0.0)
-    m.xi_shed = pyo.Var(m.N, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
+    m.rho_ch = pyo.Var(m.IN, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
+    m.sig_dis = pyo.Var(m.IN, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
+    m.gam = pyo.Var(m.IN, m.T, bounds=(-dual_bound, dual_bound), initialize=0.0)
+    m.del_soc = pyo.Var(m.IN, m.T_SOC, bounds=(-dual_bound, 0.0), initialize=0.0)
+    m.rho_per = pyo.Var(m.IN, bounds=(-dual_bound, dual_bound), initialize=0.0)
+    if use_demand_curve:
+        m.xi_shed = pyo.Var(m.N, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
 
     # Primal feasibility.
     def nodal_balance_rule(model: pyo.ConcreteModel, node: str, time: int) -> pyo.Expression:
         storage_net = sum(
-            model.P_discharge[unit, node, time] - model.P_charge[unit, node, time] for unit in model.I
+            model.P_discharge[unit, node, time] - model.P_charge[unit, node, time]
+            for unit in storage_units_at_node[node]
         )
         return (
-            sum(model.P_gen[generator, time] for generator in data.generators_at_node.get(node, []))
+            sum(model.P_gen[generator, time] for generator in generators_at_node_time[node, time])
             + storage_net
             + (model.P_shed[node, time] if use_demand_curve else 0.0)
             - data.demand_el[node, time]
@@ -546,8 +638,7 @@ def build_single_investor_mpec(
     m.nodal_balance = pyo.Constraint(m.N, m.T, rule=nodal_balance_rule)
     m.system_balance = pyo.Constraint(m.T, rule=lambda model, t: sum(model.NetInjection[n, t] for n in model.N) == 0.0)
     m.generation_capacity_bound = pyo.Constraint(
-        m.G,
-        m.T,
+        m.GT,
         rule=lambda model, g, t: model.P_gen[g, t] <= data.generation_capacity[g, t],
     )
     m.line_upper_bound = pyo.Constraint(
@@ -561,37 +652,32 @@ def build_single_investor_mpec(
         rule=lambda model, l, t: sum(data.ptdf[l, n] * model.NetInjection[n, t] for n in model.N) >= -data.line_limit[l],
     )
     def unit_power_limit(model: pyo.ConcreteModel, i: str, n: str):
-        return model.X_power[n] if i == inv.investor_id else rival_power_mw[n]
+        return model.X_power[n] if i == inv.investor_id else normalized_rival_power[i][n]
 
     m.charge_power_bound = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         m.T,
         rule=lambda model, i, n, t: model.P_charge[i, n, t] <= unit_power_limit(model, i, n),
     )
     m.discharge_power_bound = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         m.T,
         rule=lambda model, i, n, t: model.P_discharge[i, n, t] <= unit_power_limit(model, i, n),
     )
     m.soc_transition = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         m.T,
         rule=lambda model, i, n, t: model.SOC[i, n, t]
         == model.SOC[i, n, t - 1] + eta * model.P_charge[i, n, t] - model.P_discharge[i, n, t] / eta,
     )
     m.soc_capacity_bound = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         m.T_SOC,
         rule=lambda model, i, n, tau: model.SOC[i, n, tau]
-        <= (model.X_energy[n] if i == inv.investor_id else rival_energy_mwh[n]),
+        <= (model.X_energy[n] if i == inv.investor_id else normalized_rival_energy[i][n]),
     )
     m.soc_periodicity = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         rule=lambda model, i, n: model.SOC[i, n, 0] == model.SOC[i, n, last_t],
     )
     if use_demand_curve:
@@ -600,13 +686,10 @@ def build_single_investor_mpec(
             m.T,
             rule=lambda model, n, t: model.P_shed[n, t] <= data.demand_el[n, t],
         )
-    else:
-        m.load_shed_bound = pyo.Constraint(m.N, m.T, rule=lambda model, n, t: model.P_shed[n, t] == 0.0)
 
     # Dual feasibility.
     m.gen_stationarity = pyo.Constraint(
-        m.G,
-        m.T,
+        m.GT,
         rule=lambda model, g, t: sum(model.lam[n, t] for n in gen_nodes.get(g, [])) + model.nu_gen[g, t]
         <= data.generation_cost[g] + dispatch_reg * model.P_gen[g, t],
     )
@@ -622,11 +705,8 @@ def build_single_investor_mpec(
             )
             * model.P_shed[n, t],
         )
-    else:
-        m.shed_stationarity = pyo.Constraint(m.N, m.T, rule=lambda model, n, t: model.xi_shed[n, t] == 0.0)
     m.charge_stationarity = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         m.T,
         rule=lambda model, i, n, t: -model.lam[n, t]
         + model.rho_ch[i, n, t]
@@ -634,8 +714,7 @@ def build_single_investor_mpec(
         <= 0.5 * storage_degradation[i] + dispatch_reg * model.P_charge[i, n, t],
     )
     m.discharge_stationarity = pyo.Constraint(
-        m.I,
-        m.N,
+        m.IN,
         m.T,
         rule=lambda model, i, n, t: model.lam[n, t]
         + model.sig_dis[i, n, t]
@@ -663,7 +742,7 @@ def build_single_investor_mpec(
             expr = expr - model.rho_per[i, n]
         return expr <= dispatch_reg * model.SOC[i, n, tau]
 
-    m.soc_stationarity = pyo.Constraint(m.I, m.N, m.T_SOC, rule=soc_stationarity_rule)
+    m.soc_stationarity = pyo.Constraint(m.IN, m.T_SOC, rule=soc_stationarity_rule)
 
     # Strong duality. In fixed-demand mode the lower level is the LP without a
     # shed variable. In demand-curve mode it is a convex QP with Wolfe-dual
@@ -688,19 +767,17 @@ def build_single_investor_mpec(
 
     storage_degradation_cost_expr = sum(
         0.5 * storage_degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
-        for i in m.I
-        for n in m.N
+        for i, n in m.IN
         for t in m.T
     )
     dispatch_regularization_expr = 0.5 * dispatch_reg * (
-        sum(m.P_gen[g, t] ** 2 for g in m.G for t in m.T)
+        sum(m.P_gen[g, t] ** 2 for g, t in m.GT)
         + sum(
             m.P_charge[i, n, t] ** 2 + m.P_discharge[i, n, t] ** 2
-            for i in m.I
-            for n in m.N
+            for i, n in m.IN
             for t in m.T
         )
-        + sum(m.SOC[i, n, tau] ** 2 for i in m.I for n in m.N for tau in m.T_SOC)
+        + sum(m.SOC[i, n, tau] ** 2 for i, n in m.IN for tau in m.T_SOC)
         + sum(m.NetInjection[n, t] ** 2 for n in m.N for t in m.T)
         + (
             sum(m.P_shed[n, t] ** 2 for n in m.N for t in m.T)
@@ -714,7 +791,7 @@ def build_single_investor_mpec(
     m.dispatch_regularization_expr = pyo.Expression(expr=dispatch_regularization_expr)
 
     m.primal_objective_expr = pyo.Expression(
-        expr=sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
+        expr=sum(data.generation_cost[g] * m.P_gen[g, t] for g, t in m.GT)
         + storage_degradation_cost_expr
         + shed_cost_expr
         + dispatch_regularization_expr
@@ -722,18 +799,16 @@ def build_single_investor_mpec(
     m.dual_objective_expr = pyo.Expression(
         expr=demand_dual_expr
         + quad_dual_correction_expr
-        + sum(data.generation_capacity[g, t] * m.nu_gen[g, t] for g in m.G for t in m.T)
+        + sum(data.generation_capacity[g, t] * m.nu_gen[g, t] for g, t in m.GT)
         + sum(data.line_limit[l] * (m.mu_up[l, t] - m.mu_dn[l, t]) for l in m.L for t in m.T)
         + sum(
             unit_power_limit(m, i, n) * (m.rho_ch[i, n, t] + m.sig_dis[i, n, t])
-            for i in m.I
-            for n in m.N
+            for i, n in m.IN
             for t in m.T
         )
         + sum(
-            (m.X_energy[n] if i == inv.investor_id else rival_energy_mwh[n]) * m.del_soc[i, n, tau]
-            for i in m.I
-            for n in m.N
+            (m.X_energy[n] if i == inv.investor_id else normalized_rival_energy[i][n]) * m.del_soc[i, n, tau]
+            for i, n in m.IN
             for tau in m.T_SOC
         )
     )
@@ -764,7 +839,7 @@ def build_single_investor_mpec(
             share * (settlement_price(gen_node[g], t) - data.generation_cost[g]) * m.P_gen[g, t]
             for g, share in inv.owned_generation_shares.items()
             for t in m.T
-            if share != 0.0 and gen_node.get(g) is not None
+            if share != 0.0 and gen_node.get(g) is not None and (g, t) in m.GT
         )
     )
     m.degradation_cost_expr = pyo.Expression(
@@ -780,15 +855,11 @@ def build_single_investor_mpec(
             for n in m.N
         )
     )
-    m.capacity_price_expr = pyo.Expression(
-        expr=sum(capacity_price[n] * m.X_power[n] for n in m.N)
-    )
     m.investor_profit_expr = pyo.Expression(
         expr=m.spot_revenue_expr
         + m.generation_rent_expr
         - m.degradation_cost_expr
         - m.capex_daily_expr
-        - m.capacity_price_expr
     )
     # Clean EPEC baseline: the MPEC selects the dual/primal optimum that
     # maximizes investor profit. Any optimistic-price effect is diagnosed ex
@@ -804,16 +875,34 @@ def build_single_investor_mpec(
     m._existing_power_mw = existing_power_mw
     m._existing_ratio_hours = existing_ratio_hours
     m._node_limit_mw = node_limit_mw
-    m._capacity_price_eur_per_mw_day = dict(capacity_price)
+    m._invest_limit_mw = dict(invest_limit)
     m._rival_id = rival_id
-    m._rival_power_mw = dict(rival_power_mw)
-    m._rival_energy_mwh = dict(rival_energy_mwh)
+    m._rival_ids = tuple(rival_ids)
+    m._rival_power_mw = dict(aggregate_rival_power)
+    m._rival_energy_mwh = dict(aggregate_rival_energy)
+    m._rival_power_mw_by_unit = normalized_rival_power
+    m._rival_energy_mwh_by_unit = normalized_rival_energy
+    m._storage_pairs = tuple(storage_pairs)
+    m._sparse_rival_capacity_tol = SPARSE_RIVAL_CAPACITY_TOL
+    m._generation_pairs = tuple(generation_pairs)
+    m._sparse_generation_capacity_tol = SPARSE_GENERATION_CAPACITY_TOL
     m._storage_degradation_eur_per_mwh = storage_degradation
     m._rival_degradation_eur_per_mwh = rival_degradation_eur_per_mwh
     m._dispatch_regularization_eur_per_mw2h = dispatch_reg
     m._quad_demand = quad_demand
     m._use_demand_curve = use_demand_curve
+    m._price_bound_eur_per_mwh = price_bound
+    m._dual_bound_eur_per_mwh = dual_bound
+    m._solver_tol = solver_tol
     return m
+
+
+def investment_headroom_shadow_price(model: pyo.ConcreteModel, node: str) -> float:
+    """Return the endogenous ULP headroom multiplier in EUR/MW/day."""
+
+    raw = model.dual.get(model.investment_headroom[node], float("nan"))
+    value_ = float(raw)
+    return 0.0 if abs(value_) < 1e-8 else value_
 
 
 def _initialize_from_quadratic_llp(
@@ -839,38 +928,39 @@ def _initialize_from_quadratic_llp(
             storage_degradation_eur_per_mwh=model._storage_degradation_eur_per_mwh,
             dispatch_regularization_eur_per_mw2h=model._dispatch_regularization_eur_per_mw2h,
         )
-    results = get_ipopt_solver().solve(qp, tee=False)
+    results = get_ipopt_solver(
+        {"tol": model._solver_tol, "acceptable_tol": model._solver_tol}
+    ).solve(qp, tee=False)
     if results.solver.termination_condition != pyo.TerminationCondition.optimal:
         return
 
     lam_ref = quadratic_reference_lambda(qp, quad) if model._use_demand_curve else fixed_demand_reference_lambda(qp)
     gen_nodes = _nodes_of_generator(lp_data)
     node_count = max(1, len(list(model.N)))
-    for g in model.G:
-        for t in model.T:
-            model.P_gen[g, t].set_value(max(0.0, value(qp.P_gen[g, t])))
-            lam_g = sum(lam_ref[n, t] for n in gen_nodes.get(g, []))
-            marginal_cost = (
-                lp_data.generation_cost[g]
-                + model._dispatch_regularization_eur_per_mw2h * value(qp.P_gen[g, t])
-            )
-            model.nu_gen[g, t].set_value(min(0.0, marginal_cost - lam_g))
+    for g, t in model.GT:
+        model.P_gen[g, t].set_value(max(0.0, value(qp.P_gen[g, t])))
+        lam_g = sum(lam_ref[n, t] for n in gen_nodes.get(g, []))
+        marginal_cost = (
+            lp_data.generation_cost[g]
+            + model._dispatch_regularization_eur_per_mw2h * value(qp.P_gen[g, t])
+        )
+        model.nu_gen[g, t].set_value(min(0.0, marginal_cost - lam_g))
     for n in model.N:
         for t in model.T:
-            model.P_shed[n, t].set_value(max(0.0, value(qp.P_shed[n, t])))
             model.NetInjection[n, t].set_value(value(qp.NetInjection[n, t]))
             model.lam[n, t].set_value(lam_ref[n, t])
-            model.xi_shed[n, t].set_value(0.0)
+            if model._use_demand_curve:
+                model.P_shed[n, t].set_value(max(0.0, value(qp.P_shed[n, t])))
+                model.xi_shed[n, t].set_value(0.0)
     for t in model.T:
         model.lam_sys[t].set_value(sum(lam_ref[n, t] for n in model.N) / node_count)
-    for i in model.I:
-        for n in model.N:
-            for t in model.T:
-                model.P_charge[i, n, t].set_value(max(0.0, value(qp.P_charge[i, n, t])))
-                model.P_discharge[i, n, t].set_value(max(0.0, value(qp.P_discharge[i, n, t])))
-                model.gam[i, n, t].set_value(-lam_ref[n, t])
-            for tau in model.T_SOC:
-                model.SOC[i, n, tau].set_value(max(0.0, value(qp.SOC[i, n, tau])))
+    for i, n in model.IN:
+        for t in model.T:
+            model.P_charge[i, n, t].set_value(max(0.0, value(qp.P_charge[i, n, t])))
+            model.P_discharge[i, n, t].set_value(max(0.0, value(qp.P_discharge[i, n, t])))
+            model.gam[i, n, t].set_value(-lam_ref[n, t])
+        for tau in model.T_SOC:
+            model.SOC[i, n, tau].set_value(max(0.0, value(qp.SOC[i, n, tau])))
 
 
 def initialize_from_reference_dispatch(model: pyo.ConcreteModel, data: MarketData, ratio_hours: float) -> None:
@@ -881,9 +971,8 @@ def initialize_from_reference_dispatch(model: pyo.ConcreteModel, data: MarketDat
         0.0,
         ratio_hours,
         investor_id=model._investor_id,
-        rival_id=model._rival_id,
-        rival_power_mw=model._rival_power_mw,
-        rival_energy_mwh=model._rival_energy_mwh,
+        rival_power_mw_by_unit=model._rival_power_mw_by_unit,
+        rival_energy_mwh_by_unit=model._rival_energy_mwh_by_unit,
         power_by_node={n: value(model.X_power[n]) for n in model.N},
         energy_by_node={n: value(model.X_energy[n]) for n in model.N},
     )
@@ -895,7 +984,7 @@ def compute_reference_settlement(model: pyo.ConcreteModel) -> dict[str, object]:
 
     In demand-curve mode the QP has unique prices, read analytically off the
     demand curve at cleared curtailment. In fixed-demand mode there is no
-    curtailment valve; the standalone LP fixes ``P_shed`` to zero.
+    curtailment variable.
     """
 
     fixed_data = fixed_storage_data_from_solution(model)
@@ -917,7 +1006,9 @@ def compute_reference_settlement(model: pyo.ConcreteModel) -> dict[str, object]:
         reference_problem = "QP"
     solver_label = "ipopt"
     print(f"Solving reference settlement {reference_problem} with ipopt...")
-    results = get_ipopt_solver().solve(reference, tee=False)
+    results = get_ipopt_solver(
+        {"tol": model._solver_tol, "acceptable_tol": model._solver_tol}
+    ).solve(reference, tee=False)
     termination = results.solver.termination_condition
     if termination != pyo.TerminationCondition.optimal:
         raise RuntimeError(
@@ -1003,10 +1094,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-cpu-time", type=float, default=120.0)
     parser.add_argument(
-        "--dual-bound-scale",
+        "--price-bound-eur-per-mwh",
         type=float,
-        default=10.0,
-        help="Finite bound multiplier for lower-level dual variables relative to VOLL.",
+        default=DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+        help="Absolute finite bound for lambda and lambda_system (default: 500).",
+    )
+    parser.add_argument(
+        "--dual-bound-eur-per-mwh",
+        type=float,
+        default=DEFAULT_DUAL_BOUND_EUR_PER_MWH,
+        help="Absolute finite bound for non-price lower-level duals (default: 10000).",
     )
     parser.add_argument(
         "--dispatch-regularization",
@@ -1014,6 +1111,13 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
         help="Neutral lower-level quadratic tie-break coefficient in EUR/(MW^2 h).",
     )
+    parser.add_argument(
+        "--demand-model",
+        choices=["fixed", "quadratic"],
+        default="fixed",
+        help="Lower-level demand representation. The maintained base model uses fixed demand.",
+    )
+    parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--no-export", action="store_true", help="Do not write detailed CSV/JSON outputs.")
     return parser.parse_args()
@@ -1023,17 +1127,20 @@ def main() -> int:
     args = parse_args()
     if args.dispatch_regularization < 0.0:
         raise SystemExit("--dispatch-regularization must be non-negative.")
+    if args.solver_tol <= 0.0:
+        raise SystemExit("--solver-tol must be positive.")
     data = load_market_data(args.data)
     output_dir = args.output_dir if args.output_dir is not None else DEFAULT_OUTPUT_DIR
 
     quad_demand = default_quadratic_demand_curve()
-    if USE_DEMAND_CURVE:
+    use_demand_curve = args.demand_model == "quadratic"
+    if use_demand_curve:
         print(
             "Quadratic demand curve: "
             f"marginal WTP = {quad_demand.alpha:,.2f} + {quad_demand.beta:,.2f} * curtailed_share EUR/MWh"
         )
     else:
-        print("Fixed demand mode: demand curve disabled; P_shed fixed to 0 MW; no VOLL/load-shed pricing.")
+        print("Fixed demand mode: no load-shedding primal or dual variables; no VOLL/load-shed pricing.")
     print(
         "Lower-level storage degradation: "
         f"{DEFAULT_DEGRADATION_EUR_PER_MWH:,.2f} EUR/MWh-cycle "
@@ -1049,16 +1156,24 @@ def main() -> int:
         initial_power_mw=args.initial_power_mw,
         initial_ratio_hours=args.initial_ratio_hours,
         fixed_power_mw=args.fixed_power_mw,
-        dual_bound_scale=args.dual_bound_scale,
+        price_bound_eur_per_mwh=args.price_bound_eur_per_mwh,
+        dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
         existing_power_mw=args.existing_power_mw,
         existing_ratio_hours=args.existing_ratio_hours,
         dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,
         quad_demand=quad_demand,
-        use_demand_curve=USE_DEMAND_CURVE,
+        use_demand_curve=use_demand_curve,
+        solver_tol=args.solver_tol,
     )
     initialize_from_reference_dispatch(model, data, args.initial_ratio_hours)
 
-    solver = get_ipopt_solver({"max_cpu_time": args.max_cpu_time})
+    solver = get_ipopt_solver(
+        {
+            "max_cpu_time": args.max_cpu_time,
+            "tol": args.solver_tol,
+            "acceptable_tol": args.solver_tol,
+        }
+    )
     results = solver.solve(model, tee=args.tee)
     termination = results.solver.termination_condition
     print(f"Solver status: {results.solver.status}")

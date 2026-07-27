@@ -346,9 +346,15 @@ X^{energy}_{i,n}
 \coordinate (n1) at ( 0.00,-3.00);
 
 % Generator symbol coordinates.
-\coordinate (g2) at (-7.10, 3.00);
+% Bus 2 has no generator in the calibrated dataset (G_IEEE2 removed).
 \coordinate (g3) at ( 7.10, 3.00);
 \coordinate (g1) at ( 0.00,-4.15);
+
+% Renewable generator symbol coordinates: wind at Bus 1, PV at Buses 6 and 8.
+% Each sits on a stub drawn normal (perpendicular) to its own busbar.
+\coordinate (w1) at ( 1.15,-4.15);
+\coordinate (pv6) at ( 1.60, 1.75);
+\coordinate (pv8) at (-1.15, 3.86);
 
 % ---------------------------------------------------------------------------
 % Transmission connections (drawn before the busbars)
@@ -374,9 +380,13 @@ X^{energy}_{i,n}
 \draw[transmission] (n4) -- (n1); % N4--N1
 
 % Generator connections.
-\draw[transmission] (n2) -- (g2);
 \draw[transmission] (n3) -- (g3);
 \draw[transmission] (n1) -- (g1);
+
+% Renewable generator connections: each stub is normal to its own busbar.
+\draw[transmission] ($(n1)+(1.15,0)$) -- (w1);
+\draw[transmission] ($(n6)+(-1.00,0)$) -- (pv6);
+\draw[transmission] ($(n8)+(0,0.86)$) -- (pv8);
 
 % Load connections: C at Bus 8, A at Bus 5, and B at Bus 6.
 \draw[load arrow]
@@ -414,8 +424,8 @@ X^{energy}_{i,n}
 % Bus 4 spans beneath Buses 5 and 6 so both connections can be vertical.
 \draw[busbar] ($(n4)+(-2.80,0)$) -- ($(n4)+(2.80,0)$);
 
-% Bus 1 retains the standard horizontal length.
-\draw[busbar] ($(n1)+(-0.62,0)$) -- ($(n1)+(0.62,0)$);
+% Bus 1 extends farther in the positive x direction for the wind-generator stub.
+\draw[busbar] ($(n1)+(-0.62,0)$) -- ($(n1)+(1.15,0)$);
 
 % ---------------------------------------------------------------------------
 % Bus names
@@ -444,12 +454,18 @@ X^{energy}_{i,n}
 \node[line label,rotate=90] at ( 0.30,-2.10) {Line 1--4};
 
 % Synchronous-generator symbols and names.
-\node[generator] at (g2) {$\sim$};
 \node[generator] at (g3) {$\sim$};
 \node[generator] at (g1) {$\sim$};
-\node[component label] at ($(g2)+(0,-0.55)$) {G2};
 \node[component label] at ($(g3)+(0,-0.55)$) {G3};
 \node[component label] at ($(g1)+(0,-0.55)$) {G1};
+
+% Renewable-generator symbols and names (same circle as the synchronous units).
+\node[generator] at (w1) {W};
+\node[generator,font=\scriptsize] at (pv6) {PV};
+\node[generator,font=\scriptsize] at (pv8) {PV};
+\node[component label] at ($(w1)+(0,-0.55)$) {W1};
+\node[component label] at ($(pv6)+(0,0.55)$) {PV6};
+\node[component label] at ($(pv8)+(0,0.55)$) {PV8};
 
 % Load names.
 \node[component label] at ($(n8)+(1.48,0.68)$) {Load C};

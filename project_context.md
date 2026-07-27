@@ -1,6 +1,6 @@
 # Project Context: Strategic BESS Investment in Nodal Spot Markets
 
-Last updated: 2026-07-22
+Last updated: 2026-07-27
 
 ## Current objective
 
@@ -23,7 +23,7 @@ The model covers one representative 24-hour day with hourly resolution. Its main
 components are:
 
 - deterministic market clearing through a PTDF-based DC-OPF;
-- conventional and renewable generation, curtailment, and nodal demand;
+- conventional and renewable generation, renewable curtailment, and fixed nodal demand;
 - nodal BESS charging, discharging, and periodic state-of-charge dynamics;
 - endogenous BESS power (MW) and energy (MWh) investment;
 - a 2-8 hour energy-to-power envelope;
@@ -42,36 +42,66 @@ cases but are not the current thesis benchmark.
 ### Central planner
 
 `model/central_planner_benchmark.py` jointly selects BESS capacities and market
-dispatch by minimizing:
+dispatch. In the maintained fixed-demand, zero-regularization base it minimizes:
 
-> generation cost + curtailment cost + storage CAPEX + degradation cost.
+> generation cost + storage CAPEX + degradation cost.
 
-It is a convex QP and represents the first-best efficiency benchmark. Ownership,
-market transfers, and generator rents do not enter its objective.
+It is a convex LP in the base configuration and represents the first-best
+efficiency benchmark. Quadratic load curtailment and dispatch regularization are
+explicit robustness options. Ownership, market transfers, and generator rents
+do not enter its objective.
 
 ### Single-investor MPEC
 
 `model/single_investor_mpec.py` lets one strategic investor choose nodal BESS MW
 and MWh while anticipating the spot-market response through primal feasibility,
-dual feasibility, stationarity, and Wolfe strong duality. This is equivalent to
-the lower-level KKT system for the convex market-clearing problem, with strong
-duality replacing explicit complementarity equations. The investor earns storage
+dual feasibility, and Wolfe strong duality. For the convex market-clearing
+problem these primal-dual optimality conditions characterize a lower-level
+optimum without adding explicit complementarity equations. The investor earns storage
 spot revenue and, if portfolio-backed, its share of existing generator rent, net
 of degradation and CAPEX.
 
-The lower-level objective and the independent reference market use the same
-storage-degradation cost. No artificial dispatch regularizer is included.
+The maintained base configuration uses fixed demand, the same storage-
+degradation cost in the embedded and reference markets, and zero artificial
+dispatch regularization. Quadratic load curtailment and a nonzero quadratic
+dispatch tie-break remain explicit robustness options rather than hidden
+defaults. Ipopt uses `tol=1e-4` and `acceptable_tol=1e-4` in the normal EPEC.
+The maintained electricity-price bounds for `lam` and `lam_sys` are the
+explicit interval `[-500, 500]` EUR/MWh. All other embedded lower-level duals
+use the wider absolute interval `[-10,000, 10,000]`. These are explicit
+numerical/price-selection bounds rather than multiples of VOLL. Fixed-
+demand shedding variables and their dual conditions are omitted. The embedded
+primal-dual model also omits zero-capacity rival node blocks and zero-capacity
+generator-hours; the active investor remains represented at every node. Ipopt
+uses its sparse MUMPS linear solver through the common solver configuration.
+Capacity pairs at or below `1e-4` in both MW and MWh are normalized to exact
+zero between diagonalization updates so economically absent batteries remain
+sparse.
 
 ### Multi-investor EPEC
 
 `model/epec_diagonalization.py` couples investor MPECs through shared nodal
-connection limits and market outcomes. It supports Gauss-Jacobi and Gauss-Seidel
-updates with damping and feasibility projection.
+connection limits and market outcomes. Every active investor sees each rival as
+a separate lower-level battery with that rival's own nodal MW and MWh; rivals
+are not collapsed into one virtual storage unit. It supports Gauss-Jacobi and
+Gauss-Seidel updates with damping and feasibility projection.
+
+`model/epec_jacobi_initializer.py` is the maintained initialization workflow.
+It solves one Jacobi sweep from a common economic capacity snapshot while using
+a separately configurable positive numerical MPEC guess. It exports each
+investor's raw desired nodal MW/MWh, proportionally projects only overloaded
+nodes while preserving each E/P ratio, and writes a `checkpoint.json` that the
+normal Gauss-Seidel driver can resume. The projected allocation is an
+initialization heuristic, not an equilibrium or an access-allocation mechanism.
 
 The maintained algorithm uses private rival-headroom bounds and a final
 shared-limit projection safeguard. Checkpoint/resume support persists MW and MWh
-strategies after every completed iteration. Experimental access-price code was
-removed after its projected price iterations failed to converge.
+strategies after every completed iteration. Each investor's private nodal
+headroom is represented as an explicit upper-level constraint, and its endogenous
+NLP multiplier is exported as that investor's local marginal value of another MW
+of access. These investor-specific shadow values are willingness-to-pay
+diagnostics, not a common market-clearing access price. The earlier projected
+common access-price iteration was removed after it failed to converge.
 
 The later two-follower access-auction MPEC experiment, its Gauss-Seidel driver,
 bid profiles, and diagnostic outputs are archived under `model/auction/`. They
@@ -84,7 +114,12 @@ The main four-investor specification is:
 - I3: wind-heavy renewable portfolio, 8% WACC;
 - I4: solar-heavy renewable portfolio, 8% WACC.
 
-## Current empirical result
+## Previous empirical result (before the clean-base refactor)
+
+The following values were produced before separate-rival batteries, fixed
+demand, and zero dispatch regularization became the explicit maintained base.
+They remain useful historical diagnostics but must be rerun before being quoted
+as results of the current base formulation.
 
 For the active IEEE-9 congestion case with a 100 MW nodal connection limit:
 
@@ -135,10 +170,11 @@ solves in that run were optimal. The failure was therefore algorithmic rather
 than attributable to solver termination.
 
 These saved runs are diagnostic and must not be reported as equilibria, clearing
-access prices, or settled investor profits. The maintained code no longer
-contains access-price variables, payments, price updates, or related CLI flags.
-If nodal access allocation is revisited, use a separate explicit merit-order
-auction design rather than extending the discarded tâtonnement code.
+access prices, or settled investor profits. The maintained EPEC exports the
+investor-specific multipliers of its private headroom constraints, but it
+contains no common access-price variable, payment, update, or clearing rule. If
+nodal access allocation is revisited, use a separate explicit merit-order auction
+design rather than extending the discarded tâtonnement code.
 
 ## Chosen thesis direction: expose the dual face
 

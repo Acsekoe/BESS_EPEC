@@ -1,4 +1,4 @@
-"""Small primal LP for pay-as-bid nodal access allocation."""
+"""Primal LP for nodal access allocation with deterministic merit priority."""
 
 from __future__ import annotations
 
@@ -43,7 +43,20 @@ def validate_inputs(bids: Iterable[Bid], limits: Mapping[str, float]) -> Auction
     return data
 
 
-def build_primal(bids: Iterable[Bid], limits: Mapping[str, float]) -> pyo.ConcreteModel:
+def priority_offsets(investors: Iterable[str], epsilon: float) -> dict[str, float]:
+    """Return deterministic lexicographic bid adders smaller than ``epsilon * count``."""
+
+    if epsilon < 0.0:
+        raise ValueError("Tie-break epsilon must be nonnegative.")
+    ordered = sorted(set(investors))
+    return {investor: epsilon * (len(ordered) - rank) for rank, investor in enumerate(ordered)}
+
+
+def build_primal(
+    bids: Iterable[Bid],
+    limits: Mapping[str, float],
+    tie_break_epsilon_eur_per_mw_day: float = 0.0,
+) -> pyo.ConcreteModel:
     """Maximize accepted bid value subject to bid and nodal quantity limits."""
     data = validate_inputs(bids, limits)
     model = pyo.ConcreteModel(name="nodal_access_auction_primal")
@@ -51,6 +64,9 @@ def build_primal(bids: Iterable[Bid], limits: Mapping[str, float]) -> pyo.Concre
     model.K = pyo.RangeSet(0, len(data.bids) - 1)
     model.bid = {k: bid for k, bid in enumerate(data.bids)}
     model.limit = data.limits
+    model.priority_offset = priority_offsets(
+        (bid.investor for bid in data.bids), tie_break_epsilon_eur_per_mw_day
+    )
     model.award = pyo.Var(model.K, domain=pyo.NonNegativeReals, initialize=0.0)
     model.node_limit = pyo.Constraint(
         model.N,
@@ -60,9 +76,15 @@ def build_primal(bids: Iterable[Bid], limits: Mapping[str, float]) -> pyo.Concre
         model.K,
         rule=lambda m, k: m.award[k] <= m.bid[k].quantity_mw,
     )
-    model.bid_value = pyo.Expression(
-        expr=sum(model.bid[k].price_eur_per_mw * model.award[k] for k in model.K)
+    model.bid_value_by_node = pyo.Expression(
+        model.N,
+        rule=lambda m, n: sum(
+            (m.bid[k].price_eur_per_mw + m.priority_offset[m.bid[k].investor]) * m.award[k]
+            for k in m.K
+            if m.bid[k].node == n
+        )
     )
+    model.bid_value = pyo.Expression(expr=sum(model.bid_value_by_node[n] for n in model.N))
     model.objective = pyo.Objective(expr=model.bid_value, sense=pyo.maximize)
     return model
 

@@ -1,4 +1,4 @@
-"""Gauss-Seidel diagonalization for the four-investor access-auction game.
+"""Gauss-Seidel diagonalization for a configurable investor access-auction game.
 
 Each investor solves the reusable one-leader/two-follower MPEC against the
 latest fixed rival bid vectors. Accepted updates are applied immediately, so
@@ -27,6 +27,8 @@ from single_investor_auction_mpec import (
     build_one_leader_two_follower_mpec,
     initialize_from_independent_followers,
     load_rival_bid_vector,
+    pay_as_bid_tick_candidate_diagnostic,
+    pay_as_bid_tick_candidates,
     solve_mpec,
     summarize,
 )
@@ -55,6 +57,9 @@ class SolveRecord:
     auction_gap: float
     spot_gap: float
     model: pyo.ConcreteModel
+    summary: dict[str, object] | None = None
+    selected_tick_candidate: str | None = None
+    tick_candidate_diagnostics: tuple[dict[str, object], ...] = ()
 
 
 def _jsonable(value_to_convert: Any) -> Any:
@@ -78,6 +83,17 @@ def validate_config(cfg: GaussSeidelConfig) -> None:
         raise ValueError("Nodal auction limit must be positive.")
     if not 0.0 <= cfg.min_bid_price_eur_per_mw_day <= cfg.max_bid_price_eur_per_mw_day:
         raise ValueError("Bid-price bounds must satisfy 0 <= minimum <= maximum.")
+    if cfg.tie_break_epsilon_eur_per_mw_day < 0.0:
+        raise ValueError("Tie-break epsilon must be nonnegative.")
+    if cfg.bid_price_tick_eur_per_mw_day < 0.0:
+        raise ValueError("Bid-price tick must be nonnegative.")
+    if cfg.bid_price_tick_eur_per_mw_day > 0.0:
+        if cfg.active_nodes is None or len(cfg.active_nodes) != 1:
+            raise ValueError("Tick enumeration requires exactly one active node.")
+        if cfg.tie_break_epsilon_eur_per_mw_day <= 0.0:
+            raise ValueError("Tick enumeration requires a positive tie-break epsilon.")
+        if cfg.damping != 1.0:
+            raise ValueError("Tick enumeration requires damping=1 so updated bids stay on-grid.")
     if cfg.max_iterations <= 0 or cfg.max_cpu_time <= 0.0:
         raise ValueError("Iteration and CPU-time limits must be positive.")
     if not 0.0 < cfg.damping <= 1.0:
@@ -167,9 +183,12 @@ def clear_auction(
     data: MarketData,
     node_limit_mw: float,
     max_cpu_time: float,
+    tie_break_epsilon_eur_per_mw_day: float,
 ) -> dict[str, dict[str, float]]:
     limits = {node: float(node_limit_mw) for node in data.nodes}
-    auction = build_auction_primal(state_bids(state, data), limits)
+    auction = build_auction_primal(
+        state_bids(state, data), limits, tie_break_epsilon_eur_per_mw_day
+    )
     result = get_ipopt_solver({"max_cpu_time": min(max_cpu_time, 60.0)}).solve(auction, tee=False)
     termination = str(result.solver.termination_condition)
     if termination != "optimal":
@@ -200,19 +219,21 @@ def rivals_from_state(
     ]
 
 
-def solve_response_model(
+def _solve_response_model(
     data: MarketData,
     cfg: GaussSeidelConfig,
     state: StrategyState,
     investor_profile: Any,
     *,
     force_zero_bid: bool,
+    fixed_bid_price: float | None = None,
 ) -> SolveRecord:
     investor = investor_profile.investor_id
     model = build_one_leader_two_follower_mpec(
         data,
         rivals_from_state(state, investor, data),
         active_investor=investor_profile,
+        active_nodes=cfg.active_nodes,
         node_limit_mw=cfg.node_limit_mw,
         min_bid_price_eur_per_mw_day=cfg.min_bid_price_eur_per_mw_day,
         max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
@@ -220,12 +241,16 @@ def solve_response_model(
         initial_bid_price_eur_per_mw_day=state.price_eur_per_mw_day[investor],
         initial_duration_hours=state.duration_hours[investor],
         dual_bound_scale=cfg.dual_bound_scale,
+        tie_break_epsilon_eur_per_mw_day=cfg.tie_break_epsilon_eur_per_mw_day,
     )
     if force_zero_bid:
         for node in data.nodes:
             model.active_bid_quantity[node].fix(0.0)
             model.active_bid_price[node].fix(cfg.min_bid_price_eur_per_mw_day)
             model.active_energy[node].fix(0.0)
+    elif fixed_bid_price is not None:
+        active_node = cfg.active_nodes[0]
+        model.active_bid_price[active_node].fix(fixed_bid_price)
     initialize_from_independent_followers(model)
     started = time.perf_counter()
     termination = solve_mpec(model, cfg.max_cpu_time, tee=cfg.tee)
@@ -237,6 +262,110 @@ def solve_response_model(
         auction_gap=value(model.auction_primal_value) - value(model.auction_dual_value),
         spot_gap=value(model.spot_primal_value) - value(model.spot_dual_value),
         model=model,
+    )
+
+
+def solve_response_model(
+    data: MarketData,
+    cfg: GaussSeidelConfig,
+    state: StrategyState,
+    investor_profile: Any,
+    *,
+    force_zero_bid: bool,
+) -> SolveRecord:
+    """Solve one response, enumerating valid grid prices when a tick is active."""
+
+    if cfg.bid_price_tick_eur_per_mw_day <= 0.0:
+        return _solve_response_model(
+            data,
+            cfg,
+            state,
+            investor_profile,
+            force_zero_bid=force_zero_bid,
+        )
+
+    started = time.perf_counter()
+    if force_zero_bid:
+        record = _solve_response_model(
+            data,
+            cfg,
+            state,
+            investor_profile,
+            force_zero_bid=True,
+        )
+        summary = summarize(record.model, record.termination)
+        diagnostic = pay_as_bid_tick_candidate_diagnostic(
+            summary,
+            record.seconds,
+            label="zero_quantity_outside_option",
+            fixed_bid_price=None,
+        )
+        termination = record.termination if diagnostic["valid"] else "invalid_outside_option"
+        return SolveRecord(
+            termination=termination,
+            seconds=time.perf_counter() - started,
+            profit_eur_per_day=record.profit_eur_per_day,
+            auction_gap=record.auction_gap,
+            spot_gap=record.spot_gap,
+            model=record.model,
+            summary=summary,
+            selected_tick_candidate=diagnostic["label"],
+            tick_candidate_diagnostics=(diagnostic,),
+        )
+
+    investor = investor_profile.investor_id
+    active_node = cfg.active_nodes[0]
+    rivals = rivals_from_state(state, investor, data)
+    prices = pay_as_bid_tick_candidates(
+        active_investor=investor,
+        active_node=active_node,
+        rivals=rivals,
+        min_bid_price_eur_per_mw_day=cfg.min_bid_price_eur_per_mw_day,
+        max_bid_price_eur_per_mw_day=cfg.max_bid_price_eur_per_mw_day,
+        bid_price_tick_eur_per_mw_day=cfg.bid_price_tick_eur_per_mw_day,
+        tie_break_epsilon_eur_per_mw_day=cfg.tie_break_epsilon_eur_per_mw_day,
+    )
+    records: list[tuple[SolveRecord, dict[str, object], dict[str, object]]] = []
+    for price in prices:
+        print(f"    {investor} tick candidate: {price:.12g} EUR/MW/day")
+        record = _solve_response_model(
+            data,
+            cfg,
+            state,
+            investor_profile,
+            force_zero_bid=False,
+            fixed_bid_price=price,
+        )
+        summary = summarize(record.model, record.termination)
+        diagnostic = pay_as_bid_tick_candidate_diagnostic(
+            summary,
+            record.seconds,
+            label=f"price_{price:.12g}",
+            fixed_bid_price=price,
+        )
+        print(
+            f"      termination={record.termination}, valid={diagnostic['valid']}, "
+            f"profit={record.profit_eur_per_day:,.2f} EUR/day"
+        )
+        records.append((record, summary, diagnostic))
+
+    valid_records = [entry for entry in records if entry[2]["valid"]]
+    selected_pool = valid_records or records
+    selected_record, selected_summary, selected_diagnostic = max(
+        selected_pool,
+        key=lambda entry: entry[0].profit_eur_per_day,
+    )
+    termination = selected_record.termination if valid_records else "no_valid_tick_candidate"
+    return SolveRecord(
+        termination=termination,
+        seconds=time.perf_counter() - started,
+        profit_eur_per_day=selected_record.profit_eur_per_day,
+        auction_gap=selected_record.auction_gap,
+        spot_gap=selected_record.spot_gap,
+        model=selected_record.model,
+        summary=selected_summary,
+        selected_tick_candidate=(selected_diagnostic["label"] if valid_records else None),
+        tick_candidate_diagnostics=tuple(entry[2] for entry in records),
     )
 
 
@@ -375,13 +504,23 @@ def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[Strategy
     missing_profiles = set(cfg.investor_order) - set(profiles)
     if missing_profiles:
         raise ValueError(f"No thesis investor profiles for {sorted(missing_profiles)}")
+    if cfg.active_nodes is not None:
+        unknown_nodes = set(cfg.active_nodes) - set(data.nodes)
+        if unknown_nodes:
+            raise ValueError(f"Unknown active auction nodes: {sorted(unknown_nodes)}")
 
     state = (
         state_from_checkpoint(cfg.resume_path, data, cfg)
         if cfg.resume_path is not None
         else initial_state(data, cfg.investor_order, cfg.initial_bids_path)
     )
-    state.awards_mw = clear_auction(state, data, cfg.node_limit_mw, cfg.max_cpu_time)
+    state.awards_mw = clear_auction(
+        state,
+        data,
+        cfg.node_limit_mw,
+        cfg.max_cpu_time,
+        cfg.tie_break_epsilon_eur_per_mw_day,
+    )
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     (cfg.output_dir / "run_config.json").write_text(
         json.dumps(_jsonable(asdict(cfg)), indent=2), encoding="utf-8"
@@ -407,13 +546,20 @@ def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[Strategy
             if cfg.use_outside_option:
                 print(f"  {investor}: zero-bid outside option")
                 baseline = solve_response_model(data, cfg, state, profiles[investor], force_zero_bid=True)
+            candidate_summary = candidate.summary or summarize(
+                candidate.model, candidate.termination
+            )
             selection, target_q, target_p, target_h = candidate_target(
                 candidate, baseline, state, investor, data, cfg
             )
             changes = apply_target(state, investor, target_q, target_p, target_h, cfg)
             old_awards = {i: dict(row) for i, row in state.awards_mw.items()}
             state.awards_mw = clear_auction(
-                state, data, cfg.node_limit_mw, cfg.max_cpu_time
+                state,
+                data,
+                cfg.node_limit_mw,
+                cfg.max_cpu_time,
+                cfg.tie_break_epsilon_eur_per_mw_day,
             )
             response_award_change = award_change(old_awards, state.awards_mw)
 
@@ -436,6 +582,11 @@ def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[Strategy
                 "candidate_termination": candidate.termination,
                 "candidate_seconds": candidate.seconds,
                 "candidate_profit_eur_per_day": candidate.profit_eur_per_day,
+                "selected_tick_candidate": candidate.selected_tick_candidate,
+                "candidate_access_payment_eur_per_day": candidate_summary["access_payment_eur_per_day"],
+                "candidate_max_embedded_vs_reclear_award_difference_mw": candidate_summary[
+                    "max_embedded_vs_reclear_award_difference_mw"
+                ],
                 "candidate_auction_gap": candidate.auction_gap,
                 "candidate_spot_gap": candidate.spot_gap,
                 "baseline_termination": baseline_term,
@@ -447,10 +598,10 @@ def run_gauss_seidel(data: MarketData, cfg: GaussSeidelConfig) -> tuple[Strategy
             history.append(row)
             response_dir = cfg.output_dir / "iterations" / f"iteration_{iteration:03d}"
             response_dir.mkdir(parents=True, exist_ok=True)
-            candidate_summary = summarize(candidate.model, candidate.termination)
             response_payload = {
                 **row,
                 "candidate_summary": candidate_summary,
+                "tick_candidate_diagnostics": candidate.tick_candidate_diagnostics,
                 "baseline": None
                 if baseline is None
                 else {

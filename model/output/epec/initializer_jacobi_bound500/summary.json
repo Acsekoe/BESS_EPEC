@@ -1,0 +1,94 @@
+{
+  "checkpoint_created": true,
+  "interpretation": "feasible initialization heuristic, not an equilibrium",
+  "responses": {
+    "I1": {
+      "termination": "optimal",
+      "solve_seconds": 6.698180099949241,
+      "desired_power_mw": 69.81828451318245,
+      "desired_energy_mwh": 209.96912761117076,
+      "optimistic_mpec_profit_eur_per_day": 7310.743973365406,
+      "strong_duality_gap": 5.129608325660229e-06
+    },
+    "I2": {
+      "termination": "optimal",
+      "solve_seconds": 26.826286500087008,
+      "desired_power_mw": 56.258743703954885,
+      "desired_energy_mwh": 112.5176860883301,
+      "optimistic_mpec_profit_eur_per_day": 29713.80124907984,
+      "strong_duality_gap": 4.500674549490213e-06
+    },
+    "I3": {
+      "termination": "optimal",
+      "solve_seconds": 25.32076859998051,
+      "desired_power_mw": 56.25874368972775,
+      "desired_energy_mwh": 123.05068954760534,
+      "optimistic_mpec_profit_eur_per_day": 183126.01772675692,
+      "strong_duality_gap": 2.0372681319713593e-09
+    },
+    "I4": {
+      "termination": "optimal",
+      "solve_seconds": 90.6721194999991,
+      "desired_power_mw": 114.98627135647773,
+      "desired_energy_mwh": 471.8259001492421,
+      "optimistic_mpec_profit_eur_per_day": 152910.377253822,
+      "strong_duality_gap": 1.367880031466484e-07
+    }
+  },
+  "nodes": {
+    "N1": {
+      "desired_total_power_mw": 7.610650687928007e-06,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N2": {
+      "desired_total_power_mw": 18.42068806305094,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 18.42068806305094,
+      "limit_mw": 100.0
+    },
+    "N3": {
+      "desired_total_power_mw": 1.266929095795622e-05,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N4": {
+      "desired_total_power_mw": 7.634619071192435e-06,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N5": {
+      "desired_total_power_mw": 6.200836563046188e-06,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N6": {
+      "desired_total_power_mw": 6.01881322283067e-06,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N7": {
+      "desired_total_power_mw": 61.03103807337301,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 61.03103799143283,
+      "limit_mw": 100.0
+    },
+    "N8": {
+      "desired_total_power_mw": 217.8702661533273,
+      "projection_scale": 0.45898874484150354,
+      "projected_total_power_mw": 100.0,
+      "limit_mw": 100.0
+    },
+    "N9": {
+      "desired_total_power_mw": 1.0839381076449002e-05,
+      "projection_scale": 1.0,
+      "projected_total_power_mw": 0.0,
+      "limit_mw": 100.0
+    }
+  }
+}

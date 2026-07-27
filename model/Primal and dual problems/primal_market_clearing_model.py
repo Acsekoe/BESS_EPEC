@@ -111,7 +111,9 @@ def _validate_data(data: MarketData) -> None:
                 raise ValueError(f"Missing x_energy for {i}, {n}.")
 
 
-def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
+def build_primal_market_clearing_model(
+    data: MarketData, *, include_load_shed: bool = True
+) -> pyo.ConcreteModel:
     """Build the deterministic primal lower-level spot-market LP."""
 
     _validate_data(data)
@@ -127,7 +129,8 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
     m.L = pyo.Set(initialize=data.lines, ordered=True)
 
     m.P_gen = pyo.Var(m.G, m.T, domain=pyo.NonNegativeReals)
-    m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals)
+    if include_load_shed:
+        m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals)
     m.P_charge = pyo.Var(m.I, m.N, m.T, domain=pyo.NonNegativeReals)
     m.P_discharge = pyo.Var(m.I, m.N, m.T, domain=pyo.NonNegativeReals)
     m.SOC = pyo.Var(m.I, m.N, m.T_SOC, domain=pyo.NonNegativeReals)
@@ -139,7 +142,11 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
             for g in model.G
             for t in model.T
         )
-        load_shed_cost = sum(data.voll * model.P_shed[n, t] for n in model.N for t in model.T)
+        load_shed_cost = (
+            sum(data.voll * model.P_shed[n, t] for n in model.N for t in model.T)
+            if include_load_shed
+            else 0.0
+        )
         return generation_cost + load_shed_cost
 
     m.objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
@@ -153,7 +160,7 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
         return (
             sum(model.P_gen[g, t] for g in generators)
             + storage_net
-            + model.P_shed[n, t]
+            + (model.P_shed[n, t] if include_load_shed else 0.0)
             - data.demand_el[n, t]
             == model.NetInjection[n, t]
         )
@@ -211,12 +218,14 @@ def build_primal_market_clearing_model(data: MarketData) -> pyo.ConcreteModel:
 
     m.soc_periodicity = pyo.Constraint(m.I, m.N, rule=soc_periodicity_rule)
 
-    def load_shed_bound_rule(model: pyo.ConcreteModel, n: str, t: int) -> pyo.Expression:
-        return model.P_shed[n, t] <= data.demand_el[n, t]
+    if include_load_shed:
+        def load_shed_bound_rule(model: pyo.ConcreteModel, n: str, t: int) -> pyo.Expression:
+            return model.P_shed[n, t] <= data.demand_el[n, t]
 
-    m.load_shed_bound = pyo.Constraint(m.N, m.T, rule=load_shed_bound_rule)
+        m.load_shed_bound = pyo.Constraint(m.N, m.T, rule=load_shed_bound_rule)
 
     m._market_data = data
+    m._include_load_shed = include_load_shed
     return m
 
 
@@ -283,10 +292,14 @@ def run_sanity_checks(model: pyo.ConcreteModel) -> Dict[str, float]:
         for i in model.I
         for n in model.N
     )
-    checks["load_shed_bound_violation_MW"] = max(
-        max(0.0, value(model.P_shed[n, t]) - data.demand_el[n, t])
-        for n in model.N
-        for t in model.T
+    checks["load_shed_bound_violation_MW"] = (
+        max(
+            max(0.0, value(model.P_shed[n, t]) - data.demand_el[n, t])
+            for n in model.N
+            for t in model.T
+        )
+        if getattr(model, "_include_load_shed", True)
+        else 0.0
     )
     return checks
 
@@ -314,7 +327,11 @@ def print_solution_summary(model: pyo.ConcreteModel, checks: Mapping[str, float]
     print("\nDispatch by time:")
     for t in model.T:
         gen = sum(value(model.P_gen[g, t]) for g in model.G)
-        shed = sum(value(model.P_shed[n, t]) for n in model.N)
+        shed = (
+            sum(value(model.P_shed[n, t]) for n in model.N)
+            if getattr(model, "_include_load_shed", True)
+            else 0.0
+        )
         charge = sum(value(model.P_charge[i, n, t]) for i in model.I for n in model.N)
         discharge = sum(value(model.P_discharge[i, n, t]) for i in model.I for n in model.N)
         print(

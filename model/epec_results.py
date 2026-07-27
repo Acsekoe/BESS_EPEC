@@ -19,8 +19,11 @@ from primal_market_clearing_model import MarketData, value
 from single_investor_mpec import (
     QuadraticDemandCurve,
     _solver_dual_cross_check,
+    build_fixed_demand_primal_model,
     build_quadratic_primal_model,
     capital_recovery_factor,
+    fixed_demand_reference_lambda,
+    investment_headroom_shadow_price,
     quadratic_reference_lambda,
     reference_system_price,
 )
@@ -37,6 +40,7 @@ ITERATION_HISTORY_FIELDS = [
     "termination",
     "solve_seconds",
     "optimistic_mpec_profit_eur_per_day",
+    "max_access_shadow_price_eur_per_mw_day",
     "strong_duality_gap",
     "total_power_mw",
     "total_energy_mwh",
@@ -52,6 +56,10 @@ CAPACITY_TRAJECTORY_FIELDS = [
     "x_power_mw",
     "x_energy_mwh",
     "proposed_x_power_mw",
+    "private_headroom_limit_mw",
+    "private_headroom_slack_mw",
+    "access_shadow_price_eur_per_mw_day",
+    "headroom_complementarity_residual_eur_per_day",
     "headroom_mw",
 ]
 
@@ -78,13 +86,36 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         x_power={(i, n): max(0.0, state.x_power[i, n]) for i in units for n in nodes},
         x_energy={(i, n): max(0.0, state.x_energy[i, n]) for i in units for n in nodes},
     )
-    reference = build_quadratic_primal_model(joint_data, quad)
-    results = get_ipopt_solver().solve(reference, tee=False)
+    degradation = {inv.investor_id: inv.degradation_eur_per_mwh for inv in cfg.investors}
+    if cfg.use_demand_curve:
+        reference = build_quadratic_primal_model(
+            joint_data,
+            quad,
+            storage_degradation_eur_per_mwh=degradation,
+            dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
+        )
+    else:
+        reference = build_fixed_demand_primal_model(
+            joint_data,
+            storage_degradation_eur_per_mwh=degradation,
+            dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
+        )
+    results = get_ipopt_solver(
+        {
+            "max_cpu_time": cfg.max_cpu_time,
+            "tol": cfg.solver_tol,
+            "acceptable_tol": cfg.solver_tol,
+        }
+    ).solve(reference, tee=False)
     termination = str(results.solver.termination_condition)
     if termination != "optimal":
         raise RuntimeError(f"Joint settlement QP did not solve optimally (termination={termination}).")
 
-    lam = quadratic_reference_lambda(reference, quad)
+    lam = (
+        quadratic_reference_lambda(reference, quad)
+        if cfg.use_demand_curve
+        else fixed_demand_reference_lambda(reference)
+    )
     dual_cross_check = _solver_dual_cross_check(reference, lam)
 
     # Settlement price: nodal LMP by default, or the uniform per-hour system
@@ -160,13 +191,20 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         model = state.final_models.get(i)
         if model is None:
             lambda_diff = None
+            access_shadow_prices = None
         elif cfg.system_price_settlement:
+            access_shadow_prices = {
+                n: investment_headroom_shadow_price(model, n) for n in model.N
+            }
             lambda_diff = max(
                 abs(value(model.lam_sys[t]) - settle_price[n, t])
                 for n in model.N
                 for t in model.T
             )
         else:
+            access_shadow_prices = {
+                n: investment_headroom_shadow_price(model, n) for n in model.N
+            }
             lambda_diff = max(
                 abs(value(model.lam[n, t]) - settle_price[n, t]) for n in model.N for t in model.T
             )
@@ -185,6 +223,7 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             "last_optimistic_mpec_profit_eur_per_day": optimistic_profit,
             "optimistic_mpec_minus_settled_eur_per_day": optimistic_profit - settled_profit,
             "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": lambda_diff,
+            "last_best_response_access_shadow_price_eur_per_mw_day": access_shadow_prices,
             "throughput_mwh": charge + discharge,
         }
 
@@ -202,7 +241,9 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
     )
     return {
         "termination": termination,
-        "joint_lower_level_objective_eur_per_day": value(reference.quad_objective),
+        "joint_lower_level_objective_eur_per_day": value(
+            reference.quad_objective if cfg.use_demand_curve else reference.objective
+        ),
         "lambda_solver_dual_max_abs_diff": dual_cross_check,
         "lambda_min_eur_per_mwh": min(settle_price.values()),
         "lambda_max_eur_per_mwh": max(settle_price.values()),
@@ -241,6 +282,11 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
             f" ({gen_str} optimistic-settled {row['optimistic_mpec_minus_settled_eur_per_day']:+10,.2f},"
             f" attribution band {row['dispatch_attribution_band_eur_per_day']:8,.2f})"
         )
+        shadow_prices = row.get("last_best_response_access_shadow_price_eur_per_mw_day") or {}
+        positive_shadows = {n: price for n, price in shadow_prices.items() if price > 1e-6}
+        if positive_shadows:
+            formatted = ", ".join(f"{n}={price:,.2f}" for n, price in positive_shadows.items())
+            print(f"      endogenous access shadow values [EUR/MW/day]: {formatted}")
     print("  per-node power shares [MW]:")
     non_investor_keys = ("total_mw", "limit_mw")
     for n, shares in settlement["node_shares"].items():
@@ -277,6 +323,9 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
         "damping": cfg.damping,
+        "capacity_cleanup_tol_mw_mwh": cfg.capacity_cleanup_tol_mw_mwh,
+        "price_bound_eur_per_mwh": cfg.price_bound_eur_per_mwh,
+        "dual_bound_eur_per_mwh": cfg.dual_bound_eur_per_mwh,
         "node_limit_mw": cfg.node_limit_mw,
         "node_total_power_mw": node_total_power,
         "node_excess_mw": node_excess,
@@ -303,12 +352,22 @@ def export_epec_results(
     output_dir.mkdir(parents=True, exist_ok=True)
     nodes = list(data.nodes)
     units = [inv.investor_id for inv in cfg.investors]
+    reference_quad = getattr(settlement["reference_model"], "_quad_demand", None)
 
     run_config = {
         "data_path": str(data_path),
         "update_rule": cfg.update_rule,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "dual_selection": "optimistic_mpec_no_price_penalty",
+        "demand_model": "quadratic" if cfg.use_demand_curve else "fixed",
+        "quadratic_demand_alpha_eur_per_mwh": reference_quad.alpha if reference_quad is not None else None,
+        "quadratic_demand_beta_eur_per_mwh_per_share": reference_quad.beta if reference_quad is not None else None,
+        "dispatch_regularization_eur_per_mw2h": cfg.dispatch_regularization_eur_per_mw2h,
+        "solver_tol": cfg.solver_tol,
+        "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
+        "embedded_sparsity": "active_investor_all_nodes; rivals_only_positive_mw_or_mwh; generators_only_positive_capacity_hours",
+        "fixed_demand_shedding_block_omitted": not cfg.use_demand_curve,
+        "capacity_cleanup_tol_mw_mwh": cfg.capacity_cleanup_tol_mw_mwh,
         "damping": cfg.damping,
         "max_iters": cfg.max_iters,
         "starting_iteration": cfg.starting_iteration,
@@ -320,7 +379,8 @@ def export_epec_results(
         "seed_ratio_hours": cfg.seed_ratio_hours,
         "node_limit_mw": cfg.node_limit_mw,
         "max_cpu_time": cfg.max_cpu_time,
-        "dual_bound_scale": cfg.dual_bound_scale,
+        "price_bound_eur_per_mwh": cfg.price_bound_eur_per_mwh,
+        "dual_bound_eur_per_mwh": cfg.dual_bound_eur_per_mwh,
         "investors": [
             {
                 "investor_id": inv.investor_id,
@@ -346,7 +406,15 @@ def export_epec_results(
     )
     _write_csv(
         output_dir / "final_capacities.csv",
-        ["investor", "node", "x_power_mw", "x_energy_mwh", "ratio_hours", "share_of_node_limit"],
+        [
+            "investor",
+            "node",
+            "x_power_mw",
+            "x_energy_mwh",
+            "ratio_hours",
+            "share_of_node_limit",
+            "last_best_response_access_shadow_price_eur_per_mw_day",
+        ],
         [
             {
                 "investor": i,
@@ -355,6 +423,11 @@ def export_epec_results(
                 "x_energy_mwh": state.x_energy[i, n],
                 "ratio_hours": state.x_energy[i, n] / state.x_power[i, n] if state.x_power[i, n] > 1e-9 else 0.0,
                 "share_of_node_limit": state.x_power[i, n] / cfg.node_limit_mw,
+                "last_best_response_access_shadow_price_eur_per_mw_day": (
+                    investment_headroom_shadow_price(state.final_models[i], n)
+                    if state.final_models.get(i) is not None
+                    else float("nan")
+                ),
             }
             for i in units
             for n in nodes
@@ -405,6 +478,10 @@ def export_epec_results(
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
+        "demand_model": "quadratic" if cfg.use_demand_curve else "fixed",
+        "dispatch_regularization_eur_per_mw2h": cfg.dispatch_regularization_eur_per_mw2h,
+        "solver_tol": cfg.solver_tol,
+        "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
         "damping": cfg.damping,
         "tol_rel": cfg.tol_rel,
         "projection_event_count": len(state.projection_events),

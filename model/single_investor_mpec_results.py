@@ -28,6 +28,50 @@ def _strong_duality_gap(model: pyo.ConcreteModel) -> float:
     return abs(value(model.primal_objective_expr) - value(model.dual_objective_expr))
 
 
+def _headroom_shadow_price(model: pyo.ConcreteModel, node: str) -> float:
+    raw = float(model.dual.get(model.investment_headroom[node], float("nan")))
+    return 0.0 if abs(raw) < 1e-8 else raw
+
+
+def _storage_pairs(model: pyo.ConcreteModel) -> list[tuple[str, str]]:
+    return list(model.IN) if hasattr(model, "IN") else [(i, n) for i in model.I for n in model.N]
+
+
+def _storage_units_at_node(model: pyo.ConcreteModel, node: str) -> list[str]:
+    return [unit for unit, pair_node in _storage_pairs(model) if pair_node == node]
+
+
+def _max_abs_components(
+    model: pyo.ConcreteModel, component_names: tuple[str, ...]
+) -> tuple[str | None, float]:
+    largest_name: str | None = None
+    largest_value = 0.0
+    for component_name in component_names:
+        component = getattr(model, component_name, None)
+        if component is None:
+            continue
+        for index, variable in component.items():
+            magnitude = abs(value(variable))
+            if magnitude > largest_value:
+                largest_name = f"{component_name}[{index}]"
+                largest_value = magnitude
+    return largest_name, largest_value
+
+
+PRICE_DUAL_COMPONENTS = ("lam", "lam_sys")
+INTERNAL_DUAL_COMPONENTS = (
+        "nu_gen",
+        "mu_up",
+        "mu_dn",
+        "rho_ch",
+        "sig_dis",
+        "gam",
+        "del_soc",
+        "rho_per",
+        "xi_shed",
+)
+
+
 def export_solution(
     model: pyo.ConcreteModel,
     output_dir: Path,
@@ -44,10 +88,22 @@ def export_solution(
     quad = model._quad_demand
     use_demand_curve = getattr(model, "_use_demand_curve", True)
     degradation_cost = model._degradation_eur_per_mwh
+    max_price_name, max_price_value = _max_abs_components(model, PRICE_DUAL_COMPONENTS)
+    max_internal_name, max_internal_value = _max_abs_components(model, INTERNAL_DUAL_COMPONENTS)
+    if max_price_value >= max_internal_value:
+        max_dual_name, max_dual_value = max_price_name, max_price_value
+        max_dual_bound = model._price_bound_eur_per_mwh
+    else:
+        max_dual_name, max_dual_value = max_internal_name, max_internal_value
+        max_dual_bound = model._dual_bound_eur_per_mwh
 
     total_charge = sum(value(model.P_charge[investor_id, n, t]) for n in model.N for t in model.T)
     total_discharge = sum(value(model.P_discharge[investor_id, n, t]) for n in model.N for t in model.T)
-    total_shed = sum(value(model.P_shed[n, t]) for n in model.N for t in model.T)
+    total_shed = (
+        sum(value(model.P_shed[n, t]) for n in model.N for t in model.T)
+        if use_demand_curve
+        else 0.0
+    )
     total_power = sum(value(model.X_power[n]) for n in model.N)
     total_energy = sum(value(model.X_energy[n]) for n in model.N)
     throughput = total_charge + total_discharge
@@ -62,6 +118,9 @@ def export_solution(
         "spot_revenue_eur_per_day": value(model.spot_revenue_expr),
         "degradation_cost_eur_per_day": value(model.degradation_cost_expr),
         "capex_daily_eur_per_day": value(model.capex_daily_expr),
+        "access_shadow_price_eur_per_mw_day": {
+            n: _headroom_shadow_price(model, n) for n in model.N
+        },
         "lower_level_primal_objective_eur_per_day": value(model.primal_objective_expr),
         "lower_level_dual_objective_eur_per_day": value(model.dual_objective_expr),
         "strong_duality_gap": _strong_duality_gap(model),
@@ -77,8 +136,33 @@ def export_solution(
         "existing_power_mw_per_node": model._existing_power_mw,
         "existing_ratio_hours": model._existing_ratio_hours,
         "storage_units": list(model.I),
+        "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
+        "rival_power_mw_by_unit": model._rival_power_mw_by_unit,
+        "rival_energy_mwh_by_unit": model._rival_energy_mwh_by_unit,
         "demand_model": "quadratic" if use_demand_curve else "fixed_no_load_shed",
         "load_shed_allowed": use_demand_curve,
+        "dispatch_regularization_eur_per_mw2h": model._dispatch_regularization_eur_per_mw2h,
+        "solver_tol": model._solver_tol,
+        "price_bound_eur_per_mwh": model._price_bound_eur_per_mwh,
+        "dual_bound_eur_per_mwh": model._dual_bound_eur_per_mwh,
+        "max_abs_price_dual": max_price_value,
+        "max_abs_price_dual_name": max_price_name,
+        "max_abs_price_dual_fraction_of_bound": (
+            max_price_value / model._price_bound_eur_per_mwh
+        ),
+        "max_abs_internal_dual": max_internal_value,
+        "max_abs_internal_dual_name": max_internal_name,
+        "max_abs_internal_dual_fraction_of_bound": (
+            max_internal_value / model._dual_bound_eur_per_mwh
+        ),
+        "max_abs_embedded_dual": max_dual_value,
+        "max_abs_embedded_dual_name": max_dual_name,
+        "max_abs_embedded_dual_applied_bound": max_dual_bound,
+        "max_abs_embedded_dual_fraction_of_bound": max_dual_value / max_dual_bound,
+        "embedded_storage_node_pairs": len(_storage_pairs(model)),
+        "sparse_rival_capacity_tol_mw_mwh": model._sparse_rival_capacity_tol,
+        "embedded_positive_capacity_generator_hours": len(model.GT),
+        "sparse_generation_capacity_tol_mw": model._sparse_generation_capacity_tol,
         "quadratic_demand_alpha_eur_per_mwh": quad.alpha if use_demand_curve else None,
         "quadratic_demand_beta_eur_per_mwh_per_share": quad.beta if use_demand_curve else None,
         "quadratic_demand_source": "fixed_default" if use_demand_curve else None,
@@ -135,7 +219,17 @@ def export_solution(
 
     _write_csv(
         output_dir / "investment_by_node.csv",
-        ["node", "x_power_mw", "x_energy_mwh", "energy_power_ratio_h"],
+        [
+            "node",
+            "x_power_mw",
+            "x_energy_mwh",
+            "energy_power_ratio_h",
+            "private_headroom_limit_mw",
+            "private_headroom_slack_mw",
+            "headroom_binding",
+            "access_shadow_price_eur_per_mw_day",
+            "headroom_complementarity_residual_eur_per_day",
+        ],
         [
             {
                 "node": n,
@@ -144,6 +238,18 @@ def export_solution(
                 "energy_power_ratio_h": value(model.X_energy[n]) / value(model.X_power[n])
                 if value(model.X_power[n]) > 1e-9
                 else 0.0,
+                "private_headroom_limit_mw": model._invest_limit_mw[n],
+                "private_headroom_slack_mw": max(
+                    0.0, model._invest_limit_mw[n] - value(model.X_power[n])
+                ),
+                "headroom_binding": abs(
+                    model._invest_limit_mw[n] - value(model.X_power[n])
+                ) <= 1e-5,
+                "access_shadow_price_eur_per_mw_day": _headroom_shadow_price(model, n),
+                "headroom_complementarity_residual_eur_per_day": (
+                    _headroom_shadow_price(model, n)
+                    * max(0.0, model._invest_limit_mw[n] - value(model.X_power[n]))
+                ),
             }
             for n in model.N
         ],
@@ -168,13 +274,18 @@ def export_solution(
                 "hour": t,
                 "node": n,
                 "demand_mw": data.demand_el[n, t],
-                "generation_mw": sum(value(model.P_gen[g, t]) for g in data.generators_at_node.get(n, [])),
-                "p_charge_mw": sum(value(model.P_charge[i, n, t]) for i in model.I),
-                "p_discharge_mw": sum(value(model.P_discharge[i, n, t]) for i in model.I),
-                "storage_net_injection_mw": sum(
-                    value(model.P_discharge[i, n, t]) - value(model.P_charge[i, n, t]) for i in model.I
+                "generation_mw": sum(
+                    value(model.P_gen[g, t])
+                    for g in data.generators_at_node.get(n, [])
+                    if (g, t) in model.GT
                 ),
-                "load_shed_mw": value(model.P_shed[n, t]),
+                "p_charge_mw": sum(value(model.P_charge[i, n, t]) for i in _storage_units_at_node(model, n)),
+                "p_discharge_mw": sum(value(model.P_discharge[i, n, t]) for i in _storage_units_at_node(model, n)),
+                "storage_net_injection_mw": sum(
+                    value(model.P_discharge[i, n, t]) - value(model.P_charge[i, n, t])
+                    for i in _storage_units_at_node(model, n)
+                ),
+                "load_shed_mw": value(model.P_shed[n, t]) if use_demand_curve else 0.0,
                 "net_injection_mw": value(model.NetInjection[n, t]),
                 "lambda_eur_per_mwh": value(model.lam[n, t]),
             }
@@ -190,12 +301,12 @@ def export_solution(
             {
                 "hour": t,
                 "node": n,
-                "shed_mw": value(model.P_shed[n, t]),
+                "shed_mw": value(model.P_shed[n, t]) if use_demand_curve else 0.0,
                 "bound_mw": data.demand_el[n, t],
                 "marginal_wtp_eur_per_mwh": quad.marginal_wtp(value(model.P_shed[n, t]), data.demand_el[n, t])
                 if use_demand_curve
                 else None,
-                "xi_shed_dual": value(model.xi_shed[n, t]),
+                "xi_shed_dual": value(model.xi_shed[n, t]) if use_demand_curve else None,
             }
             for t in model.T
             for n in model.N
@@ -209,10 +320,10 @@ def export_solution(
             {
                 "hour": t,
                 "generator": g,
-                "dispatch_mw": value(model.P_gen[g, t]),
+                "dispatch_mw": value(model.P_gen[g, t]) if (g, t) in model.GT else 0.0,
                 "capacity_mw": data.generation_capacity[g, t],
                 "marginal_cost_eur_per_mwh": data.generation_cost[g],
-                "nu_gen_dual": value(model.nu_gen[g, t]),
+                "nu_gen_dual": value(model.nu_gen[g, t]) if (g, t) in model.GT else None,
             }
             for t in model.T
             for g in model.G
@@ -277,9 +388,8 @@ def export_solution(
                 "sigma_discharge_dual": value(model.sig_dis[i, n, t]),
                 "gamma_soc_transition_dual": value(model.gam[i, n, t]),
             }
-            for i in model.I
+            for i, n in _storage_pairs(model)
             for t in model.T
-            for n in model.N
         ],
     )
 
@@ -295,9 +405,8 @@ def export_solution(
                 "delta_soc_capacity_dual": value(model.del_soc[i, n, tau]),
                 "rho_periodicity_dual": value(model.rho_per[i, n]),
             }
-            for i in model.I
+            for i, n in _storage_pairs(model)
             for tau in model.T_SOC
-            for n in model.N
         ],
     )
 
@@ -379,7 +488,11 @@ def print_solution_summary(model: pyo.ConcreteModel, reference_settlement: dict[
 
     print("\nInvestment by node")
     for node in model.N:
-        print(f"  {node}: X_power={value(model.X_power[node]):9.4f} MW, X_energy={value(model.X_energy[node]):9.4f} MWh")
+        print(
+            f"  {node}: X_power={value(model.X_power[node]):9.4f} MW, "
+            f"X_energy={value(model.X_energy[node]):9.4f} MWh, "
+            f"access shadow={_headroom_shadow_price(model, node):9.4f} EUR/MW/day"
+        )
 
     if reference_settlement is None:
         return

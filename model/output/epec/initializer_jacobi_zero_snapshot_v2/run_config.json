@@ -1,0 +1,23 @@
+{
+  "method": "one_jacobi_sweep_then_proportional_nodal_projection",
+  "data_path": "C:\\EEG\\BESS_EPEC\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_congestion.json",
+  "investors": [
+    "I1",
+    "I2",
+    "I3",
+    "I4"
+  ],
+  "node_limit_mw": 100.0,
+  "rival_snapshot_power_mw_per_investor_node": 0.0,
+  "rival_snapshot_ratio_hours": 2.0,
+  "mpec_initial_power_mw_per_node": 10.0,
+  "mpec_initial_ratio_hours": 2.0,
+  "demand_model": "fixed",
+  "dispatch_regularization_eur_per_mw2h": 0.0,
+  "solver_tol": 0.0001,
+  "dual_bound_eur_per_mwh": 10000.0,
+  "max_cpu_time": 120.0,
+  "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
+  "embedded_sparsity": "active_investor_all_nodes; rivals_only_positive_mw_or_mwh; generators_only_positive_capacity_hours",
+  "fixed_demand_shedding_block_omitted": true
+}

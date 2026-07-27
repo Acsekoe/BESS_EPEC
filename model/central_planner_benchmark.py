@@ -4,30 +4,39 @@ This is the cost-minimizing counterpart to the strategic EPEC. A single planner
 chooses BESS power/energy capacity at every node *and* the spot-market dispatch
 jointly, minimizing total system resource cost:
 
-    generation cost + curtailment cost + annualized storage CAPEX + degradation
+    generation cost + optional load-curtailment cost + annualized storage CAPEX
+    + degradation + optional dispatch tie-break
 
 subject to the same lower-level clearing physics the EPEC embeds (nodal balance,
 system balance, PTDF line limits, generator caps, SOC dynamics/periodicity), the
-same shared nodal connection limit, and the same E/P envelope.
+  same shared nodal connection limit, and the same E/P envelope. The maintained
+  base uses fixed demand and zero dispatch regularization, matching the EPEC.
 
 It is deliberately *not* an MPEC: with a single welfare/cost objective there is
-no game, so the problem is one convex QP (quadratic only in the curtailment
-term). It gives the first-best siting/sizing to compare against the EPEC result:
+no game, so the problem is one convex LP in the maintained base and a convex QP
+when a robustness option adds quadratic terms. It gives the first-best
+siting/sizing to compare against the EPEC result:
 total MW/MWh, where storage goes, system cost, and the efficiency gap ("price of
 anarchy"). Ownership and market prices are irrelevant to the planner - generation
 rent is a transfer, not a resource cost, so it never appears here.
 
 Run:
-    python central_planner_benchmark.py --data data/processed/market_data_9bus.json
+    python model/central_planner_benchmark.py
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pyomo.environ as pyo
+
+_MODEL_DIR = Path(__file__).resolve().parent
+_PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
+if _PRIMAL_DUAL_DIR.is_dir() and str(_PRIMAL_DUAL_DIR) not in sys.path:
+    sys.path.append(str(_PRIMAL_DUAL_DIR))
 
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_mpec import (
@@ -38,17 +47,24 @@ from single_investor_mpec import (
     DEFAULT_NODE_LIMIT_MW,
     DEFAULT_RATIO_MAX,
     DEFAULT_RATIO_MIN,
+    DEFAULT_SOLVER_TOL,
     DEFAULT_WACC,
     QuadraticDemandCurve,
     capital_recovery_factor,
     default_quadratic_demand_curve,
+    fixed_demand_reference_lambda,
     quadratic_reference_lambda,
     reference_system_price,
 )
 from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
 
-EXPERIMENT_DATA_PATH = Path(__file__).resolve().parent / "data" / "processed" / "market_data_euro.json"
+EXPERIMENT_DATA_PATH = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "processed"
+    / "market_data_IEEE_9Bus_congestion.json"
+)
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "central_planner"
 
 
@@ -64,6 +80,9 @@ def build_central_planner_model(
     cost_power_eur_per_mw: float = DEFAULT_BESS_COST_POWER_EUR_PER_MW,
     cost_energy_eur_per_mwh: float = DEFAULT_BESS_COST_ENERGY_EUR_PER_MWH,
     degradation_eur_per_mwh: float = DEFAULT_DEGRADATION_EUR_PER_MWH,
+    use_demand_curve: bool = False,
+    dispatch_regularization_eur_per_mw2h: float = 0.0,
+    solver_tol: float = DEFAULT_SOLVER_TOL,
 ) -> pyo.ConcreteModel:
     """Build the single-level cost-minimizing planner QP with endogenous storage.
 
@@ -73,6 +92,10 @@ def build_central_planner_model(
     """
 
     eta = data.eta
+    if dispatch_regularization_eur_per_mw2h < 0.0:
+        raise ValueError("Dispatch regularization must be non-negative.")
+    if solver_tol <= 0.0:
+        raise ValueError("solver_tol must be positive.")
     last_t = max(data.times)
     crf_daily = capital_recovery_factor(wacc, lifetime_years) / 365.25
 
@@ -94,7 +117,8 @@ def build_central_planner_model(
 
     # Dispatch variables (single aggregate storage per node -> node-indexed).
     m.P_gen = pyo.Var(m.G, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
-    m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    if use_demand_curve:
+        m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
     m.P_charge = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
     m.P_discharge = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
     m.SOC = pyo.Var(m.N, m.T_SOC, domain=pyo.NonNegativeReals, initialize=0.0)
@@ -106,7 +130,7 @@ def build_central_planner_model(
             sum(mm.P_gen[g, t] for g in data.generators_at_node.get(n, []))
             + mm.P_discharge[n, t]
             - mm.P_charge[n, t]
-            + mm.P_shed[n, t]
+            + (mm.P_shed[n, t] if use_demand_curve else 0.0)
             - data.demand_el[n, t]
             == mm.NetInjection[n, t]
         )
@@ -133,18 +157,27 @@ def build_central_planner_model(
     )
     m.soc_capacity_bound = pyo.Constraint(m.N, m.T_SOC, rule=lambda mm, n, tau: mm.SOC[n, tau] <= mm.X_energy[n])
     m.soc_periodicity = pyo.Constraint(m.N, rule=lambda mm, n: mm.SOC[n, 0] == mm.SOC[n, last_t])
-    m.load_shed_bound = pyo.Constraint(m.N, m.T, rule=lambda mm, n, t: mm.P_shed[n, t] <= data.demand_el[n, t])
+    if use_demand_curve:
+        m.load_shed_bound = pyo.Constraint(
+            m.N,
+            m.T,
+            rule=lambda mm, n, t: mm.P_shed[n, t] <= data.demand_el[n, t],
+        )
 
     # Total system resource cost (the planner objective).
     m.generation_cost_expr = pyo.Expression(
         expr=sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
     )
     m.curtailment_cost_expr = pyo.Expression(
-        expr=sum(
-            quad.alpha * m.P_shed[n, t]
-            + 0.5 * quad.quad_coefficient(data.demand_el[n, t]) * m.P_shed[n, t] ** 2
-            for n in m.N
-            for t in m.T
+        expr=(
+            sum(
+                quad.alpha * m.P_shed[n, t]
+                + 0.5 * quad.quad_coefficient(data.demand_el[n, t]) * m.P_shed[n, t] ** 2
+                for n in m.N
+                for t in m.T
+            )
+            if use_demand_curve
+            else 0.0
         )
     )
     m.storage_capex_expr = pyo.Expression(
@@ -153,8 +186,23 @@ def build_central_planner_model(
     m.degradation_cost_expr = pyo.Expression(
         expr=0.5 * degradation_eur_per_mwh * sum(m.P_charge[n, t] + m.P_discharge[n, t] for n in m.N for t in m.T)
     )
+    m.dispatch_regularization_expr = pyo.Expression(
+        expr=0.5
+        * dispatch_regularization_eur_per_mw2h
+        * (
+            sum(m.P_gen[g, t] ** 2 for g in m.G for t in m.T)
+            + sum(m.P_charge[n, t] ** 2 + m.P_discharge[n, t] ** 2 for n in m.N for t in m.T)
+            + sum(m.SOC[n, tau] ** 2 for n in m.N for tau in m.T_SOC)
+            + sum(m.NetInjection[n, t] ** 2 for n in m.N for t in m.T)
+            + (sum(m.P_shed[n, t] ** 2 for n in m.N for t in m.T) if use_demand_curve else 0.0)
+        )
+    )
     m.system_cost_expr = pyo.Expression(
-        expr=m.generation_cost_expr + m.curtailment_cost_expr + m.storage_capex_expr + m.degradation_cost_expr
+        expr=m.generation_cost_expr
+        + m.curtailment_cost_expr
+        + m.storage_capex_expr
+        + m.degradation_cost_expr
+        + m.dispatch_regularization_expr
     )
     m.objective = pyo.Objective(expr=m.system_cost_expr, sense=pyo.minimize)
 
@@ -162,12 +210,19 @@ def build_central_planner_model(
     m._quad_demand = quad
     m._wacc = wacc
     m._node_limit_mw = node_limit_mw
+    m._use_demand_curve = use_demand_curve
+    m._dispatch_regularization_eur_per_mw2h = dispatch_regularization_eur_per_mw2h
+    m._solver_tol = solver_tol
     return m
 
 
 def summarize(model: pyo.ConcreteModel, quad: QuadraticDemandCurve) -> dict:
     data: MarketData = model._market_data
-    lam = quadratic_reference_lambda(model, quad)
+    lam = (
+        quadratic_reference_lambda(model, quad)
+        if model._use_demand_curve
+        else fixed_demand_reference_lambda(model)
+    )
     sys_price = reference_system_price(model, lam)
 
     nodes = list(model.N)
@@ -192,6 +247,10 @@ def summarize(model: pyo.ConcreteModel, quad: QuadraticDemandCurve) -> dict:
         "curtailment_cost_eur_per_day": value(model.curtailment_cost_expr),
         "storage_capex_eur_per_day": value(model.storage_capex_expr),
         "degradation_cost_eur_per_day": value(model.degradation_cost_expr),
+        "dispatch_regularization_eur_per_day": value(model.dispatch_regularization_expr),
+        "dispatch_regularization_eur_per_mw2h": model._dispatch_regularization_eur_per_mw2h,
+        "demand_model": "quadratic" if model._use_demand_curve else "fixed",
+        "solver_tol": model._solver_tol,
         "total_power_mw": sum(per_node[n]["x_power_mw"] for n in nodes),
         "total_energy_mwh": sum(per_node[n]["x_energy_mwh"] for n in nodes),
         "lambda_min_eur_per_mwh": min(lam.values()),
@@ -210,7 +269,8 @@ def print_summary(summary: dict) -> None:
     print(
         f"  system cost: {summary['system_cost_eur_per_day']:,.2f} EUR/day "
         f"(gen {summary['generation_cost_eur_per_day']:,.0f} + curtail {summary['curtailment_cost_eur_per_day']:,.0f} "
-        f"+ storage capex {summary['storage_capex_eur_per_day']:,.0f} + degrad {summary['degradation_cost_eur_per_day']:,.0f})"
+        f"+ storage capex {summary['storage_capex_eur_per_day']:,.0f} + degrad {summary['degradation_cost_eur_per_day']:,.0f} "
+        f"+ regularization {summary['dispatch_regularization_eur_per_day']:,.0f})"
     )
     print(
         f"  nodal LMP range: {summary['lambda_min_eur_per_mwh']:,.2f} to {summary['lambda_max_eur_per_mwh']:,.2f} EUR/MWh"
@@ -268,6 +328,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wacc", type=float, default=DEFAULT_WACC, help="Single social discount rate.")
     parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
     parser.add_argument("--max-cpu-time", type=float, default=120.0)
+    parser.add_argument("--demand-model", choices=["fixed", "quadratic"], default="fixed")
+    parser.add_argument("--dispatch-regularization", type=float, default=0.0)
+    parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--tag", type=str, default=None, help="Optional label appended to the output folder name.")
     parser.add_argument("--tee", action="store_true")
@@ -277,16 +340,37 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.dispatch_regularization < 0.0:
+        raise SystemExit("--dispatch-regularization must be non-negative.")
+    if args.solver_tol <= 0.0:
+        raise SystemExit("--solver-tol must be positive.")
     data = load_market_data(args.data)
     quad = default_quadratic_demand_curve()
     print(
         f"Central-planner benchmark: {len(data.nodes)} nodes, social WACC {args.wacc:.1%}, "
         f"node limit {args.node_limit_mw:.0f} MW"
     )
-    print(f"Quadratic demand curve: marginal WTP = {quad.alpha:,.2f} + {quad.beta:,.2f} * curtailed_share EUR/MWh")
+    if args.demand_model == "quadratic":
+        print(f"Quadratic demand curve: marginal WTP = {quad.alpha:,.2f} + {quad.beta:,.2f} * curtailed_share EUR/MWh")
+    else:
+        print("Fixed demand: no load-shedding variable or constraint block.")
 
-    model = build_central_planner_model(data, quad, wacc=args.wacc, node_limit_mw=args.node_limit_mw)
-    results = get_ipopt_solver({"max_cpu_time": args.max_cpu_time}).solve(model, tee=args.tee)
+    model = build_central_planner_model(
+        data,
+        quad,
+        wacc=args.wacc,
+        node_limit_mw=args.node_limit_mw,
+        use_demand_curve=args.demand_model == "quadratic",
+        dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,
+        solver_tol=args.solver_tol,
+    )
+    results = get_ipopt_solver(
+        {
+            "max_cpu_time": args.max_cpu_time,
+            "tol": args.solver_tol,
+            "acceptable_tol": args.solver_tol,
+        }
+    ).solve(model, tee=args.tee)
     termination = str(results.solver.termination_condition)
     print(f"Solver termination: {termination}")
     if termination != "optimal":

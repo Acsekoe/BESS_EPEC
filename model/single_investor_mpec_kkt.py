@@ -102,8 +102,8 @@ def build_single_investor_mpec_kkt(
 
     # Reuse the strong-duality builder purely for its scaffolding: primal vars and
     # constraints, dual vars, stationarity (dual-feasibility) constraints, and the
-    # investment / capex / degradation expressions. Fixed-demand mode fixes P_shed
-    # and xi_shed to zero, so no shed complementarity is required.
+    # investment / capex / degradation expressions. Fixed-demand mode has no
+    # shedding primal/dual block, so no shed complementarity is required.
     m = build_single_investor_mpec(
         data,
         node_limit_mw=node_limit_mw,
@@ -150,7 +150,7 @@ def build_single_investor_mpec_kkt(
     cap = data.generation_capacity
     F = data.line_limit
 
-    GT = [(g, t) for g in data.generators for t in data.times]
+    GT = list(m.GT)
     LT = [(l, t) for l in data.lines for t in data.times]
     INT = [(inv_id, n, t) for n in data.nodes for t in data.times]
     INS = [(inv_id, n, tau) for n in data.nodes for tau in data.soc_times]
@@ -220,8 +220,8 @@ def build_single_investor_mpec_kkt(
     # ---- Exact linear form of the investor spot revenue (see module docstring) ----
     m.spot_revenue_linear_expr = pyo.Expression(
         expr=sum(F[l] * (m.mu_up[l, t] - m.mu_dn[l, t]) for l in m.L for t in m.T)
-        - sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
-        + sum(cap[g, t] * m.nu_gen[g, t] for g in m.G for t in m.T)
+        - sum(data.generation_cost[g] * m.P_gen[g, t] for g, t in m.GT)
+        + sum(cap[g, t] * m.nu_gen[g, t] for g, t in m.GT)
         + sum(data.demand_el[n, t] * m.lam[n, t] for n in m.N for t in m.T)
     )
     m.kkt_profit_expr = pyo.Expression(
@@ -263,7 +263,7 @@ def warm_start_milp_from_nlp(milp: pyo.ConcreteModel, nlp: pyo.ConcreteModel, da
         for idx in vm:
             vm[idx].set_value(value(vn[idx]), skip_validation=True)
 
-    for name in ("P_gen", "P_shed", "P_charge", "P_discharge", "SOC", "NetInjection",
+    for name in ("P_gen", "P_charge", "P_discharge", "SOC", "NetInjection",
                  "lam", "lam_sys", "nu_gen", "mu_up", "mu_dn", "rho_ch", "sig_dis",
                  "gam", "del_soc", "rho_per", "X_power", "X_energy"):
         cp(getattr(milp, name), getattr(nlp, name))

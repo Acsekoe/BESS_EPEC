@@ -100,6 +100,24 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             storage_degradation_eur_per_mwh=degradation,
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
         )
+    # The strategic-operation EPEC carries hourly quantity offers as part of
+    # each investor's strategy. The maintained capacity-only EPEC has no such
+    # fields and therefore retains its original full-availability settlement.
+    if hasattr(state, "offer_charge") and hasattr(state, "offer_discharge"):
+        reference.strategic_charge_offer_bound = pyo.Constraint(
+            reference.I,
+            reference.N,
+            reference.T,
+            rule=lambda model, i, n, t: model.P_charge[i, n, t]
+            <= max(0.0, state.offer_charge[i, n, int(t)]),
+        )
+        reference.strategic_discharge_offer_bound = pyo.Constraint(
+            reference.I,
+            reference.N,
+            reference.T,
+            rule=lambda model, i, n, t: model.P_discharge[i, n, t]
+            <= max(0.0, state.offer_discharge[i, n, int(t)]),
+        )
     results = get_ipopt_solver(
         {
             "max_cpu_time": cfg.max_cpu_time,

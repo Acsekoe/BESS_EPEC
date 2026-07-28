@@ -864,6 +864,20 @@ def parse_args() -> argparse.Namespace:
         help="Resume MW/MWh strategies from a checkpoint.json file "
         "or a directory containing it. --max-iters then means additional iterations.",
     )
+    parser.add_argument(
+        "--conventional-capacity-adder-mw",
+        type=float,
+        default=0.0,
+        help="Optional MW added to every conventional generator in every hour.",
+    )
+    parser.add_argument(
+        "--peaker-node",
+        type=str,
+        default=None,
+        help="Node for an optional linear-cost peaker (for example N5).",
+    )
+    parser.add_argument("--peaker-capacity-mw", type=float, default=0.0)
+    parser.add_argument("--peaker-cost-eur-per-mwh", type=float, default=95.0)
     parser.add_argument("--tee", action="store_true")
     parser.add_argument("--no-export", action="store_true")
     return parser.parse_args()
@@ -889,7 +903,18 @@ def main() -> int:
         raise SystemExit("--seed-power-mw must be non-negative.")
     if args.initializer_snapshot_power_mw < 0.0:
         raise SystemExit("--initializer-snapshot-power-mw must be non-negative.")
-    data = load_market_data(args.data)
+    base_data = load_market_data(args.data)
+    # Keep the no-withholding driver independently runnable while allowing an
+    # apples-to-apples comparison with the calibrated strategic experiment.
+    from ieee9_strategic_operation_mpec import apply_generator_calibration
+
+    data, generator_calibration = apply_generator_calibration(
+        base_data,
+        conventional_capacity_adder_mw=args.conventional_capacity_adder_mw,
+        peaker_node=args.peaker_node,
+        peaker_capacity_mw=args.peaker_capacity_mw,
+        peaker_cost_eur_per_mwh=args.peaker_cost_eur_per_mwh,
+    )
     if args.investor_set == "portfolio4":
         investors = four_investor_portfolio_profiles(data)
     else:
@@ -944,6 +969,8 @@ def main() -> int:
         f"demand={args.demand_model}, dispatch_regularization={cfg.dispatch_regularization_eur_per_mw2h:.3e}, "
         f"solver_tol={cfg.solver_tol:.1e}, dual_selection=optimistic"
     )
+    if args.conventional_capacity_adder_mw > 0.0 or args.peaker_capacity_mw > 0.0:
+        print(f"Generator calibration: {generator_calibration}")
     for inv in investors:
         if inv.owned_generation_shares:
             owned = ", ".join(f"{g}={s:.2f}" for g, s in inv.owned_generation_shares.items())
@@ -998,6 +1025,14 @@ def main() -> int:
     print_epec_summary(state, cfg, settlement)
     if output_dir is not None:
         export_epec_results(output_dir, data, state, cfg, settlement, args.data)
+        summary_path = output_dir / "summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["generator_calibration"] = generator_calibration
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        run_config_path = output_dir / "run_config.json"
+        run_config = json.loads(run_config_path.read_text(encoding="utf-8"))
+        run_config["generator_calibration"] = generator_calibration
+        run_config_path.write_text(json.dumps(run_config, indent=2), encoding="utf-8")
         print(f"\nWrote EPEC outputs to {output_dir}")
     return 0 if state.converged else 1
 

@@ -7,6 +7,11 @@ investors, so the solution concept is a generalized Nash equilibrium and the
 outcome may depend on the update rule: Gauss-Jacobi (all investors respond to
 the same previous iterate) versus Gauss-Seidel (sequential, later investors
 see earlier same-iteration updates - the potential first-mover artifact).
+
+By default a fresh Gauss-Seidel run first performs one common-snapshot Jacobi
+best-response sweep and proportionally projects only overloaded nodes. That
+feasible projected fleet is iteration 0 of the subsequent Seidel loop. Resumed
+runs continue directly from their checkpoint without repeating initialization.
 """
 
 from __future__ import annotations
@@ -126,6 +131,9 @@ class EpecConfig:
     dispatch_regularization_eur_per_mw2h: float = 0.0
     solver_tol: float = DEFAULT_SOLVER_TOL
     capacity_cleanup_tol_mw_mwh: float = DEFAULT_CAPACITY_CLEANUP_TOL_MW_MWH
+    automatic_jacobi_initializer: bool = True
+    jacobi_initializer_snapshot_power_mw: float = 0.0
+    jacobi_initializer_snapshot_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS
     starting_iteration: int = 0
     resume_from: str | None = None
 
@@ -159,6 +167,8 @@ class EpecState:
     trajectory: list[dict] = field(default_factory=list)  # one row per (iteration, investor, node)
     projection_events: list[dict] = field(default_factory=list)
     final_models: dict[str, pyo.ConcreteModel] = field(default_factory=dict)
+    initialization_method: str = "uniform_seed"
+    initializer_summary: dict = field(default_factory=dict)
 
 
 #### Checkpoint and resume
@@ -202,6 +212,8 @@ def load_checkpoint_state(
         x_power=read_capacity("x_power_mw"),
         x_energy=read_capacity("x_energy_mwh"),
         iteration=int(raw["iteration"]),
+        initialization_method=str(raw.get("initialization_method", "checkpoint_resume")),
+        initializer_summary=dict(raw.get("initializer_summary", {})),
     )
     return state, checkpoint_path.resolve()
 
@@ -394,6 +406,149 @@ def project_joint_limit(state: EpecState, cfg: EpecConfig, nodes: list[str]) -> 
     clean_capacity_state(state, cfg, nodes)
 
 
+def projected_jacobi_initial_state(
+    data: MarketData,
+    quad: QuadraticDemandCurve,
+    cfg: EpecConfig,
+    *,
+    tee: bool = False,
+) -> EpecState:
+    """Create a feasible iteration-0 state from one common-snapshot Jacobi sweep.
+
+    Every investor responds to the same economic rival-capacity snapshot. Ipopt
+    is initialized separately from ``cfg.seed_power_mw`` and
+    ``cfg.seed_ratio_hours``. Raw desired capacities are then proportionally
+    scaled only at overloaded nodes, preserving every investor's E/P ratio.
+    """
+
+    nodes = list(data.nodes)
+    snapshot_power = cfg.jacobi_initializer_snapshot_power_mw
+    snapshot_ratio = cfg.jacobi_initializer_snapshot_ratio_hours
+    if snapshot_power < 0.0:
+        raise ValueError("Jacobi initializer snapshot power must be nonnegative.")
+    if snapshot_power * len(cfg.investors) > cfg.node_limit_mw + 1e-9:
+        raise ValueError("Jacobi initializer snapshot violates the shared nodal limit.")
+    for investor in cfg.investors:
+        if not investor.ratio_min <= snapshot_ratio <= investor.ratio_max:
+            raise ValueError(
+                "Jacobi initializer snapshot ratio violates an investor E/P envelope."
+            )
+        if not investor.ratio_min <= cfg.seed_ratio_hours <= investor.ratio_max:
+            raise ValueError("Numerical seed ratio violates an investor E/P envelope.")
+
+    snapshot = EpecState(
+        x_power={
+            (investor.investor_id, node): snapshot_power
+            for investor in cfg.investors
+            for node in nodes
+        },
+        x_energy={
+            (investor.investor_id, node): snapshot_power * snapshot_ratio
+            for investor in cfg.investors
+            for node in nodes
+        },
+        initialization_method="jacobi_common_snapshot_projected",
+    )
+    guess_power = {node: cfg.seed_power_mw for node in nodes}
+    guess_energy = {
+        node: cfg.seed_power_mw * cfg.seed_ratio_hours for node in nodes
+    }
+    responses: list[BestResponse] = []
+    print(
+        "Automatic Jacobi initializer: common snapshot "
+        f"{snapshot_power:g} MW/node, numerical guess "
+        f"{cfg.seed_power_mw:g} MW/node"
+    )
+    for investor in cfg.investors:
+        rival_power, rival_energy = separate_rival_capacities(
+            snapshot, cfg, nodes, investor.investor_id
+        )
+        response = solve_best_response(
+            data,
+            quad,
+            cfg,
+            investor,
+            rival_power,
+            rival_energy,
+            {node: snapshot.x_power[investor.investor_id, node] for node in nodes},
+            {node: snapshot.x_energy[investor.investor_id, node] for node in nodes},
+            initial_guess_power=guess_power,
+            initial_guess_energy=guess_energy,
+            tee=tee,
+        )
+        responses.append(response)
+        print(
+            f"  {investor.investor_id}: {response.termination}, desired "
+            f"{sum(response.proposed_power.values()):.3f} MW / "
+            f"{sum(response.proposed_energy.values()):.3f} MWh"
+        )
+    failed = [response.investor_id for response in responses if not response.ok]
+    if failed:
+        raise RuntimeError(
+            "Automatic Jacobi initializer failed for investor(s): " + ", ".join(failed)
+        )
+
+    projected_power: dict[tuple[str, str], float] = {}
+    projected_energy: dict[tuple[str, str], float] = {}
+    node_summary: dict[str, dict] = {}
+    for node in nodes:
+        desired_total = sum(response.proposed_power[node] for response in responses)
+        scale = min(1.0, cfg.node_limit_mw / desired_total) if desired_total > 0.0 else 1.0
+        for response in responses:
+            power, energy = clean_capacity_pair(
+                scale * response.proposed_power[node],
+                scale * response.proposed_energy[node],
+                cfg.capacity_cleanup_tol_mw_mwh,
+            )
+            projected_power[response.investor_id, node] = power
+            projected_energy[response.investor_id, node] = energy
+        node_summary[node] = {
+            "desired_total_power_mw": desired_total,
+            "projection_scale": scale,
+            "projected_total_power_mw": sum(
+                projected_power[investor.investor_id, node]
+                for investor in cfg.investors
+            ),
+            "limit_mw": cfg.node_limit_mw,
+        }
+        if scale < 1.0:
+            print(
+                f"  [initializer projection] {node}: {desired_total:.3f} MW "
+                f"-> {cfg.node_limit_mw:.1f} MW"
+            )
+
+    response_summary = {
+        response.investor_id: {
+            "termination": response.termination,
+            "solve_seconds": response.solve_seconds,
+            "desired_power_mw": sum(response.proposed_power.values()),
+            "desired_energy_mwh": sum(response.proposed_energy.values()),
+            "optimistic_mpec_profit_eur_per_day": (
+                response.optimistic_mpec_profit_eur_per_day
+            ),
+            "strong_duality_gap": response.strong_duality_gap,
+        }
+        for response in responses
+    }
+    state = EpecState(
+        x_power=projected_power,
+        x_energy=projected_energy,
+        iteration=0,
+        initialization_method="jacobi_common_snapshot_projected",
+        initializer_summary={
+            "interpretation": "feasible initialization heuristic, not an equilibrium",
+            "snapshot_power_mw_per_investor_node": snapshot_power,
+            "snapshot_ratio_hours": snapshot_ratio,
+            "numerical_guess_power_mw_per_node": cfg.seed_power_mw,
+            "numerical_guess_ratio_hours": cfg.seed_ratio_hours,
+            "responses": response_summary,
+            "nodes": node_summary,
+        },
+    )
+    clean_capacity_state(state, cfg, nodes)
+    return state
+
+
 #### Diagnostics
 # -----------------------------------------------------------------------------
 
@@ -433,7 +588,21 @@ def run_epec(
 
     nodes = list(data.nodes)
     n_inv = len(cfg.investors)
-    if initial_state is None:
+    if (
+        initial_state is None
+        and cfg.update_rule == "seidel"
+        and cfg.automatic_jacobi_initializer
+    ):
+        state = projected_jacobi_initial_state(data, quad, cfg, tee=tee)
+        state.stop_reason = "automatic Jacobi initializer complete; ready for Gauss-Seidel"
+        if checkpoint_callback is not None:
+            checkpoint_callback(state)
+        state.stop_reason = ""
+        print(
+            "Automatic Jacobi initializer complete; starting Gauss-Seidel "
+            "from projected iteration-0 capacities."
+        )
+    elif initial_state is None:
         seed = min(cfg.seed_power_mw, cfg.node_limit_mw / n_inv)
         state = EpecState(
             x_power={(inv.investor_id, n): seed for inv in cfg.investors for n in nodes},
@@ -612,6 +781,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--floor-mwh", type=float, default=DEFAULT_FLOOR_MWH)
     parser.add_argument("--seed-power-mw", type=float, default=DEFAULT_INITIAL_POWER_MW)
     parser.add_argument("--seed-ratio-hours", type=float, default=DEFAULT_INITIAL_RATIO_HOURS)
+    parser.add_argument(
+        "--initializer-snapshot-power-mw",
+        type=float,
+        default=0.0,
+        help=(
+            "Fresh Seidel runs only: common economic MW per investor-node in the "
+            "automatic one-sweep Jacobi initializer. The numerical Ipopt guess "
+            "continues to use --seed-power-mw."
+        ),
+    )
+    parser.add_argument(
+        "--initializer-snapshot-ratio-hours",
+        type=float,
+        default=DEFAULT_INITIAL_RATIO_HOURS,
+        help="E/P ratio of the automatic Jacobi initializer's common snapshot.",
+    )
+    parser.add_argument(
+        "--skip-jacobi-initializer",
+        action="store_true",
+        help=(
+            "Start a fresh run from the legacy uniform seed instead of the automatic "
+            "projected one-sweep Jacobi initializer. Ignored when resuming a checkpoint."
+        ),
+    )
     parser.add_argument("--max-cpu-time", type=float, default=120.0)
     parser.add_argument(
         "--price-bound-eur-per-mwh",
@@ -692,6 +885,10 @@ def main() -> int:
         raise SystemExit("--price-bound-eur-per-mwh must be positive.")
     if args.capacity_cleanup_tol < 0.0:
         raise SystemExit("--capacity-cleanup-tol must be non-negative.")
+    if args.seed_power_mw < 0.0:
+        raise SystemExit("--seed-power-mw must be non-negative.")
+    if args.initializer_snapshot_power_mw < 0.0:
+        raise SystemExit("--initializer-snapshot-power-mw must be non-negative.")
     data = load_market_data(args.data)
     if args.investor_set == "portfolio4":
         investors = four_investor_portfolio_profiles(data)
@@ -723,6 +920,9 @@ def main() -> int:
         dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,
         solver_tol=args.solver_tol,
         capacity_cleanup_tol_mw_mwh=args.capacity_cleanup_tol,
+        automatic_jacobi_initializer=not args.skip_jacobi_initializer,
+        jacobi_initializer_snapshot_power_mw=args.initializer_snapshot_power_mw,
+        jacobi_initializer_snapshot_ratio_hours=args.initializer_snapshot_ratio_hours,
     )
     initial_state = None
     if args.resume_from is not None:
@@ -757,11 +957,18 @@ def main() -> int:
         )
     else:
         print("Fixed demand: lower-level load-shedding primal and dual blocks are omitted.")
-    if initial_state is not None:
+    if cfg.resume_from is not None:
         print(
             f"Resuming from iteration {initial_state.iteration}; "
             f"running up to {cfg.max_iters} additional iterations from {cfg.resume_from}"
         )
+    elif cfg.update_rule == "seidel" and cfg.automatic_jacobi_initializer:
+        print(
+            "Fresh Gauss-Seidel run: one projected common-snapshot Jacobi "
+            "initializer will run first."
+        )
+    elif cfg.update_rule == "seidel":
+        print("Automatic Jacobi initializer skipped; using the legacy uniform seed.")
 
     output_dir = None
     checkpoint_callback = None

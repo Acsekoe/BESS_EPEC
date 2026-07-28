@@ -1,15 +1,19 @@
 """One-leader, two-follower MPEC for strategic nodal BESS access bids.
 
-The leader chooses continuous pay-as-bid access quantities and prices plus its
-energy capacity. Follower 1 is the nodal access-auction LP. Follower 2 is the
+The leader chooses continuous access bid quantities and prices plus its energy
+capacity. Follower 1 is the nodal access auction. Follower 2 is the
 fixed-demand spot-market LP. Each follower is embedded only through primal
 feasibility, dual feasibility/stationarity, and strong duality.
 
-There is no dispatch regularizer, load shedding, objective penalty, or auxiliary
-outside-option problem. An optional external bid-price enumeration fixes the
-active raw bid to exact grid ticks; a smaller deterministic merit offset then
-orders equal raw bids without changing pay-as-bid settlement. Electricity-price
-nonuniqueness retains the optimistic MPEC convention.
+Under the maintained ``uniform`` payment rule the auction objective carries a
+small strictly concave quadratic regularization, so the allocation is unique,
+exact price ties split pro rata, and every award pays the nodal clearing price
+(the auction capacity dual) instead of its own bid. The legacy ``pay_as_bid``
+rule keeps the linear auction; an optional external bid-price enumeration then
+fixes the active raw bid to exact grid ticks with a smaller deterministic merit
+offset ordering equal raw bids. There is no dispatch regularizer, load
+shedding, objective penalty, or auxiliary outside-option problem.
+Electricity-price nonuniqueness retains the optimistic MPEC convention.
 """
 
 from __future__ import annotations
@@ -32,17 +36,19 @@ for module_dir in (_MODEL_DIR, _PRIMAL_DUAL_DIR):
         sys.path.append(str(module_dir))
 
 from config import (
+    DEFAULT_AUCTION_QUADRATIC_EPSILON_EUR_PER_MW2_DAY,
     DEFAULT_CAPACITY_CLEANUP_TOL_MW,
     DEFAULT_DUAL_BOUND_EUR_PER_MWH,
     DEFAULT_MAX_BID_PRICE_EUR_PER_MW_DAY,
     DEFAULT_NODE_LIMIT_MW,
+    DEFAULT_PAYMENT_RULE,
     DEFAULT_PRICE_BOUND_EUR_PER_MWH,
     DEFAULT_SOLVER_TOL,
     parse_single_mpec_cli,
 )
 from nodal_access_auction_dual import build_dual as build_auction_dual
 from nodal_access_auction_primal import Bid, awarded_mw, build_primal as build_auction_primal
-from nodal_access_auction_primal import priority_offsets
+from nodal_access_auction_primal import priority_offsets, uniform_clearing_prices
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_mpec import (
     DEFAULT_DEGRADATION_EUR_PER_MWH,
@@ -195,6 +201,10 @@ def build_one_leader_two_follower_mpec(
     dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH,
     capacity_cleanup_tol_mw: float = DEFAULT_CAPACITY_CLEANUP_TOL_MW,
     tie_break_epsilon_eur_per_mw_day: float = 0.0,
+    payment_rule: str = DEFAULT_PAYMENT_RULE,
+    auction_quadratic_epsilon_eur_per_mw2_day: float = (
+        DEFAULT_AUCTION_QUADRATIC_EPSILON_EUR_PER_MW2_DAY
+    ),
 ) -> pyo.ConcreteModel:
     """Build the clean continuous best-response MPEC against fixed rival bids."""
     inv = active_investor or InvestorConfig(investor_id=ACTIVE_INVESTOR_ID)
@@ -208,6 +218,21 @@ def build_one_leader_two_follower_mpec(
         raise ValueError("Tie-break epsilon must be nonnegative.")
     if rival_degradation_eur_per_mwh < 0.0:
         raise ValueError("Rival degradation cost must be nonnegative.")
+    if payment_rule not in {"uniform", "pay_as_bid"}:
+        raise ValueError("Payment rule must be 'uniform' or 'pay_as_bid'.")
+    auction_epsilon = float(auction_quadratic_epsilon_eur_per_mw2_day)
+    if payment_rule == "uniform":
+        if auction_epsilon <= 0.0:
+            raise ValueError(
+                "The uniform payment rule requires a positive quadratic auction epsilon."
+            )
+        if tie_break_epsilon_eur_per_mw_day != 0.0:
+            raise ValueError(
+                "The uniform payment rule uses pro-rata quadratic tie splitting; "
+                "merit offsets are a pay-as-bid tick device."
+            )
+    elif auction_epsilon != 0.0:
+        raise ValueError("The pay-as-bid rule keeps the legacy linear auction.")
 
     limits = (
         {node: float(node_limit_mw[node]) for node in data.nodes}
@@ -320,7 +345,11 @@ def build_one_leader_two_follower_mpec(
     def effective_bid_price(m: pyo.ConcreteModel, investor: str, node: str):
         return bid_price(m, investor, node) + priority_offset[investor]
 
-    # Follower 1: auction primal, dual, and strong duality.
+    # Follower 1: auction primal, dual, and strong duality. With a positive
+    # quadratic epsilon this is the exact KKT system of the concave auction QP:
+    # equality of the primal objective and the Lagrangian dual value enforces
+    # every complementarity condition. Under the uniform payment rule bids are
+    # capped at max_bid_price, so the auction duals never need a wider bound.
     model.award = pyo.Var(model.A, domain=pyo.NonNegativeReals, initialize=0.0)
     model.auction_capacity = pyo.Constraint(
         model.N,
@@ -330,19 +359,26 @@ def build_one_leader_two_follower_mpec(
         model.A,
         rule=lambda m, i, n: m.award[i, n] <= bid_quantity(m, i, n),
     )
+    auction_dual_bound = (
+        max_bid_price_eur_per_mw_day if payment_rule == "uniform" else dual_bound_eur_per_mwh
+    )
     model.auction_capacity_dual = pyo.Var(
-        model.N, bounds=(0.0, dual_bound_eur_per_mwh), initialize=0.0
+        model.N, bounds=(0.0, auction_dual_bound), initialize=0.0
     )
     model.auction_quantity_dual = pyo.Var(
-        model.A, bounds=(0.0, dual_bound_eur_per_mwh), initialize=0.0
+        model.A, bounds=(0.0, auction_dual_bound), initialize=0.0
     )
     model.auction_dual_feasibility = pyo.Constraint(
         model.A,
         rule=lambda m, i, n: m.auction_capacity_dual[n] + m.auction_quantity_dual[i, n]
-        >= effective_bid_price(m, i, n),
+        >= effective_bid_price(m, i, n) - auction_epsilon * m.award[i, n],
+    )
+    model.auction_regularization = pyo.Expression(
+        expr=0.5 * auction_epsilon * sum(model.award[i, n] ** 2 for i, n in model.A)
     )
     model.auction_primal_value = pyo.Expression(
         expr=sum(effective_bid_price(model, i, n) * model.award[i, n] for i, n in model.A)
+        - model.auction_regularization
     )
     model.auction_dual_value = pyo.Expression(
         expr=sum(limits[n] * model.auction_capacity_dual[n] for n in model.N)
@@ -350,6 +386,7 @@ def build_one_leader_two_follower_mpec(
             bid_quantity(model, i, n) * model.auction_quantity_dual[i, n]
             for i, n in model.A
         )
+        + model.auction_regularization
     )
     model.auction_strong_duality = pyo.Constraint(
         expr=model.auction_primal_value == model.auction_dual_value
@@ -562,12 +599,20 @@ def build_one_leader_two_follower_mpec(
             for n in model.N
         )
     )
-    model.active_access_payment = pyo.Expression(
-        expr=sum(
-            model.active_bid_price[n] * model.award[inv.investor_id, n]
-            for n in model.N
+    if payment_rule == "uniform":
+        model.active_access_payment = pyo.Expression(
+            expr=sum(
+                model.auction_capacity_dual[n] * model.award[inv.investor_id, n]
+                for n in model.N
+            )
         )
-    )
+    else:
+        model.active_access_payment = pyo.Expression(
+            expr=sum(
+                model.active_bid_price[n] * model.award[inv.investor_id, n]
+                for n in model.N
+            )
+        )
     model.active_profit = pyo.Expression(
         expr=model.active_spot_revenue
         + model.active_generation_rent
@@ -580,6 +625,7 @@ def build_one_leader_two_follower_mpec(
     model._market_data = data
     model._active_investor = inv
     model._active_id = inv.investor_id
+    model._max_bid_price_eur_per_mw_day = float(max_bid_price_eur_per_mw_day)
     model._investors = [inv.investor_id, *rivals]
     model._rival_quantity = rival_quantity
     model._rival_price = rival_price
@@ -592,6 +638,8 @@ def build_one_leader_two_follower_mpec(
     model._dual_bound_eur_per_mwh = float(dual_bound_eur_per_mwh)
     model._capacity_cleanup_tol_mw = float(capacity_cleanup_tol_mw)
     model._tie_break_epsilon_eur_per_mw_day = float(tie_break_epsilon_eur_per_mw_day)
+    model._payment_rule = payment_rule
+    model._auction_quadratic_epsilon_eur_per_mw2_day = auction_epsilon
     model._priority_offset_eur_per_mw_day = priority_offset
     model._storage_pairs = tuple(storage_pairs)
     model._positive_generator_hours = tuple(positive_generator_hours)
@@ -619,29 +667,49 @@ def initialize_from_independent_followers(model: pyo.ConcreteModel) -> None:
         bids,
         model._node_limits,
         model._tie_break_epsilon_eur_per_mw_day,
+        model._auction_quadratic_epsilon_eur_per_mw2_day,
     )
     primal_result = solver.solve(primal, tee=False)
     if primal_result.solver.termination_condition != pyo.TerminationCondition.optimal:
         return
-    dual = build_auction_dual(
-        bids,
-        model._node_limits,
-        dual_bound_eur_per_mw_day=model._dual_bound_eur_per_mwh,
-        tie_break_epsilon_eur_per_mw_day=model._tie_break_epsilon_eur_per_mw_day,
-    )
-    dual_result = solver.solve(dual, tee=False)
 
     awards = awarded_mw(primal)
     for investor, node in model.A:
         model.award[investor, node].set_value(awards.get((investor, node), 0.0))
-    if dual_result.solver.termination_condition == pyo.TerminationCondition.optimal:
+    if model._payment_rule == "uniform":
+        epsilon = model._auction_quadratic_epsilon_eur_per_mw2_day
+        dual_cap = model._max_bid_price_eur_per_mw_day
+        clearing = uniform_clearing_prices(primal)
+        raw_price = {(bid.investor, bid.node): bid.price_eur_per_mw for bid in bids}
         for node in model.N:
-            model.auction_capacity_dual[node].set_value(max(0.0, value(dual.capacity_dual[node])))
-        bid_index = {(dual.bid[k].investor, dual.bid[k].node): k for k in dual.K}
-        for investor, node in model.A:
-            model.auction_quantity_dual[investor, node].set_value(
-                max(0.0, value(dual.quantity_dual[bid_index[investor, node]]))
+            model.auction_capacity_dual[node].set_value(
+                min(dual_cap, max(0.0, clearing[node]))
             )
+        for investor, node in model.A:
+            eta = (
+                raw_price[investor, node]
+                - epsilon * awards.get((investor, node), 0.0)
+                - clearing[node]
+            )
+            model.auction_quantity_dual[investor, node].set_value(
+                min(dual_cap, max(0.0, eta))
+            )
+    else:
+        dual = build_auction_dual(
+            bids,
+            model._node_limits,
+            dual_bound_eur_per_mw_day=model._dual_bound_eur_per_mwh,
+            tie_break_epsilon_eur_per_mw_day=model._tie_break_epsilon_eur_per_mw_day,
+        )
+        dual_result = solver.solve(dual, tee=False)
+        if dual_result.solver.termination_condition == pyo.TerminationCondition.optimal:
+            for node in model.N:
+                model.auction_capacity_dual[node].set_value(max(0.0, value(dual.capacity_dual[node])))
+            bid_index = {(dual.bid[k].investor, dual.bid[k].node): k for k in dual.K}
+            for investor, node in model.A:
+                model.auction_quantity_dual[investor, node].set_value(
+                    max(0.0, value(dual.quantity_dual[bid_index[investor, node]]))
+                )
 
     active_id = model._active_id
     for node in model.N:
@@ -779,6 +847,7 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
         fixed_bids,
         model._node_limits,
         model._tie_break_epsilon_eur_per_mw_day,
+        model._auction_quadratic_epsilon_eur_per_mw2_day,
     )
     independent_solver = get_ipopt_solver(
         {"max_cpu_time": 60.0, "tol": 1.0e-9, "acceptable_tol": 1.0e-8}
@@ -794,6 +863,23 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
         ),
         default=0.0,
     )
+    max_clearing_price_difference = 0.0
+    if model._payment_rule == "uniform" and independent_term == "optimal":
+        reclear_clearing = uniform_clearing_prices(independent)
+        for node in model.N:
+            nodes[node]["independent_clearing_price_eur_per_mw_day"] = reclear_clearing[node]
+            payment_relevant = (
+                nodes[node]["active_award_mw"] > model._capacity_cleanup_tol_mw
+                or reclear_awards.get((active_id, node), 0.0) > model._capacity_cleanup_tol_mw
+            )
+            if payment_relevant:
+                max_clearing_price_difference = max(
+                    max_clearing_price_difference,
+                    abs(
+                        nodes[node]["auction_capacity_dual_eur_per_mw_day"]
+                        - reclear_clearing[node]
+                    ),
+                )
 
     price_components = (model.lam, model.lam_sys)
     internal_components = (
@@ -822,7 +908,10 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
         "solver_message": getattr(model, "_solver_message", None),
         "interpretation": "local optimistic continuous-bid MPEC candidate",
         "formulation": "leader + auction primal/dual/strong-duality + spot primal/dual/strong-duality",
-        "payment_rule": "pay_as_bid",
+        "payment_rule": model._payment_rule,
+        "auction_quadratic_epsilon_eur_per_mw2_day": (
+            model._auction_quadratic_epsilon_eur_per_mw2_day
+        ),
         "bid_merit_tie_break_epsilon_eur_per_mw_day": model._tie_break_epsilon_eur_per_mw_day,
         "priority_offset_eur_per_mw_day": model._priority_offset_eur_per_mw_day,
         "active_investor": active_id,
@@ -841,6 +930,9 @@ def summarize(model: pyo.ConcreteModel, termination: str) -> dict[str, object]:
         "spot_strong_duality_gap": spot_gap,
         "independent_auction_termination": independent_term,
         "max_embedded_vs_reclear_award_difference_mw": max_award_difference,
+        "max_embedded_vs_reclear_clearing_price_difference_eur_per_mw_day": (
+            max_clearing_price_difference
+        ),
         "price_bound_eur_per_mwh": model._price_bound_eur_per_mwh,
         "dual_bound_eur_per_mwh": model._dual_bound_eur_per_mwh,
         "max_abs_price_dual": max_price,
@@ -1002,6 +1094,12 @@ def solve_fixed_price_response(
             if cfg.bid_price_tick_eur_per_mw_day > 0.0
             else 0.0
         ),
+        payment_rule=cfg.payment_rule,
+        auction_quadratic_epsilon_eur_per_mw2_day=(
+            cfg.auction_quadratic_epsilon_eur_per_mw2_day
+            if cfg.payment_rule == "uniform"
+            else 0.0
+        ),
     )
     if fixed_bid_price is not None:
         model.active_bid_price[cfg.active_node].fix(fixed_bid_price)
@@ -1069,6 +1167,8 @@ def run_tick_search(
 
 def main() -> int:
     cfg = parse_single_mpec_cli()
+    if cfg.bid_price_tick_eur_per_mw_day > 0.0 and cfg.payment_rule != "pay_as_bid":
+        raise ValueError("Exact tick enumeration is a pay-as-bid device; use --payment-rule pay_as_bid.")
     data = load_market_data(cfg.data_path)
     from epec_diagonalization import four_investor_portfolio_profiles
 

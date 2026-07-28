@@ -19,7 +19,12 @@ for module_dir in (_MODEL_DIR, _PRIMAL_DUAL_DIR):
         sys.path.append(str(module_dir))
 
 from config import GaussSeidelConfig
-from nodal_access_auction_primal import Bid, awarded_mw, build_primal as build_auction_primal
+from nodal_access_auction_primal import (
+    Bid,
+    awarded_mw,
+    build_primal as build_auction_primal,
+    uniform_clearing_prices,
+)
 from primal_market_clearing_model import MarketData, value
 from single_investor_mpec import (
     build_fixed_demand_primal_model,
@@ -95,7 +100,12 @@ def compute_joint_auction_settlement(
         if cfg.bid_price_tick_eur_per_mw_day > 0.0
         else 0.0
     )
-    auction = build_auction_primal(bids, limits, priority_epsilon)
+    quadratic_epsilon = (
+        cfg.auction_quadratic_epsilon_eur_per_mw2_day
+        if cfg.payment_rule == "uniform"
+        else 0.0
+    )
+    auction = build_auction_primal(bids, limits, priority_epsilon, quadratic_epsilon)
     auction_result = get_ipopt_solver(
         {
             "max_cpu_time": min(cfg.max_cpu_time, 60.0),
@@ -109,6 +119,11 @@ def compute_joint_auction_settlement(
             f"Final independent auction did not solve optimally ({auction_termination})."
         )
     flat_awards = awarded_mw(auction)
+    clearing_prices = (
+        uniform_clearing_prices(auction)
+        if cfg.payment_rule == "uniform"
+        else {node: 0.0 for node in data.nodes}
+    )
     awards = {
         investor: {
             node: max(0.0, flat_awards.get((investor, node), 0.0))
@@ -207,10 +222,15 @@ def compute_joint_auction_settlement(
             + profile.cost_energy_eur_per_mwh * energy[investor][node]
             for node in data.nodes
         )
-        access_payment = sum(
-            state.price_eur_per_mw_day[investor][node] * awards[investor][node]
-            for node in data.nodes
-        )
+        if cfg.payment_rule == "uniform":
+            access_payment = sum(
+                clearing_prices[node] * awards[investor][node] for node in data.nodes
+            )
+        else:
+            access_payment = sum(
+                state.price_eur_per_mw_day[investor][node] * awards[investor][node]
+                for node in data.nodes
+            )
         settled_profit = (
             spot_revenue
             + generation_rent
@@ -306,6 +326,7 @@ def compute_joint_auction_settlement(
         max_node_overload = max(max_node_overload, max(0.0, total_award - limits[node]))
         node_summary[node] = {
             "limit_mw": limits[node],
+            "clearing_price_eur_per_mw_day": clearing_prices[node],
             "total_bid_quantity_mw": sum(
                 state.quantity_mw[investor][node] for investor in cfg.investor_order
             ),
@@ -327,8 +348,14 @@ def compute_joint_auction_settlement(
     return {
         "auction_termination": auction_termination,
         "spot_termination": spot_termination,
-        "payment_rule": "pay_as_bid_raw_price",
+        "payment_rule": (
+            "uniform_clearing_price"
+            if cfg.payment_rule == "uniform"
+            else "pay_as_bid_raw_price"
+        ),
         "auction_priority_epsilon_eur_per_mw_day": priority_epsilon,
+        "auction_quadratic_epsilon_eur_per_mw2_day": quadratic_epsilon,
+        "clearing_prices_eur_per_mw_day": dict(clearing_prices),
         "auction_effective_bid_value_eur_per_day": value(auction.bid_value),
         "total_access_payment_eur_per_day": sum(
             row["access_payment_eur_per_day"] for row in investors_out.values()
@@ -367,6 +394,8 @@ def export_joint_auction_settlement(
     output_dir.mkdir(parents=True, exist_ok=True)
     awards = settlement["awards_mw"]
     energy = settlement["energy_mwh"]
+    clearing_prices = settlement["clearing_prices_eur_per_mw_day"]
+    uniform = cfg.payment_rule == "uniform"
     _write_csv(
         output_dir / "final_bids_and_awards.csv",
         [
@@ -375,11 +404,17 @@ def export_joint_auction_settlement(
                 "node": node,
                 "bid_quantity_mw": state.quantity_mw[investor][node],
                 "raw_bid_price_eur_per_mw_day": state.price_eur_per_mw_day[investor][node],
+                "clearing_price_eur_per_mw_day": clearing_prices[node],
                 "award_mw": awards[investor][node],
                 "duration_hours": state.duration_hours[investor][node],
                 "energy_mwh": energy[investor][node],
                 "access_payment_eur_per_day": (
-                    state.price_eur_per_mw_day[investor][node] * awards[investor][node]
+                    (
+                        clearing_prices[node]
+                        if uniform
+                        else state.price_eur_per_mw_day[investor][node]
+                    )
+                    * awards[investor][node]
                 ),
             }
             for investor in cfg.investor_order
@@ -437,6 +472,15 @@ def export_joint_auction_settlement(
         "active_nodes": None if cfg.active_nodes is None else list(cfg.active_nodes),
         "bid_price_tick_eur_per_mw_day": cfg.bid_price_tick_eur_per_mw_day,
         "tie_break_epsilon_eur_per_mw_day": cfg.tie_break_epsilon_eur_per_mw_day,
+        "payment_rule": cfg.payment_rule,
+        "auction_quadratic_epsilon_eur_per_mw2_day": (
+            cfg.auction_quadratic_epsilon_eur_per_mw2_day
+            if cfg.payment_rule == "uniform"
+            else 0.0
+        ),
+        "clearing_price_tolerance_eur_per_mw_day": (
+            cfg.clearing_price_tolerance_eur_per_mw_day
+        ),
         "formulation": (
             f"four-investor Gauss-{cfg.update_rule.capitalize()} EPEC; every best response "
             "embeds auction and spot primal/dual/strong-duality systems"
@@ -456,6 +500,20 @@ def print_joint_auction_summary(stop_reason: str, settlement: Mapping[str, Any])
     print(f"  status: {stop_reason}")
     if stop_reason != "converged":
         print("  WARNING: the final iterate is diagnostic; it is not a converged equilibrium.")
+    print(f"  payment rule: {settlement['payment_rule']}")
+    positive_clearing = {
+        node: price
+        for node, price in settlement["clearing_prices_eur_per_mw_day"].items()
+        if price > 0.0
+    }
+    if positive_clearing:
+        print(
+            "  nodal access clearing prices: "
+            + ", ".join(
+                f"{node} {price:.2f} EUR/MW/day"
+                for node, price in sorted(positive_clearing.items())
+            )
+        )
     print(
         "  joint lambda range: "
         f"{settlement['lambda_min_eur_per_mwh']:.4f} to "

@@ -87,11 +87,13 @@ are not collapsed into one virtual storage unit. It supports Gauss-Jacobi and
 Gauss-Seidel updates with damping and feasibility projection.
 
 `model/epec_jacobi_initializer.py` is the maintained initialization workflow.
-It solves one Jacobi sweep from a common economic capacity snapshot while using
-a separately configurable positive numerical MPEC guess. It exports each
-investor's raw desired nodal MW/MWh, proportionally projects only overloaded
-nodes while preserving each E/P ratio, and writes a `checkpoint.json` that the
-normal Gauss-Seidel driver can resume. The projected allocation is an
+The same workflow is now called automatically at the start of every fresh
+Gauss-Seidel diagonalization run: it solves one Jacobi sweep from a common
+economic capacity snapshot while using a separately configurable positive
+numerical MPEC guess, then proportionally projects only overloaded nodes while
+preserving each E/P ratio. The projected fleet is iteration 0 of the Seidel
+loop. Checkpoint-resumed runs do not repeat initialization, and the standalone
+initializer remains available for diagnostics. The projected allocation is an
 initialization heuristic, not an equilibrium or an access-allocation mechanism.
 
 The maintained algorithm uses private rival-headroom bounds and a final
@@ -104,26 +106,39 @@ diagnostics, not a common market-clearing access price. The earlier projected
 common access-price iteration was removed after it failed to converge.
 
 The separate two-follower access-auction experiment is under `model/auction/`.
-Each leader chooses continuous nodal bid quantity, pay-as-bid price, and energy
-capacity while embedding both the access-auction LP and the spot-market LP by
-primal feasibility, dual feasibility/stationarity, and strong duality. Its
-diagonalization driver supports Gauss-Seidel and simultaneous Gauss-Jacobi over
-the four thesis investors with no outside-option solve, damping, or dispatch
-regularizer. In Jacobi mode every investor responds to the same frozen bid
-snapshot, all sealed-bid proposals are applied simultaneously, and one common
-auction assigns awards. Convergence requires bid quantities, raw prices,
-durations, common awards, and unilateral embedded-award deviations to stabilize.
-After the last sweep, one common auction re-clear and one common spot
-market settlement report final awards, prices, access payments, and settled
-profits for all investors; the last optimistic best-response profits remain
-separate diagnostics. An optional exact
-`0.01` EUR/MW/day bid-price enumeration uses a deterministic `0.001`
-EUR/MW/day sub-tick merit priority to make equal-price auction ranking unique;
-the priority affects allocation but not pay-as-bid settlement. It uses the
-maintained spot-price bounds of `[-500,500]`, the
-`10,000` absolute bound for all other follower duals, and the same sparse rival
-and positive-generator-hour representation as the normal EPEC. This is an
-experimental extension and does not replace the maintained projection EPEC.
+Each leader chooses continuous nodal bid quantity, bid price, and energy
+capacity while embedding both the access auction and the spot-market LP by
+primal feasibility, dual feasibility/stationarity, and strong duality. The
+maintained payment rule is a uniform nodal clearing price: the auction
+objective carries a small strictly concave quadratic regularization (default
+`1e-3` EUR/MW^2/day) that makes the allocation unique, continuous in the bids,
+and symmetric among uncapped exact-price ties subject to bid-quantity limits,
+and every awarded MW pays the auction capacity dual rather than its own bid.
+When the nodal limit is slack the clearing price is zero. Independently
+re-cleared auctions resolve any
+degenerate multiplier face with a deterministic highest-rejected-bid
+convention. This mechanism replaces continuous pay-as-bid bidding, whose
+documented zero-price collapse, epsilon-overbidding race, and optimistic
+embedded tie selection prevented any meaningful price/quantity equilibrium;
+pay-as-bid remains available only as a legacy diagnostic mode, and the exact
+`0.01` EUR/MW/day tick enumeration with `0.001` sub-tick merit priority
+belongs to that legacy mode. Its diagonalization driver supports Gauss-Seidel
+and simultaneous Gauss-Jacobi over the four thesis investors with no
+outside-option solve, damping, or dispatch regularizer. In Jacobi mode every
+investor responds to the same frozen bid snapshot, all sealed-bid proposals
+are applied simultaneously, and one common auction assigns awards.
+Convergence requires bid quantities, raw prices, durations, common awards,
+unilateral embedded-award deviations, and, under the uniform rule, each
+investor's embedded nodal clearing price against the common re-clear price to
+stabilize. After the last sweep, one common auction re-clear and one common
+spot market settlement report final awards, clearing prices, access payments,
+and settled profits for all investors; the last optimistic best-response
+profits remain separate diagnostics. It uses the maintained spot-price bounds
+of `[-500,500]` and the `10,000` absolute bound for spot follower duals;
+auction duals are bounded by the bid-price cap under the uniform rule. The
+sparse rival and positive-generator-hour representation matches the normal
+EPEC. This is an experimental extension and does not replace the maintained
+projection EPEC.
 
 The main four-investor specification is:
 

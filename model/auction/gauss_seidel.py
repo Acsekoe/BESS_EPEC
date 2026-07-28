@@ -33,7 +33,12 @@ from auction_epec_results import (
     export_joint_auction_settlement,
     print_joint_auction_summary,
 )
-from nodal_access_auction_primal import Bid, awarded_mw, build_primal as build_auction_primal
+from nodal_access_auction_primal import (
+    Bid,
+    awarded_mw,
+    build_primal as build_auction_primal,
+    uniform_clearing_prices,
+)
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_auction_mpec import (
     RivalBid,
@@ -115,6 +120,17 @@ def validate_config(cfg: GaussSeidelConfig) -> None:
         raise ValueError("Bid-price tick must be nonnegative.")
     if cfg.tie_break_epsilon_eur_per_mw_day < 0.0:
         raise ValueError("Tie-break epsilon must be nonnegative.")
+    if cfg.payment_rule not in {"uniform", "pay_as_bid"}:
+        raise ValueError("Payment rule must be 'uniform' or 'pay_as_bid'.")
+    if cfg.payment_rule == "uniform":
+        if cfg.auction_quadratic_epsilon_eur_per_mw2_day <= 0.0:
+            raise ValueError("The uniform payment rule requires a positive quadratic epsilon.")
+        if cfg.bid_price_tick_eur_per_mw_day > 0.0:
+            raise ValueError(
+                "Exact tick enumeration is a pay-as-bid device; use --payment-rule pay_as_bid."
+            )
+    if cfg.clearing_price_tolerance_eur_per_mw_day < 0.0:
+        raise ValueError("Clearing-price tolerance must be nonnegative.")
     if cfg.bid_price_tick_eur_per_mw_day > 0.0:
         if cfg.active_nodes is None or len(cfg.active_nodes) != 1:
             raise ValueError("Exact tick enumeration requires exactly one active node.")
@@ -173,7 +189,7 @@ def initial_state(
         awards_mw=_empty_nested(investor_order, data.nodes),
     )
     _cleanup_strategy(state, cfg)
-    state.awards_mw = clear_initial_auction(state, data, cfg)
+    state.awards_mw, _ = clear_common_auction(state, data, cfg)
     return state
 
 
@@ -223,11 +239,20 @@ def state_bids(state: StrategyState, data: MarketData, cleanup_tol_mw: float) ->
     return bids
 
 
-def clear_initial_auction(
+def effective_quadratic_epsilon(cfg: GaussSeidelConfig) -> float:
+    return (
+        cfg.auction_quadratic_epsilon_eur_per_mw2_day
+        if cfg.payment_rule == "uniform"
+        else 0.0
+    )
+
+
+def clear_common_auction(
     state: StrategyState,
     data: MarketData,
     cfg: GaussSeidelConfig,
-) -> dict[str, dict[str, float]]:
+) -> tuple[dict[str, dict[str, float]], dict[str, float]]:
+    """Clear the complete bid vector; return common awards and clearing prices."""
     limits = {node: cfg.node_limit_mw for node in data.nodes}
     auction = build_auction_primal(
         state_bids(state, data, cfg.capacity_cleanup_tol_mw),
@@ -235,6 +260,7 @@ def clear_initial_auction(
         cfg.tie_break_epsilon_eur_per_mw_day
         if cfg.bid_price_tick_eur_per_mw_day > 0.0
         else 0.0,
+        effective_quadratic_epsilon(cfg),
     )
     solver = get_ipopt_solver(
         {
@@ -245,9 +271,9 @@ def clear_initial_auction(
     )
     termination = str(solver.solve(auction, tee=False).solver.termination_condition)
     if termination != "optimal":
-        raise RuntimeError(f"Initial auction clearing failed: {termination}")
+        raise RuntimeError(f"Common auction clearing failed: {termination}")
     flat = awarded_mw(auction)
-    return {
+    awards = {
         investor: {
             node: (
                 max(0.0, flat.get((investor, node), 0.0))
@@ -258,6 +284,12 @@ def clear_initial_auction(
         }
         for investor in state.quantity_mw
     }
+    clearing = (
+        uniform_clearing_prices(auction)
+        if cfg.payment_rule == "uniform"
+        else {node: 0.0 for node in data.nodes}
+    )
+    return awards, clearing
 
 
 def rivals_from_state(
@@ -323,6 +355,8 @@ def _solve_response_at_price(
             if cfg.bid_price_tick_eur_per_mw_day > 0.0
             else 0.0
         ),
+        payment_rule=cfg.payment_rule,
+        auction_quadratic_epsilon_eur_per_mw2_day=effective_quadratic_epsilon(cfg),
     )
     if fixed_bid_price is not None:
         model.active_bid_price[cfg.active_nodes[0]].fix(fixed_bid_price)
@@ -481,6 +515,32 @@ def max_award_difference(
     )
 
 
+def embedded_clearing_price_deviation(
+    summary: Mapping[str, Any],
+    state: StrategyState,
+    investor: str,
+    common_clearing: Mapping[str, float],
+    cfg: GaussSeidelConfig,
+    data: MarketData,
+) -> float:
+    """Gap between embedded and common clearing prices at payment-relevant nodes."""
+    if cfg.payment_rule != "uniform":
+        return 0.0
+    deviation = 0.0
+    for node in data.nodes:
+        row = summary["nodes"][node]
+        payment_relevant = (
+            row["active_award_mw"] > cfg.capacity_cleanup_tol_mw
+            or state.awards_mw[investor][node] > cfg.capacity_cleanup_tol_mw
+        )
+        if payment_relevant:
+            deviation = max(
+                deviation,
+                abs(row["auction_capacity_dual_eur_per_mw_day"] - common_clearing[node]),
+            )
+    return deviation
+
+
 def record_response(
     *,
     iteration: int,
@@ -489,6 +549,7 @@ def record_response(
     selection: str,
     changes: Mapping[str, float],
     common_award_change_mw: float,
+    clearing_price_deviation_eur_per_mw_day: float,
     state: StrategyState,
     cfg: GaussSeidelConfig,
     history: list[dict[str, Any]],
@@ -504,6 +565,9 @@ def record_response(
         "profit_eur_per_day": response.summary["profit_eur_per_day"],
         "selected_tick_price_eur_per_mw_day": response.selected_tick_price_eur_per_mw_day,
         "access_payment_eur_per_day": response.summary["access_payment_eur_per_day"],
+        "embedded_vs_common_clearing_price_deviation_eur_per_mw_day": (
+            clearing_price_deviation_eur_per_mw_day
+        ),
         "auction_strong_duality_gap": response.summary["auction_strong_duality_gap"],
         "spot_strong_duality_gap": response.summary["spot_strong_duality_gap"],
         "max_abs_price_dual_fraction_of_bound": response.summary[
@@ -664,7 +728,7 @@ def run_gauss_seidel(
         # The definitive sweep allocation is always obtained by one common
         # auction over the complete updated bid vector. In Jacobi this is the
         # only market clearing after simultaneous sealed-bid proposals.
-        state.awards_mw = clear_initial_auction(state, data, cfg)
+        state.awards_mw, common_clearing = clear_common_auction(state, data, cfg)
         _cleanup_strategy(state, cfg)
         common_award_change = max_award_difference(
             state.awards_mw, previous_awards, cfg.investor_order, data.nodes
@@ -673,6 +737,13 @@ def run_gauss_seidel(
             (changes["max_award_change_mw"] for _, _, _, changes in outcomes),
             default=0.0,
         )
+        clearing_price_deviations = {
+            investor: embedded_clearing_price_deviation(
+                response.summary, state, investor, common_clearing, cfg, data
+            )
+            for investor, response, _, _ in outcomes
+        }
+        max_clearing_price_deviation = max(clearing_price_deviations.values(), default=0.0)
 
         for investor, response, selection, changes in outcomes:
             record_response(
@@ -682,6 +753,7 @@ def run_gauss_seidel(
                 selection=selection,
                 changes=changes,
                 common_award_change_mw=common_award_change,
+                clearing_price_deviation_eur_per_mw_day=clearing_price_deviations[investor],
                 state=state,
                 cfg=cfg,
                 history=history,
@@ -720,12 +792,14 @@ def run_gauss_seidel(
             and max_unilateral_award_change <= cfg.award_tolerance_mw
             and max_price_change <= cfg.price_tolerance_eur_per_mw_day
             and max_duration_change <= cfg.duration_tolerance_hours
+            and max_clearing_price_deviation <= cfg.clearing_price_tolerance_eur_per_mw_day
         )
         print(
             f"  sweep changes: q={max_quantity_change:.4f} MW, "
             f"common award={common_award_change:.4f} MW, "
             f"max unilateral award={max_unilateral_award_change:.4f} MW, "
-            f"p={max_price_change:.4f} EUR/MW/day, h={max_duration_change:.4f} h"
+            f"p={max_price_change:.4f} EUR/MW/day, h={max_duration_change:.4f} h, "
+            f"mu dev={max_clearing_price_deviation:.4f} EUR/MW/day"
         )
         write_checkpoint(
             cfg.output_dir / "checkpoint.json",

@@ -2,16 +2,42 @@
 
 This folder contains the experimental two-follower auction EPEC. For each best
 response, one BESS investor is the leader and chooses continuous nodal access
-bid quantities, pay-as-bid prices, and awarded energy capacity. The model embeds
+bid quantities, bid prices, and awarded energy capacity. The model embeds
 exactly two followers:
 
-1. the nodal access-auction LP through primal feasibility, dual feasibility,
+1. the nodal access auction through primal feasibility, dual feasibility,
    and strong duality; and
 2. the fixed-demand electricity spot-market LP through primal feasibility,
    dual feasibility/stationarity, and strong duality.
 
 The leader maximizes storage spot revenue plus any owned-generator rent minus
-degradation, annualized BESS CAPEX, and its pay-as-bid access payment.
+degradation, annualized BESS CAPEX, and its access payment.
+
+## Payment rules
+
+The maintained default is the **uniform clearing-price rule**
+(`--payment-rule uniform`). The auction objective carries a small strictly
+concave quadratic regularization (`--auction-quadratic-epsilon`, default
+`1e-3` EUR/MW^2/day), so the allocation is unique and continuous in the bids
+and exact price ties split symmetrically among uncapped bidders, subject to
+their bid-quantity limits. Every awarded MW pays the nodal clearing price,
+i.e. the auction capacity dual, not its own bid. A bid price therefore
+only decides whether an investor is awarded at the margin; when the nodal
+limit is slack the clearing price is zero. This removes the two pay-as-bid
+pathologies documented in the workflow summaries: the zero-price collapse of
+uncontested bids and the epsilon-overbidding race without a smallest
+increment, whose tie face the optimistic embedded LP then resolved in the
+leader's favor. The remaining strategic margin under the uniform rule is
+demand reduction, which is an economically interpretable effect.
+
+The reference clearing price of an independently solved auction uses the KKT
+multiplier of the nodal limit; on a degenerate face without an interior award
+the deterministic highest-rejected-bid convention applies.
+
+The legacy **pay-as-bid rule** (`--payment-rule pay_as_bid`) keeps the linear
+auction where every award pays its own raw bid. Exact tick enumeration is only
+available with pay-as-bid; it is retained as a documented diagnostic of the
+pay-as-bid failure mode, not as the maintained mechanism.
 
 The multi-investor driver uses the same four thesis investors as the normal
 EPEC: merchant investors I1/I2 and the wind-heavy/solar-heavy portfolio
@@ -22,24 +48,32 @@ the consolidated output distinguishes each investor's last optimistic
 best-response profit from profit under the final common settlement.
 
 The core MPEC has no dispatch regularization, load shedding, objective penalty,
-damping, or outside-option solve. Bid prices can either remain continuous or be
-selected on an exact external grid. With `--bid-price-tick 0.01`, the driver
-enumerates zero, each rival price, and one tick above each rival, solves one MPEC
-per candidate, rejects candidates that fail the independent auction reclear or
-strong-duality checks, and selects the highest-profit valid response. A solver
-error for one price is stored in that candidate's diagnostics and does not abort
-the remaining price candidates.
+damping, or outside-option solve. In pay-as-bid mode, bid prices can either
+remain continuous or be selected on an exact external grid. With
+`--payment-rule pay_as_bid --bid-price-tick 0.01`, the driver enumerates zero,
+each rival price, and one tick above each rival, solves one MPEC per candidate,
+rejects candidates that fail the independent auction reclear or strong-duality
+checks, and selects the highest-profit valid response. A solver error for one
+price is stored in that candidate's diagnostics and does not abort the
+remaining price candidates.
 
 Equal raw grid bids use a deterministic `0.001` EUR/MW/day merit offset ordered
 by investor ID. The offset affects auction ranking only; access payment remains
 the raw submitted bid. Since the largest four-investor priority gap is `0.003`,
 it is smaller than one `0.01` tick and can never reverse two different raw bids.
+The uniform rule uses no merit offsets; the quadratic regularization splits
+exact ties symmetrically, subject to quantity caps, instead.
 
 ## Maintained numerical formulation
 
 - electricity-price variables `lam` and `lam_sys`: `[-500, 500]` EUR/MWh;
-- every other follower dual, including auction duals: absolute bound 10,000
-  with the appropriate sign restriction;
+- spot-market follower duals: absolute bound 10,000 with the appropriate sign
+  restriction;
+- auction duals: bounded by the bid-price cap (default 100 EUR/MW/day) under
+  the uniform rule, and by the 10,000 absolute bound under legacy pay-as-bid;
+- uniform rule: quadratic auction epsilon `1e-3` EUR/MW^2/day; the embedded
+  auction primal/dual/strong-duality system is the exact KKT system of the
+  concave auction QP;
 - Ipopt `tol=acceptable_tol=1e-4` and sparse MUMPS;
 - fixed demand and zero dispatch regularization;
 - active investor represented at every enabled node;
@@ -47,10 +81,13 @@ it is smaller than one `0.01` tick and can never reverse two different raw bids.
 - generator-hour blocks created only for strictly positive available capacity;
 - bid quantities at or below `1e-4` MW normalized to exact zero between
   Gauss--Seidel responses.
-- optional exact bid tick `0.01` EUR/MW/day with a `0.001` sub-tick merit
-  priority for unique ranking.
-- convergence requires bid quantity, raw bid price, duration, and auction award
-  changes all to satisfy their respective tolerances;
+- pay-as-bid only: optional exact bid tick `0.01` EUR/MW/day with a `0.001`
+  sub-tick merit priority for unique ranking.
+- convergence requires bid quantity, raw bid price, duration, common auction
+  award, and unilateral embedded-award changes all to satisfy their respective
+  tolerances; under the uniform rule each investor's embedded nodal clearing
+  price must additionally agree with the common re-clear price at its
+  payment-relevant nodes (`--clearing-price-tol`, default 0.05 EUR/MW/day);
 - the default raw-price tolerance is `0.001`, below the `0.01` grid step, so a
   one-tick strategic price movement cannot be reported as convergence.
 
@@ -59,16 +96,22 @@ spot market. Rivals are never collapsed into a virtual aggregate battery.
 
 ## Important interpretation
 
-In continuous mode (`--bid-price-tick 0`), equal bids can still leave auction
-awards non-unique and the MPEC remains optimistic. In tick mode, the sub-tick
-priority gives every raw-price tie a unique ranking. For the two-investor N8
-case, I1 wins at the tied raw price of 30.00 because it has higher deterministic
-priority; I2 must bid 30.01 to outrank I1.
+Under the uniform rule the embedded auction allocation is unique and
+continuous, so embedded and independently re-cleared awards should agree up to
+solver tolerance. This removes the follower-allocation tie face, but the
+nonconvex leader solve remains a local optimistic best-response candidate. The
+access payment depends on the auction capacity dual; on degenerate faces the
+optimistic MPEC can still select a favorable multiplier, which is why the
+clearing-price agreement check is part of convergence. Electricity-price
+nonuniqueness in the spot follower retains the optimistic convention.
 
-Continuous pay-as-bid competition can also have a best-response discontinuity:
-an investor may prefer an arbitrarily small increment above a rival bid without
-an attained optimum. Treat an Ipopt result as a local optimistic candidate, not
-as proof of a pure-strategy equilibrium.
+In legacy continuous pay-as-bid mode (`--bid-price-tick 0`), equal bids can
+leave auction awards non-unique and the MPEC remains optimistic. In tick mode,
+the sub-tick priority gives every raw-price tie a unique ranking. Continuous
+pay-as-bid competition also has a best-response discontinuity: an investor may
+prefer an arbitrarily small increment above a rival bid without an attained
+optimum. Treat any Ipopt result as a local optimistic candidate, not as proof
+of a pure-strategy equilibrium.
 
 ## Single best response
 
@@ -78,15 +121,17 @@ From the repository root:
 python model\auction\single_investor_auction_mpec.py `
   --active-investor I1 `
   --active-node N8 `
-  --rival-bids model\auction\data\auction_mpec_cases\two_investor_n8_uniform.json `
-  --bid-price-tick 0.01 `
-  --tie-break-epsilon 0.001 `
+  --rival-bids model\auction\data\auction_mpec_cases\n8_shadow_informed_100mw.json `
   --initial-bid-quantity 70 `
-  --initial-bid-price 30 `
+  --initial-bid-price 35 `
   --initial-duration 4 `
   --max-cpu-time 120 `
-  --output model\auction\output\single_investor_auction_mpec\clean_I1_N8.json
+  --output model\auction\output\single_investor_auction_mpec\uniform_I1_N8.json
 ```
+
+This uses the default uniform clearing-price rule. Add
+`--payment-rule pay_as_bid --bid-price-tick 0.01 --tie-break-epsilon 0.001`
+for the legacy tick-grid pay-as-bid diagnostic.
 
 Omit `--active-node` to allow the active investor to bid at all IEEE-9 nodes.
 
@@ -99,32 +144,37 @@ assigns awards. `--update-rule seidel` instead applies each response immediately
 Only a converged fixed point is interpreted as an EPEC solution; intermediate
 iteration snapshots are numerical conjectures, not public bid disclosure.
 
-Run the continuous-pay-as-bid Jacobi experiment from zero bids:
+Run the uniform-price Gauss-Seidel EPEC at N8 from the oversubscribed
+shadow-informed seed:
 
 ```powershell
 python model\auction\gauss_seidel.py `
-  --initial-bids model\auction\data\auction_mpec_cases\zero_competition.json `
+  --initial-bids model\auction\data\auction_mpec_cases\n8_shadow_informed_100mw.json `
+  --update-rule seidel `
   --investor-order I1 I2 I3 I4 `
-  --update-rule jacobi `
   --active-nodes N8 `
-  --bid-price-tick 0 `
   --zero-bid-numerical-quantity 70 `
   --zero-bid-numerical-price 0.01 `
   --price-tol 0.001 `
   --quantity-tol 0.05 `
   --award-tol 0.05 `
+  --clearing-price-tol 0.05 `
   --duration-tol 0.01 `
-  --max-iterations 3 `
-  --max-cpu-time 120 `
-  --output-dir model\auction\output\gauss_seidel\portfolio4_N8_zero_continuous_jacobi_3iters
+  --max-iterations 5 `
+  --max-cpu-time 180 `
+  --output-dir model\auction\output\gauss_seidel\portfolio4_N8_shadow100_uniform_seidel
 ```
 
-Run the four-investor tick-grid EPEC at N8 from the balanced bid profile:
+A candidate fixed point should be re-checked with the reversed investor order
+and one Jacobi sweep; at a genuine fixed point both leave the state unchanged.
+
+Run the legacy four-investor pay-as-bid tick-grid diagnostic at N8:
 
 ```powershell
 python model\auction\gauss_seidel.py `
   --initial-bids model\auction\data\auction_mpec_cases\balanced_competition.json `
   --active-nodes N8 `
+  --payment-rule pay_as_bid `
   --bid-price-tick 0.01 `
   --tie-break-epsilon 0.001 `
   --price-tol 0.001 `

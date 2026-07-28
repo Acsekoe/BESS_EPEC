@@ -322,6 +322,8 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
         "starting_iteration": cfg.starting_iteration,
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
+        "initialization_method": state.initialization_method,
+        "initializer_summary": state.initializer_summary,
         "damping": cfg.damping,
         "capacity_cleanup_tol_mw_mwh": cfg.capacity_cleanup_tol_mw_mwh,
         "price_bound_eur_per_mwh": cfg.price_bound_eur_per_mwh,
@@ -357,6 +359,7 @@ def export_epec_results(
     run_config = {
         "data_path": str(data_path),
         "update_rule": cfg.update_rule,
+        "initialization_method": state.initialization_method,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "dual_selection": "optimistic_mpec_no_price_penalty",
         "demand_model": "quadratic" if cfg.use_demand_curve else "fixed",
@@ -368,6 +371,13 @@ def export_epec_results(
         "embedded_sparsity": "active_investor_all_nodes; rivals_only_positive_mw_or_mwh; generators_only_positive_capacity_hours",
         "fixed_demand_shedding_block_omitted": not cfg.use_demand_curve,
         "capacity_cleanup_tol_mw_mwh": cfg.capacity_cleanup_tol_mw_mwh,
+        "automatic_jacobi_initializer": cfg.automatic_jacobi_initializer,
+        "jacobi_initializer_snapshot_power_mw": (
+            cfg.jacobi_initializer_snapshot_power_mw
+        ),
+        "jacobi_initializer_snapshot_ratio_hours": (
+            cfg.jacobi_initializer_snapshot_ratio_hours
+        ),
         "damping": cfg.damping,
         "max_iters": cfg.max_iters,
         "starting_iteration": cfg.starting_iteration,
@@ -477,6 +487,8 @@ def export_epec_results(
         "additional_max_iters": cfg.max_iters,
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
+        "initialization_method": state.initialization_method,
+        "initializer_summary": state.initializer_summary,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "demand_model": "quadratic" if cfg.use_demand_curve else "fixed",
         "dispatch_regularization_eur_per_mw2h": cfg.dispatch_regularization_eur_per_mw2h,

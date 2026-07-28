@@ -25,6 +25,9 @@ DEFAULT_CAPACITY_CLEANUP_TOL_MW = 1.0e-4
 DEFAULT_SOLVER_TOL = 1.0e-4
 DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY = 0.0
 DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY = 0.001
+DEFAULT_PAYMENT_RULE = "uniform"
+DEFAULT_AUCTION_QUADRATIC_EPSILON_EUR_PER_MW2_DAY = 1.0e-3
+DEFAULT_CLEARING_PRICE_TOLERANCE_EUR_PER_MW_DAY = 0.05
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,8 @@ class SingleMpecCliConfig:
     solver_tol: float
     bid_price_tick_eur_per_mw_day: float
     tie_break_epsilon_eur_per_mw_day: float
+    payment_rule: str
+    auction_quadratic_epsilon_eur_per_mw2_day: float
     output_path: Path
     tee: bool
 
@@ -67,6 +72,13 @@ class GaussSeidelConfig:
     solver_tol: float = DEFAULT_SOLVER_TOL
     bid_price_tick_eur_per_mw_day: float = DEFAULT_BID_PRICE_TICK_EUR_PER_MW_DAY
     tie_break_epsilon_eur_per_mw_day: float = DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY
+    payment_rule: str = DEFAULT_PAYMENT_RULE
+    auction_quadratic_epsilon_eur_per_mw2_day: float = (
+        DEFAULT_AUCTION_QUADRATIC_EPSILON_EUR_PER_MW2_DAY
+    )
+    clearing_price_tolerance_eur_per_mw_day: float = (
+        DEFAULT_CLEARING_PRICE_TOLERANCE_EUR_PER_MW_DAY
+    )
     zero_bid_numerical_quantity_mw: float = 70.0
     zero_bid_numerical_price_eur_per_mw_day: float = 0.01
     quantity_tolerance_mw: float = 0.05
@@ -110,6 +122,25 @@ def _add_common_numerical_arguments(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=DEFAULT_TIE_BREAK_EPSILON_EUR_PER_MW_DAY,
         help="Deterministic merit offset for equal raw bids; it is not included in payment.",
+    )
+    parser.add_argument(
+        "--payment-rule",
+        choices=("uniform", "pay_as_bid"),
+        default=DEFAULT_PAYMENT_RULE,
+        help=(
+            "uniform: every award pays the nodal clearing price (auction capacity dual); "
+            "pay_as_bid: legacy rule where every award pays its own raw bid."
+        ),
+    )
+    parser.add_argument(
+        "--auction-quadratic-epsilon",
+        type=float,
+        default=DEFAULT_AUCTION_QUADRATIC_EPSILON_EUR_PER_MW2_DAY,
+        help=(
+            "Strictly concave auction regularization in EUR/MW^2/day; it makes the "
+            "allocation unique and splits exact price ties pro rata. Used only with "
+            "the uniform payment rule."
+        ),
     )
 
 
@@ -155,6 +186,8 @@ def parse_single_mpec_cli(argv: Sequence[str] | None = None) -> SingleMpecCliCon
         solver_tol=args.solver_tol,
         bid_price_tick_eur_per_mw_day=args.bid_price_tick,
         tie_break_epsilon_eur_per_mw_day=args.tie_break_epsilon,
+        payment_rule=args.payment_rule,
+        auction_quadratic_epsilon_eur_per_mw2_day=args.auction_quadratic_epsilon,
         output_path=args.output,
         tee=args.tee,
     )
@@ -209,6 +242,15 @@ def parse_gauss_seidel_cli(argv: Sequence[str] | None = None) -> GaussSeidelConf
     parser.add_argument("--quantity-tol", type=float, default=0.05)
     parser.add_argument("--award-tol", type=float, default=0.05)
     parser.add_argument(
+        "--clearing-price-tol",
+        type=float,
+        default=DEFAULT_CLEARING_PRICE_TOLERANCE_EUR_PER_MW_DAY,
+        help=(
+            "Uniform rule only: maximum allowed gap between each embedded nodal "
+            "clearing price and the common re-clear price at payment-relevant nodes."
+        ),
+    )
+    parser.add_argument(
         "--price-tol",
         type=float,
         default=0.001,
@@ -236,6 +278,9 @@ def parse_gauss_seidel_cli(argv: Sequence[str] | None = None) -> GaussSeidelConf
         solver_tol=args.solver_tol,
         bid_price_tick_eur_per_mw_day=args.bid_price_tick,
         tie_break_epsilon_eur_per_mw_day=args.tie_break_epsilon,
+        payment_rule=args.payment_rule,
+        auction_quadratic_epsilon_eur_per_mw2_day=args.auction_quadratic_epsilon,
+        clearing_price_tolerance_eur_per_mw_day=args.clearing_price_tol,
         zero_bid_numerical_quantity_mw=args.zero_bid_numerical_quantity,
         zero_bid_numerical_price_eur_per_mw_day=args.zero_bid_numerical_price,
         quantity_tolerance_mw=args.quantity_tol,

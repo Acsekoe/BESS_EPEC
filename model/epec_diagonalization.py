@@ -89,6 +89,27 @@ def four_investor_portfolio_profiles(data: MarketData) -> tuple[InvestorConfig, 
         InvestorConfig(investor_id="I4", wacc=0.08, owned_generation_shares=solar_heavy),
     )
 
+
+def order_investors(
+    investors: tuple[InvestorConfig, ...], requested_order: list[str] | None
+) -> tuple[InvestorConfig, ...]:
+    """Return investors in an explicitly requested Gauss-Seidel solve order."""
+
+    if requested_order is None:
+        return investors
+    configured_ids = [investor.investor_id for investor in investors]
+    if (
+        len(requested_order) != len(configured_ids)
+        or len(set(requested_order)) != len(requested_order)
+        or set(requested_order) != set(configured_ids)
+    ):
+        raise ValueError(
+            "--investor-order must list every configured investor exactly once; "
+            f"expected {configured_ids}, received {requested_order}."
+        )
+    by_id = {investor.investor_id: investor for investor in investors}
+    return tuple(by_id[investor_id] for investor_id in requested_order)
+
 # Settlement price basis for investor revenue (drives BOTH the MPEC objective
 # and the final settlement, so it changes siting, not just reported profit):
 #   False -> nodal LMP: each investor is paid the locational price lam[n,t].
@@ -134,6 +155,19 @@ class EpecConfig:
     automatic_jacobi_initializer: bool = True
     jacobi_initializer_snapshot_power_mw: float = 0.0
     jacobi_initializer_snapshot_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS
+    strategic_proximal_penalty_eur_per_mw2_day: float = 0.0
+    strategic_proximal_energy_scale_hours: float = DEFAULT_INITIAL_RATIO_HOURS
+    strategic_proximal_price_scale_eur_per_mwh: float = 10.0
+    strategic_proximal_penalty_step_eur_per_mw2_day: float = 0.0
+    strategic_proximal_penalty_step_iterations: int = 5
+    strategic_bid_prices: bool = False
+    strategic_bid_price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH
+    strategic_price_floor_eur_per_mwh: float = 1.0
+    strategic_epsilon_penalty: float = 0.0
+    strategic_tol_abs_capacity_mw: float = 0.5
+    strategic_tol_abs_offer_mw: float = 0.25
+    strategic_tol_abs_price_eur_per_mwh: float = 0.5
+    strategic_consecutive_converged_sweeps: int = 3
     starting_iteration: int = 0
     resume_from: str | None = None
 
@@ -761,6 +795,15 @@ def parse_args() -> argparse.Namespace:
         "merchants + two same-WACC wind/solar-tilted RES portfolios.",
     )
     parser.add_argument(
+        "--investor-order",
+        nargs="+",
+        default=None,
+        help=(
+            "Explicit Gauss-Seidel solve order using configured investor IDs, "
+            "for example: --investor-order I3 I1 I4 I2."
+        ),
+    )
+    parser.add_argument(
         "--wacc",
         type=float,
         nargs="+",
@@ -921,6 +964,10 @@ def main() -> int:
         investors = tuple(
             InvestorConfig(investor_id=f"I{k + 1}", wacc=wacc) for k, wacc in enumerate(args.wacc)
         )
+    try:
+        investors = order_investors(investors, args.investor_order)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if args.settlement_price is None:
         system_price_settlement = SYSTEM_PRICE_SETTLEMENT
     else:
@@ -964,6 +1011,7 @@ def main() -> int:
     print(
         f"EPEC diagonalization: {len(investors)} investors "
         f"(WACC {', '.join(f'{i.wacc:.1%}' for i in investors)}), "
+        f"solve_order={','.join(i.investor_id for i in investors)}, "
         f"rule={cfg.update_rule}, damping={cfg.damping}, tol_rel={cfg.tol_rel}, "
         f"settlement price={'system (zonal)' if cfg.system_price_settlement else 'nodal (LMP)'}, "
         f"demand={args.demand_model}, dispatch_regularization={cfg.dispatch_regularization_eur_per_mw2h:.3e}, "

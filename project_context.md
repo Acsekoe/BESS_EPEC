@@ -1,6 +1,6 @@
 # Project Context: Strategic BESS Investment in Nodal Spot Markets
 
-Last updated: 2026-07-27
+Last updated: 2026-07-29
 
 ## Current objective
 
@@ -139,6 +139,50 @@ auction duals are bounded by the bid-price cap under the uniform rule. The
 sparse rival and positive-generator-hour representation matches the normal
 EPEC. This is an experimental extension and does not replace the maintained
 projection EPEC.
+
+The experimental strategic-operation extension is implemented in
+`model/epec_strategic_operation_diagonalization.py`. Investors choose hourly
+charge/discharge quantity offers in addition to nodal MW/MWh, while the ISO
+retains dispatch control inside those offers. The identically calibrated
+four-investor unregularized run reached 60 iterations without convergence:
+aggregate investment stabilized at about 195.451 MW / 632.085 MWh, but
+ownership/fine siting cycled across price-equivalent N3/N9 and merchant offers
+remained unstable. All MPEC solves were optimal and lower-level strong-duality
+gaps were small, so this was an algorithmic/nonunique-best-response issue.
+
+An optional proximal diagonalization penalty is available through
+`--proximal-penalty-eur-per-mw2-day`. It penalizes changes from the investor's
+previous MW/MWh capacity and withheld charge/discharge quantities; it does not
+penalize withholding itself, is off by default, and is excluded from the
+Jacobi initializer. A staircase continuation is also available: with a step of
+1 EUR/MW^2/day and five iterations per block, Seidel iterations 1-5 use zero,
+6-10 use one, 11-15 use two, and so forth. Resuming iteration 60 with a fixed
+coefficient of 1 EUR/MW^2/day
+produced a regularized fixed point in iteration 61 with realized penalties
+below 0.001 EUR/day per investor. An immediate unpenalized sweep moved again
+(`dP`, `dE`, and `dOffer` about 0.31) at effectively unchanged reported profit.
+Therefore the penalized result is an equilibrium-selection/numerical candidate,
+not evidence that the original raw strategy map has a unique fixed point.
+
+An optional two-sided strategic bidding mode is enabled with
+`--strategic-bid-prices`. Each investor then chooses an hourly charging buy-bid
+price/quantity pair and discharging sell-offer price/quantity pair. Submitted
+prices are complete market bids: they replace the investor's private
+degradation coefficients in the ISO objective, while physical degradation is
+still subtracted from realized investor profit. Charging bids enter the ISO
+cost-minimization objective with a negative sign (willingness to pay), and
+discharging offers enter with a positive sign. The active investor's prices are
+upper-level variables in its MPEC; rival prices are frozen parameters during
+each best response. A linear bid-consistency constraint prevents submitted
+prices from rewarding a same-hour efficiency-loss cycle, and joint settlement
+exports explicitly diagnose any simultaneous charging/discharging. Bid-price
+changes participate in damping, convergence, checkpointing, and the optional
+proximal penalty after normalization by a configurable EUR/MWh price scale.
+The separate `--strategic-epsilon-penalty` is an unnormalized direct
+epsilon-times-square selector on charging buy-bid and discharging sell-offer
+prices only. It contains no direct MW, MWh, or quantity-offer term; those
+strategies remain governed by profit and the optional proximal continuation.
+Without the flag, the earlier quantity-only formulation is preserved.
 
 The main four-investor specification is:
 

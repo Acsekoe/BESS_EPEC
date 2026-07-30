@@ -1,0 +1,334 @@
+{
+  "converged": true,
+  "stop_reason": "converged in 18 iterations",
+  "iterations": 18,
+  "starting_iteration": 0,
+  "additional_max_iters": 30,
+  "resume_from": null,
+  "update_rule": "seidel",
+  "investor_solve_order": [
+    "I2",
+    "I4",
+    "I1",
+    "I3"
+  ],
+  "initialization_method": "jacobi_common_snapshot_projected",
+  "initializer_summary": {
+    "interpretation": "feasible initialization heuristic, not an equilibrium",
+    "snapshot_power_mw_per_investor_node": 0.0,
+    "snapshot_ratio_hours": 2.0,
+    "numerical_guess_power_mw_per_node": 10.0,
+    "numerical_guess_ratio_hours": 2.0,
+    "responses": {
+      "I2": {
+        "termination": "optimal",
+        "solve_seconds": 1.8589705999474972,
+        "desired_power_mw": 98.21729262597343,
+        "desired_energy_mwh": 367.43617022678336,
+        "optimistic_mpec_profit_eur_per_day": 11059.374399585793,
+        "strong_duality_gap": 0.001411856443155557
+      },
+      "I4": {
+        "termination": "optimal",
+        "solve_seconds": 2.156460699858144,
+        "desired_power_mw": 195.47281216164134,
+        "desired_energy_mwh": 632.0848489635098,
+        "optimistic_mpec_profit_eur_per_day": 209357.06607104937,
+        "strong_duality_gap": 0.0017574653029441833
+      },
+      "I1": {
+        "termination": "optimal",
+        "solve_seconds": 16.970632799901068,
+        "desired_power_mw": 195.4509787528982,
+        "desired_energy_mwh": 632.0847748391104,
+        "optimistic_mpec_profit_eur_per_day": 22398.118568127342,
+        "strong_duality_gap": 0.020384147530421615
+      },
+      "I3": {
+        "termination": "optimal",
+        "solve_seconds": 5.2992761000059545,
+        "desired_power_mw": 212.74894053872816,
+        "desired_energy_mwh": 649.2747328732174,
+        "optimistic_mpec_profit_eur_per_day": 146449.34921139412,
+        "strong_duality_gap": 0.0007280993741005659
+      }
+    },
+    "nodes": {
+      "N1": {
+        "desired_total_power_mw": 2.2526797627744707e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N2": {
+        "desired_total_power_mw": 19.392754247627085,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 19.392750426910055,
+        "limit_mw": 100.0
+      },
+      "N3": {
+        "desired_total_power_mw": 131.97542034618144,
+        "projection_scale": 0.7577168516508036,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      },
+      "N4": {
+        "desired_total_power_mw": 2.229157340383822e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N5": {
+        "desired_total_power_mw": 2.0427930181241168e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N6": {
+        "desired_total_power_mw": 1.167422361888438e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N7": {
+        "desired_total_power_mw": 48.15519549714368,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 48.15519173430083,
+        "limit_mw": 100.0
+      },
+      "N8": {
+        "desired_total_power_mw": 335.2050495351469,
+        "projection_scale": 0.29832486156958926,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      },
+      "N9": {
+        "desired_total_power_mw": 167.1615275326172,
+        "projection_scale": 0.5982237747886553,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      }
+    }
+  },
+  "settlement_price_basis": "nodal",
+  "demand_model": "fixed",
+  "dispatch_regularization_eur_per_mw2h": 0.0,
+  "solver_tol": 0.0001,
+  "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
+  "damping": 0.7,
+  "tol_rel": 0.02,
+  "projection_event_count": 0,
+  "investors": {
+    "I2": {
+      "wacc": 0.12,
+      "total_power_mw": 5.755084814596704,
+      "total_energy_mwh": 27.766883006140187,
+      "settled_spot_revenue_eur_per_day": 829.5747914511916,
+      "settled_generation_rent_eur_per_day": 0.0,
+      "owned_generation_shares": {},
+      "settled_degradation_eur_per_day": 417.41475110292106,
+      "capex_daily_eur_per_day": 225.1107876688937,
+      "settled_profit_eur_per_day": 187.04925267937682,
+      "capacity_proportional_profit_eur_per_day": 147.39499076760728,
+      "dispatch_attribution_band_eur_per_day": 39.65426191176954,
+      "last_optimistic_mpec_profit_eur_per_day": 1000.2629016594691,
+      "optimistic_mpec_minus_settled_eur_per_day": 813.2136489800923,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 40.473251962939194,
+      "last_best_response_access_shadow_price_eur_per_mw_day": {
+        "N1": 8.672154665177381e-08,
+        "N2": 8.722124340637289e-08,
+        "N3": 1.34982373536619e-05,
+        "N4": 8.672335433079005e-08,
+        "N5": 8.675247559487964e-08,
+        "N6": 8.641133255672084e-08,
+        "N7": 8.722652049555736e-08,
+        "N8": 35.36500703233083,
+        "N9": -1.3093407234146034e-05
+      },
+      "throughput_mwh": 55.65530014705614
+    },
+    "I4": {
+      "wacc": 0.08,
+      "total_power_mw": 54.328570775299184,
+      "total_energy_mwh": 181.5665577072196,
+      "settled_spot_revenue_eur_per_day": 5725.6314762710535,
+      "settled_generation_rent_eur_per_day": 187870.6574680714,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 0.19999999999999996,
+        "RES_PV_N6": 0.8,
+        "RES_PV_N8": 0.8
+      },
+      "settled_degradation_eur_per_day": 2729.457640116837,
+      "capex_daily_eur_per_day": 1206.5252917187613,
+      "settled_profit_eur_per_day": 189660.30601250686,
+      "capacity_proportional_profit_eur_per_day": 189700.4373698785,
+      "dispatch_attribution_band_eur_per_day": 40.131357371632475,
+      "last_optimistic_mpec_profit_eur_per_day": 210703.05836208194,
+      "optimistic_mpec_minus_settled_eur_per_day": 21042.75234957508,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 14.724530643835347,
+      "last_best_response_access_shadow_price_eur_per_mw_day": {
+        "N1": 4.8303550204415247e-05,
+        "N2": 2.1630456734687114e-05,
+        "N3": -1.8306212904214763e-05,
+        "N4": 4.8071134729564935e-05,
+        "N5": 4.989156586547311e-05,
+        "N6": 1.6783944073977483e-05,
+        "N7": 2.156758405395073e-05,
+        "N8": 33.05112898311124,
+        "N9": 2.9714057860373546e-05
+      },
+      "throughput_mwh": 363.9276853489116
+    },
+    "I1": {
+      "wacc": 0.08,
+      "total_power_mw": 44.56294514087499,
+      "total_energy_mwh": 161.66551859196213,
+      "settled_spot_revenue_eur_per_day": 5567.756106704461,
+      "settled_generation_rent_eur_per_day": 0.0,
+      "owned_generation_shares": {},
+      "settled_degradation_eur_per_day": 2430.2888897432754,
+      "capex_daily_eur_per_day": 1066.2362255664684,
+      "settled_profit_eur_per_day": 2071.230991394717,
+      "capacity_proportional_profit_eur_per_day": 2111.6229128725977,
+      "dispatch_attribution_band_eur_per_day": 40.391921477880715,
+      "last_optimistic_mpec_profit_eur_per_day": 6254.566770077706,
+      "optimistic_mpec_minus_settled_eur_per_day": 4183.335778682989,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 40.473213696913625,
+      "last_best_response_access_shadow_price_eur_per_mw_day": {
+        "N1": 1.2126948646528041e-06,
+        "N2": 1.0712672295580901e-06,
+        "N3": -6.281356179120776e-06,
+        "N4": 1.2129937383477701e-06,
+        "N5": 1.1966844184514325e-06,
+        "N6": 1.3332593404323471e-06,
+        "N7": 1.071259050166373e-06,
+        "N8": 32.926623562007215,
+        "N9": 4.627918464640092e-06
+      },
+      "throughput_mwh": 324.0385186324367
+    },
+    "I3": {
+      "wacc": 0.08,
+      "total_power_mw": 90.80439739921317,
+      "total_energy_mwh": 261.0858727733229,
+      "settled_spot_revenue_eur_per_day": 7810.396868588383,
+      "settled_generation_rent_eur_per_day": 135779.9456439316,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 0.8,
+        "RES_PV_N6": 0.19999999999999996,
+        "RES_PV_N8": 0.19999999999999996
+      },
+      "settled_degradation_eur_per_day": 3924.857337570446,
+      "capex_daily_eur_per_day": 1761.7106696072901,
+      "settled_profit_eur_per_day": 137903.7745053422,
+      "capacity_proportional_profit_eur_per_day": 137862.90548859787,
+      "dispatch_attribution_band_eur_per_day": 40.869016744341934,
+      "last_optimistic_mpec_profit_eur_per_day": 140579.06230470398,
+      "optimistic_mpec_minus_settled_eur_per_day": 2675.287799361773,
+      "mpec_lambda_max_abs_diff_vs_joint_eur_per_mwh": 14.724528525145697,
+      "last_best_response_access_shadow_price_eur_per_mw_day": {
+        "N1": 8.499500918759628e-06,
+        "N2": 3.6177648631659973e-06,
+        "N3": 3.30414243251974e-06,
+        "N4": 8.553327018920638e-06,
+        "N5": 8.786480392295149e-06,
+        "N6": 8.393426811894967e-06,
+        "N7": 3.6186905458142596e-06,
+        "N8": 32.79418919122165,
+        "N9": -2.868391331803121e-06
+      },
+      "throughput_mwh": 523.3143116760594
+    }
+  },
+  "node_shares": {
+    "N1": {
+      "I2": 0.0,
+      "I4": 0.0,
+      "I1": 0.0,
+      "I3": 0.0,
+      "total_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N2": {
+      "I2": 0.0,
+      "I4": 0.0,
+      "I1": 0.0,
+      "I3": 0.0,
+      "total_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N3": {
+      "I2": 1.7658941500741,
+      "I4": 25.178696069754974,
+      "I1": 8.4874080266073,
+      "I3": 0.0032943311150976126,
+      "total_mw": 35.43529257755147,
+      "limit_mw": 100.0
+    },
+    "N4": {
+      "I2": 0.0,
+      "I4": 0.0,
+      "I1": 0.0,
+      "I3": 0.0,
+      "total_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N5": {
+      "I2": 0.0,
+      "I4": 0.0,
+      "I1": 0.0,
+      "I3": 0.0,
+      "total_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N6": {
+      "I2": 0.0,
+      "I4": 0.0,
+      "I1": 0.0,
+      "I3": 0.0,
+      "total_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N7": {
+      "I2": 0.0,
+      "I4": 0.0,
+      "I1": 0.0,
+      "I3": 0.0,
+      "total_mw": 0.0,
+      "limit_mw": 100.0
+    },
+    "N8": {
+      "I2": 3.988227631645855,
+      "I4": 29.149730557609303,
+      "I1": 36.07535680345542,
+      "I3": 30.786685043752094,
+      "total_mw": 100.00000003646267,
+      "limit_mw": 100.0
+    },
+    "N9": {
+      "I2": 0.0009630328767492218,
+      "I4": 0.00014414793491023475,
+      "I1": 0.00018031081226969008,
+      "I3": 60.01441802434598,
+      "total_mw": 60.015705515969906,
+      "limit_mw": 100.0
+    }
+  },
+  "max_node_overload_mw": 3.646266577561619e-08,
+  "shared_limit_feasible": true,
+  "joint_lambda_min_eur_per_mwh": 24.17093163505174,
+  "joint_lambda_max_eur_per_mwh": 84.29424089485809,
+  "simultaneous_charge_discharge_mwh": 0.00011545631588077892,
+  "max_simultaneous_charge_discharge_mw": 9.74349980939844e-07,
+  "generator_calibration": {
+    "conventional_generators": [
+      "G_IEEE1",
+      "G_IEEE3"
+    ],
+    "conventional_capacity_adder_mw_each": 20.0,
+    "peaker_id": "G_PEAKER_N5",
+    "peaker_node": "N5",
+    "peaker_capacity_mw": 200.0,
+    "peaker_cost_eur_per_mwh": 95.0
+  }
+}

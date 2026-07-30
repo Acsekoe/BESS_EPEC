@@ -1,0 +1,216 @@
+{
+  "status": "converged in 7 iterations",
+  "converged": true,
+  "iteration": 7,
+  "starting_iteration": 0,
+  "resume_from": null,
+  "update_rule": "seidel",
+  "investor_solve_order": [
+    "I1",
+    "I4",
+    "I2",
+    "I3"
+  ],
+  "initialization_method": "jacobi_common_snapshot_projected",
+  "initializer_summary": {
+    "interpretation": "feasible initialization heuristic, not an equilibrium",
+    "snapshot_power_mw_per_investor_node": 0.0,
+    "snapshot_ratio_hours": 2.0,
+    "numerical_guess_power_mw_per_node": 10.0,
+    "numerical_guess_ratio_hours": 2.0,
+    "responses": {
+      "I1": {
+        "termination": "optimal",
+        "solve_seconds": 16.84488709992729,
+        "desired_power_mw": 195.4509787528982,
+        "desired_energy_mwh": 632.0847748391104,
+        "optimistic_mpec_profit_eur_per_day": 22398.118568127342,
+        "strong_duality_gap": 0.020384147530421615
+      },
+      "I4": {
+        "termination": "optimal",
+        "solve_seconds": 2.081474000122398,
+        "desired_power_mw": 195.47281216164134,
+        "desired_energy_mwh": 632.0848489635098,
+        "optimistic_mpec_profit_eur_per_day": 209357.06607104937,
+        "strong_duality_gap": 0.0017574653029441833
+      },
+      "I2": {
+        "termination": "optimal",
+        "solve_seconds": 1.783593500033021,
+        "desired_power_mw": 98.21729262597343,
+        "desired_energy_mwh": 367.43617022678336,
+        "optimistic_mpec_profit_eur_per_day": 11059.374399585793,
+        "strong_duality_gap": 0.001411856443155557
+      },
+      "I3": {
+        "termination": "optimal",
+        "solve_seconds": 5.160184199921787,
+        "desired_power_mw": 212.74894053872816,
+        "desired_energy_mwh": 649.2747328732174,
+        "optimistic_mpec_profit_eur_per_day": 146449.34921139412,
+        "strong_duality_gap": 0.0007280993741005659
+      }
+    },
+    "nodes": {
+      "N1": {
+        "desired_total_power_mw": 2.2526797627744707e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N2": {
+        "desired_total_power_mw": 19.392754247627085,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 19.392750426910055,
+        "limit_mw": 100.0
+      },
+      "N3": {
+        "desired_total_power_mw": 131.97542034618144,
+        "projection_scale": 0.7577168516508036,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      },
+      "N4": {
+        "desired_total_power_mw": 2.229157340383822e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N5": {
+        "desired_total_power_mw": 2.0427930181241168e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N6": {
+        "desired_total_power_mw": 1.167422361888438e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N7": {
+        "desired_total_power_mw": 48.15519549714368,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 48.15519173430083,
+        "limit_mw": 100.0
+      },
+      "N8": {
+        "desired_total_power_mw": 335.2050495351469,
+        "projection_scale": 0.29832486156958926,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      },
+      "N9": {
+        "desired_total_power_mw": 167.1615275326172,
+        "projection_scale": 0.5982237747886553,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      }
+    }
+  },
+  "damping": 0.7,
+  "capacity_cleanup_tol_mw_mwh": 0.0001,
+  "price_bound_eur_per_mwh": 500.0,
+  "dual_bound_eur_per_mwh": 10000.0,
+  "node_limit_mw": 100.0,
+  "node_total_power_mw": {
+    "N1": 0.0,
+    "N2": 0.004252603745288009,
+    "N3": 42.754972964160444,
+    "N4": 0.0,
+    "N5": 0.0,
+    "N6": 0.0,
+    "N7": 0.010542966564679072,
+    "N8": 99.99999998596992,
+    "N9": 52.69137817768079
+  },
+  "node_excess_mw": {
+    "N1": -100.0,
+    "N2": -99.99574739625471,
+    "N3": -57.245027035839556,
+    "N4": -100.0,
+    "N5": -100.0,
+    "N6": -100.0,
+    "N7": -99.98945703343531,
+    "N8": -1.4030078432369919e-08,
+    "N9": -47.30862182231921
+  },
+  "max_node_overload_mw": 0.0,
+  "x_power_mw": {
+    "I1|N1": 0.0,
+    "I4|N1": 0.0,
+    "I2|N1": 0.0,
+    "I3|N1": 0.0,
+    "I1|N2": 0.0,
+    "I4|N2": 0.0,
+    "I2|N2": 0.00032117113232549906,
+    "I3|N2": 0.00393143261296251,
+    "I1|N3": 1.9305698724834048,
+    "I4|N3": 36.483104685899455,
+    "I2|N3": 4.3323232014751465,
+    "I3|N3": 0.008975204302435657,
+    "I1|N4": 0.0,
+    "I4|N4": 0.0,
+    "I2|N4": 0.0,
+    "I3|N4": 0.0,
+    "I1|N5": 0.0,
+    "I4|N5": 0.0,
+    "I2|N5": 0.0,
+    "I3|N5": 0.0,
+    "I1|N6": 0.0,
+    "I4|N6": 0.0,
+    "I2|N6": 0.0,
+    "I3|N6": 0.0,
+    "I1|N7": 0.0,
+    "I4|N7": 0.0,
+    "I2|N7": 0.006605660351835586,
+    "I3|N7": 0.003937306212843486,
+    "I1|N8": 15.142431982786825,
+    "I4|N8": 40.400870566919295,
+    "I2|N8": 14.591716715446431,
+    "I3|N8": 29.864980720817375,
+    "I1|N9": 0.006723367542188816,
+    "I4|N9": 0.007184266890805745,
+    "I2|N9": 0.002101882229030854,
+    "I3|N9": 52.675368661018766
+  },
+  "x_energy_mwh": {
+    "I1|N1": 0.0,
+    "I4|N1": 0.0,
+    "I2|N1": 0.0,
+    "I3|N1": 0.0,
+    "I1|N2": 0.0,
+    "I4|N2": 0.0,
+    "I2|N2": 0.0006434670982953665,
+    "I3|N2": 0.007864103350678392,
+    "I1|N3": 6.541221274529476,
+    "I4|N3": 72.9667339790745,
+    "I2|N3": 16.220194739517304,
+    "I3|N3": 0.019760538569708497,
+    "I1|N4": 0.0,
+    "I4|N4": 0.0,
+    "I2|N4": 0.0,
+    "I3|N4": 0.0,
+    "I1|N5": 0.0,
+    "I4|N5": 0.0,
+    "I2|N5": 0.0,
+    "I3|N5": 0.0,
+    "I1|N6": 0.0,
+    "I4|N6": 0.0,
+    "I2|N6": 0.0,
+    "I3|N6": 0.0,
+    "I1|N7": 0.0,
+    "I4|N7": 0.0,
+    "I2|N7": 0.013212449648153315,
+    "I3|N7": 0.007875851304509397,
+    "I1|N8": 65.25327150904428,
+    "I4|N8": 165.61440087885822,
+    "I2|N8": 70.31050110174294,
+    "I3|N8": 127.96913173035347,
+    "I1|N9": 0.014430902416970499,
+    "I4|N9": 0.015524680332394777,
+    "I2|N9": 0.00785158093520749,
+    "I3|N9": 107.14099844051216
+  }
+}

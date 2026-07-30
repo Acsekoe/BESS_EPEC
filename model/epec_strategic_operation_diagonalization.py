@@ -2,18 +2,30 @@
 
 This driver is deliberately separate from ``epec_diagonalization.py``. The
 maintained driver keeps storage fully available to the ISO; this experiment
-adds hourly charge/discharge quantity offers to every investor's strategy.
+adds hourly charge/discharge quantities and, optionally, charging buy-bid and
+discharging sell-offer prices to every investor's strategy.
 
 A fresh run first solves one common-snapshot Gauss-Jacobi best-response sweep,
 projects overloaded nodes proportionally, and then starts damped Gauss-Seidel.
 Capacities and effective hourly offers are both frozen for rivals and updated
 for the active investor.
+
+An optional proximal penalty can select a nearby capacity/withholding best
+response during Gauss-Seidel. It is disabled by default and excluded from the
+Jacobi initializer. A converged penalized run remains a regularized candidate
+that requires an unpenalized best-response check.
+
+An optional direct epsilon-times-square penalty pins strategic bid prices
+toward zero without directly penalizing capacity, energy, or quantity offers.
+Convergence uses absolute capacity, withholding, and price norms for three
+consecutive sweeps; the old maximum-relative changes remain diagnostics only.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -30,6 +42,7 @@ from epec_diagonalization import (
     EpecConfig,
     clean_capacity_pair,
     four_investor_portfolio_profiles,
+    order_investors,
     relative_delta,
 )
 from epec_results import compute_joint_settlement, export_epec_results, print_epec_summary
@@ -69,10 +82,15 @@ class StrategicBestResponse:
     proposed_energy: dict[str, float]
     proposed_offer_charge: dict[tuple[str, int], float]
     proposed_offer_discharge: dict[tuple[str, int], float]
+    proposed_bid_price_charge: dict[tuple[str, int], float]
+    proposed_offer_price_discharge: dict[tuple[str, int], float]
     accepted_charge: dict[tuple[str, int], float]
     accepted_discharge: dict[tuple[str, int], float]
     private_headroom_limit_mw: dict[str, float]
     optimistic_mpec_profit_eur_per_day: float
+    proximal_penalty_eur_per_day: float
+    epsilon_penalty_eur_per_day: float
+    penalized_objective_eur_per_day: float
     access_shadow_price_eur_per_mw_day: dict[str, float]
     strong_duality_gap: float
     model: pyo.ConcreteModel | None
@@ -88,6 +106,8 @@ class StrategicEpecState:
     x_energy: dict[tuple[str, str], float]
     offer_charge: dict[tuple[str, str, int], float]
     offer_discharge: dict[tuple[str, str, int], float]
+    bid_price_charge: dict[tuple[str, str, int], float]
+    offer_price_discharge: dict[tuple[str, str, int], float]
     iteration: int = 0
     converged: bool = False
     stop_reason: str = ""
@@ -98,6 +118,8 @@ class StrategicEpecState:
     initialization_method: str = "uniform_seed_full_availability"
     initializer_summary: dict = field(default_factory=dict)
     offer_convergence_history: list[dict] = field(default_factory=list)
+    proximal_history: list[dict] = field(default_factory=list)
+    consecutive_converged_sweeps: int = 0
 
 
 def separate_rival_strategies(
@@ -111,6 +133,8 @@ def separate_rival_strategies(
     rival_energy: dict[str, dict[str, float]] = {}
     rival_charge: dict[str, dict[tuple[str, int], float]] = {}
     rival_discharge: dict[str, dict[tuple[str, int], float]] = {}
+    rival_charge_price: dict[str, dict[tuple[str, int], float]] = {}
+    rival_discharge_price: dict[str, dict[tuple[str, int], float]] = {}
     for investor in cfg.investors:
         rival_id = investor.investor_id
         if rival_id == active_id:
@@ -137,7 +161,24 @@ def separate_rival_strategies(
             for node in nodes
             for time in times
         }
-    return rival_power, rival_energy, rival_charge, rival_discharge
+        rival_charge_price[rival_id] = {
+            (node, time): state.bid_price_charge[rival_id, node, time]
+            for node in nodes
+            for time in times
+        }
+        rival_discharge_price[rival_id] = {
+            (node, time): state.offer_price_discharge[rival_id, node, time]
+            for node in nodes
+            for time in times
+        }
+    return (
+        rival_power,
+        rival_energy,
+        rival_charge,
+        rival_discharge,
+        rival_charge_price,
+        rival_discharge_price,
+    )
 
 
 def _effective_offer(raw_offer: float, accepted: float, installed_power: float) -> float:
@@ -148,6 +189,40 @@ def _effective_offer(raw_offer: float, accepted: float, installed_power: float) 
     return min(max(0.0, raw_offer), installed_power)
 
 
+def _effective_bid_price(
+    raw_price: float,
+    offered_quantity_mw: float,
+    truthful_price: float,
+    bound: float,
+) -> float:
+    """Canonicalize a price attached to zero offered quantity."""
+
+    if offered_quantity_mw <= OFFER_CANONICAL_SLACK_MW:
+        return truthful_price
+    return min(bound, max(-bound, raw_price))
+
+
+def proximal_coefficient_for_iteration(cfg: EpecConfig, iteration: int) -> float:
+    """Return the fixed or staircase proximal coefficient for one Seidel sweep."""
+
+    step = cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+    if step <= 0.0:
+        return cfg.strategic_proximal_penalty_eur_per_mw2_day
+    block = max(0, (int(iteration) - 1) // cfg.strategic_proximal_penalty_step_iterations)
+    return step * block
+
+
+def proximal_regularization_enabled(cfg: EpecConfig) -> bool:
+    return (
+        cfg.strategic_proximal_penalty_eur_per_mw2_day > 0.0
+        or cfg.strategic_proximal_penalty_step_eur_per_mw2_day > 0.0
+    )
+
+
+def strategy_regularization_enabled(cfg: EpecConfig) -> bool:
+    return proximal_regularization_enabled(cfg) or cfg.strategic_epsilon_penalty > 0.0
+
+
 def solve_best_response(
     data,
     cfg: EpecConfig,
@@ -156,10 +231,14 @@ def solve_best_response(
     rival_energy,
     rival_charge,
     rival_discharge,
+    rival_charge_price,
+    rival_discharge_price,
     previous_power: dict[str, float],
     previous_energy: dict[str, float],
     previous_charge: dict[tuple[str, int], float],
     previous_discharge: dict[tuple[str, int], float],
+    previous_charge_price: dict[tuple[str, int], float],
+    previous_discharge_price: dict[tuple[str, int], float],
     *,
     initial_guess_power: dict[str, float] | None = None,
     initial_guess_energy: dict[str, float] | None = None,
@@ -178,6 +257,12 @@ def solve_best_response(
             rival_energy_mwh_by_unit=rival_energy,
             rival_offer_charge_mw_by_unit=rival_charge,
             rival_offer_discharge_mw_by_unit=rival_discharge,
+            strategic_bid_prices=cfg.strategic_bid_prices,
+            rival_bid_price_charge_eur_per_mwh_by_unit=rival_charge_price,
+            rival_offer_price_discharge_eur_per_mwh_by_unit=rival_discharge_price,
+            bid_price_bound_eur_per_mwh=(
+                cfg.strategic_bid_price_bound_eur_per_mwh
+            ),
             rival_degradation_eur_per_mwh_by_unit={
                 other.investor_id: other.degradation_eur_per_mwh
                 for other in cfg.investors
@@ -191,6 +276,24 @@ def solve_best_response(
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
             system_price_settlement=cfg.system_price_settlement,
             solver_tol=cfg.solver_tol,
+            proximal_penalty_eur_per_mw2_day=(
+                cfg.strategic_proximal_penalty_eur_per_mw2_day
+            ),
+            proximal_energy_scale_hours=cfg.strategic_proximal_energy_scale_hours,
+            proximal_price_scale_eur_per_mwh=(
+                cfg.strategic_proximal_price_scale_eur_per_mwh
+            ),
+            proximal_reference_power_mw=previous_power,
+            proximal_reference_energy_mwh=previous_energy,
+            proximal_reference_offer_charge_mw=previous_charge,
+            proximal_reference_offer_discharge_mw=previous_discharge,
+            proximal_reference_bid_price_charge_eur_per_mwh=(
+                previous_charge_price
+            ),
+            proximal_reference_offer_price_discharge_eur_per_mwh=(
+                previous_discharge_price
+            ),
+            strategic_epsilon_penalty=cfg.strategic_epsilon_penalty,
             initialize_model=False,
         )
         for node in nodes:
@@ -219,6 +322,13 @@ def solve_best_response(
                 model.Q_offer_discharge[node, time_].set_value(
                     min(power, max(0.0, shrink * previous_discharge[node, time_]))
                 )
+                if cfg.strategic_bid_prices:
+                    model.p_bid_charge[node, time_].set_value(
+                        previous_charge_price[node, time_]
+                    )
+                    model.p_offer_discharge[node, time_].set_value(
+                        previous_discharge_price[node, time_]
+                    )
 
         start = time.perf_counter()
         try:
@@ -253,9 +363,14 @@ def solve_best_response(
             dict(previous_energy),
             dict(previous_charge),
             dict(previous_discharge),
+            dict(previous_charge_price),
+            dict(previous_discharge_price),
             {(node, time_): 0.0 for node in nodes for time_ in times},
             {(node, time_): 0.0 for node in nodes for time_ in times},
             headroom,
+            float("nan"),
+            float("nan"),
+            float("nan"),
             float("nan"),
             {node: float("nan") for node in nodes},
             float("nan"),
@@ -292,6 +407,30 @@ def solve_best_response(
         for node in nodes
         for time_ in times
     }
+    proposed_charge_price = {
+        (node, time_): _effective_bid_price(
+            value(model.p_bid_charge[node, time_]),
+            proposed_charge[node, time_],
+            -0.5 * investor.degradation_eur_per_mwh,
+            cfg.strategic_bid_price_bound_eur_per_mwh,
+        )
+        if cfg.strategic_bid_prices
+        else previous_charge_price[node, time_]
+        for node in nodes
+        for time_ in times
+    }
+    proposed_discharge_price = {
+        (node, time_): _effective_bid_price(
+            value(model.p_offer_discharge[node, time_]),
+            proposed_discharge[node, time_],
+            0.5 * investor.degradation_eur_per_mwh,
+            cfg.strategic_bid_price_bound_eur_per_mwh,
+        )
+        if cfg.strategic_bid_prices
+        else previous_discharge_price[node, time_]
+        for node in nodes
+        for time_ in times
+    }
     return StrategicBestResponse(
         investor.investor_id,
         termination,
@@ -300,17 +439,24 @@ def solve_best_response(
         proposed_energy,
         proposed_charge,
         proposed_discharge,
+        proposed_charge_price,
+        proposed_discharge_price,
         accepted_charge,
         accepted_discharge,
         headroom,
         value(model.investor_profit_expr),
+        value(model.proximal_penalty_expr),
+        value(model.strategic_epsilon_penalty_expr),
+        value(model.objective.expr),
         {node: investment_headroom_shadow_price(model, node) for node in nodes},
         abs(value(model.primal_objective_expr) - value(model.dual_objective_expr)),
         model,
     )
 
 
-def clean_and_bound_state(state: StrategicEpecState, cfg: EpecConfig, nodes, times) -> None:
+def clean_and_bound_state(
+    state: StrategicEpecState, cfg: EpecConfig, nodes, times, eta: float
+) -> None:
     for investor in cfg.investors:
         investor_id = investor.investor_id
         for node in nodes:
@@ -328,9 +474,30 @@ def clean_and_bound_state(state: StrategicEpecState, cfg: EpecConfig, nodes, tim
                 state.offer_discharge[investor_id, node, time_] = min(
                     power, max(0.0, state.offer_discharge[investor_id, node, time_])
                 )
+                price_bound = cfg.strategic_bid_price_bound_eur_per_mwh
+                state.bid_price_charge[investor_id, node, time_] = _effective_bid_price(
+                    state.bid_price_charge[investor_id, node, time_],
+                    state.offer_charge[investor_id, node, time_],
+                    -0.5 * investor.degradation_eur_per_mwh,
+                    price_bound,
+                )
+                state.offer_price_discharge[investor_id, node, time_] = _effective_bid_price(
+                    state.offer_price_discharge[investor_id, node, time_],
+                    state.offer_discharge[investor_id, node, time_],
+                    0.5 * investor.degradation_eur_per_mwh,
+                    price_bound,
+                )
+                state.bid_price_charge[investor_id, node, time_] = min(
+                    state.bid_price_charge[investor_id, node, time_],
+                    (eta**2) * price_bound,
+                )
+                state.offer_price_discharge[investor_id, node, time_] = max(
+                    state.offer_price_discharge[investor_id, node, time_],
+                    state.bid_price_charge[investor_id, node, time_] / (eta**2),
+                )
 
 
-def apply_damped_update(state, cfg, nodes, times, response) -> None:
+def apply_damped_update(state, cfg, nodes, times, response, eta) -> None:
     alpha = cfg.damping
     investor_id = response.investor_id
     for node in nodes:
@@ -351,10 +518,20 @@ def apply_damped_update(state, cfg, nodes, times, response) -> None:
                 (1.0 - alpha) * state.offer_discharge[investor_id, node, time_]
                 + alpha * response.proposed_offer_discharge[node, time_]
             )
-    clean_and_bound_state(state, cfg, nodes, times)
+            if cfg.strategic_bid_prices:
+                state.bid_price_charge[investor_id, node, time_] = (
+                    (1.0 - alpha) * state.bid_price_charge[investor_id, node, time_]
+                    + alpha * response.proposed_bid_price_charge[node, time_]
+                )
+                state.offer_price_discharge[investor_id, node, time_] = (
+                    (1.0 - alpha)
+                    * state.offer_price_discharge[investor_id, node, time_]
+                    + alpha * response.proposed_offer_price_discharge[node, time_]
+                )
+    clean_and_bound_state(state, cfg, nodes, times, eta)
 
 
-def project_joint_limit(state, cfg, nodes, times) -> None:
+def project_joint_limit(state, cfg, nodes, times, eta) -> None:
     for node in nodes:
         total = sum(state.x_power[investor.investor_id, node] for investor in cfg.investors)
         if total <= cfg.node_limit_mw + 1e-8:
@@ -379,7 +556,7 @@ def project_joint_limit(state, cfg, nodes, times) -> None:
             f"  [projection] iter {state.iteration}, {node}: "
             f"{total:.3f} MW -> {cfg.node_limit_mw:.1f} MW"
         )
-    clean_and_bound_state(state, cfg, nodes, times)
+    clean_and_bound_state(state, cfg, nodes, times, eta)
 
 
 def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecState:
@@ -410,6 +587,20 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
             for node in nodes
             for time_ in times
         },
+        bid_price_charge={
+            (investor.investor_id, node, time_): -0.5
+            * investor.degradation_eur_per_mwh
+            for investor in cfg.investors
+            for node in nodes
+            for time_ in times
+        },
+        offer_price_discharge={
+            (investor.investor_id, node, time_): 0.5
+            * investor.degradation_eur_per_mwh
+            for investor in cfg.investors
+            for node in nodes
+            for time_ in times
+        },
         initialization_method="strategic_jacobi_common_snapshot_projected",
     )
     responses: list[StrategicBestResponse] = []
@@ -417,18 +608,23 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
     numerical_energy = {
         node: cfg.seed_power_mw * cfg.seed_ratio_hours for node in nodes
     }
+    initializer_cfg = replace(
+        cfg,
+        strategic_proximal_penalty_eur_per_mw2_day=0.0,
+    )
     print(
         "Strategic Jacobi initializer: common snapshot "
-        f"{snapshot_power:g} MW/node; numerical guess {cfg.seed_power_mw:g} MW/node"
+        f"{snapshot_power:g} MW/node; numerical guess {cfg.seed_power_mw:g} MW/node; "
+        "proximal penalty off"
     )
     for investor in cfg.investors:
         rival = separate_rival_strategies(
-            snapshot, cfg, nodes, times, investor.investor_id
+            snapshot, initializer_cfg, nodes, times, investor.investor_id
         )
         investor_id = investor.investor_id
         response = solve_best_response(
             data,
-            cfg,
+            initializer_cfg,
             investor,
             *rival,
             {node: snapshot.x_power[investor_id, node] for node in nodes},
@@ -440,6 +636,18 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
             },
             {
                 (node, time_): snapshot.offer_discharge[investor_id, node, time_]
+                for node in nodes
+                for time_ in times
+            },
+            {
+                (node, time_): snapshot.bid_price_charge[investor_id, node, time_]
+                for node in nodes
+                for time_ in times
+            },
+            {
+                (node, time_): snapshot.offer_price_discharge[
+                    investor_id, node, time_
+                ]
                 for node in nodes
                 for time_ in times
             },
@@ -457,7 +665,7 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
             f"{sum(response.proposed_energy.values()):.3f} MWh"
         )
 
-    state = StrategicEpecState({}, {}, {}, {})
+    state = StrategicEpecState({}, {}, {}, {}, {}, {})
     node_summary = {}
     for node in nodes:
         desired_total = sum(response.proposed_power[node] for response in responses)
@@ -473,6 +681,12 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
                 state.offer_discharge[investor_id, node, time_] = (
                     scale * response.proposed_offer_discharge[node, time_]
                 )
+                state.bid_price_charge[investor_id, node, time_] = (
+                    response.proposed_bid_price_charge[node, time_]
+                )
+                state.offer_price_discharge[investor_id, node, time_] = (
+                    response.proposed_offer_price_discharge[node, time_]
+                )
         node_summary[node] = {
             "desired_total_power_mw": desired_total,
             "projection_scale": scale,
@@ -484,6 +698,7 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
     state.initialization_method = "strategic_jacobi_common_snapshot_projected"
     state.initializer_summary = {
         "interpretation": "feasible strategic initialization heuristic, not an equilibrium",
+        "proximal_penalty_applied": False,
         "snapshot_power_mw_per_investor_node": snapshot_power,
         "snapshot_ratio_hours": snapshot_ratio,
         "nodes": node_summary,
@@ -492,12 +707,15 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
                 "desired_power_mw": sum(response.proposed_power.values()),
                 "desired_energy_mwh": sum(response.proposed_energy.values()),
                 "optimistic_mpec_profit_eur_per_day": response.optimistic_mpec_profit_eur_per_day,
+                "proximal_penalty_eur_per_day": response.proximal_penalty_eur_per_day,
+                "epsilon_penalty_eur_per_day": response.epsilon_penalty_eur_per_day,
+                "penalized_objective_eur_per_day": response.penalized_objective_eur_per_day,
                 "strong_duality_gap": response.strong_duality_gap,
             }
             for response in responses
         },
     }
-    clean_and_bound_state(state, cfg, nodes, times)
+    clean_and_bound_state(state, cfg, nodes, times, data.eta)
     return state
 
 
@@ -523,21 +741,40 @@ def run_epec(
             x_energy={(i.investor_id, n): seed * cfg.seed_ratio_hours for i in cfg.investors for n in nodes},
             offer_charge={(i.investor_id, n, t): seed for i in cfg.investors for n in nodes for t in times},
             offer_discharge={(i.investor_id, n, t): seed for i in cfg.investors for n in nodes for t in times},
+            bid_price_charge={
+                (i.investor_id, n, t): -0.5 * i.degradation_eur_per_mwh
+                for i in cfg.investors
+                for n in nodes
+                for t in times
+            },
+            offer_price_discharge={
+                (i.investor_id, n, t): 0.5 * i.degradation_eur_per_mwh
+                for i in cfg.investors
+                for n in nodes
+                for t in times
+            },
         )
     else:
         state = initial_state
 
-    clean_and_bound_state(state, cfg, nodes, times)
+    clean_and_bound_state(state, cfg, nodes, times, data.eta)
     consecutive_failures = {investor.investor_id: 0 for investor in cfg.investors}
     final_iteration = state.iteration + cfg.max_iters
     responses: list[StrategicBestResponse] = []
 
     for iteration in range(state.iteration + 1, final_iteration + 1):
         state.iteration = iteration
+        iteration_proximal_coefficient = proximal_coefficient_for_iteration(cfg, iteration)
+        iteration_cfg = replace(
+            cfg,
+            strategic_proximal_penalty_eur_per_mw2_day=iteration_proximal_coefficient,
+        )
         power_start = dict(state.x_power)
         energy_start = dict(state.x_energy)
         charge_start = dict(state.offer_charge)
         discharge_start = dict(state.offer_discharge)
+        charge_price_start = dict(state.bid_price_charge)
+        discharge_price_start = dict(state.offer_price_discharge)
         responses = []
 
         for investor in cfg.investors:
@@ -545,24 +782,30 @@ def run_epec(
             rival = separate_rival_strategies(state, cfg, nodes, times, investor_id)
             response = solve_best_response(
                 data,
-                cfg,
+                iteration_cfg,
                 investor,
                 *rival,
                 {node: state.x_power[investor_id, node] for node in nodes},
                 {node: state.x_energy[investor_id, node] for node in nodes},
                 {(node, time_): state.offer_charge[investor_id, node, time_] for node in nodes for time_ in times},
                 {(node, time_): state.offer_discharge[investor_id, node, time_] for node in nodes for time_ in times},
+                {(node, time_): state.bid_price_charge[investor_id, node, time_] for node in nodes for time_ in times},
+                {(node, time_): state.offer_price_discharge[investor_id, node, time_] for node in nodes for time_ in times},
                 tee=tee,
             )
             responses.append(response)
             if response.ok:
-                apply_damped_update(state, cfg, nodes, times, response)
+                apply_damped_update(state, cfg, nodes, times, response, data.eta)
 
-        project_joint_limit(state, cfg, nodes, times)
+        project_joint_limit(state, cfg, nodes, times, data.eta)
         all_ok = all(response.ok for response in responses)
         max_rel_power = 0.0
         max_rel_energy = 0.0
         max_rel_offer = 0.0
+        max_rel_price = 0.0
+        max_abs_capacity = 0.0
+        max_abs_offer = 0.0
+        max_abs_price = 0.0
         for response in responses:
             investor_id = response.investor_id
             consecutive_failures[investor_id] = 0 if response.ok else consecutive_failures[investor_id] + 1
@@ -590,9 +833,101 @@ def run_epec(
                 for node in nodes
                 for time_ in times
             )
+            rel_price = (
+                max(
+                    max(
+                        relative_delta(
+                            state.bid_price_charge[investor_id, node, time_],
+                            charge_price_start[investor_id, node, time_],
+                            cfg.strategic_price_floor_eur_per_mwh,
+                        ),
+                        relative_delta(
+                            state.offer_price_discharge[investor_id, node, time_],
+                            discharge_price_start[investor_id, node, time_],
+                            cfg.strategic_price_floor_eur_per_mwh,
+                        ),
+                    )
+                    for node in nodes
+                    for time_ in times
+                )
+                if cfg.strategic_bid_prices
+                else 0.0
+            )
+            abs_capacity = math.sqrt(
+                sum(
+                    (
+                        state.x_power[investor_id, node]
+                        - power_start[investor_id, node]
+                    )
+                    ** 2
+                    + (
+                        (
+                            state.x_energy[investor_id, node]
+                            - energy_start[investor_id, node]
+                        )
+                        / cfg.strategic_proximal_energy_scale_hours
+                    )
+                    ** 2
+                    for node in nodes
+                )
+            )
+            abs_offer = math.sqrt(
+                sum(
+                    (
+                        (
+                            state.x_power[investor_id, node]
+                            - state.offer_charge[investor_id, node, time_]
+                        )
+                        - (
+                            power_start[investor_id, node]
+                            - charge_start[investor_id, node, time_]
+                        )
+                    )
+                    ** 2
+                    + (
+                        (
+                            state.x_power[investor_id, node]
+                            - state.offer_discharge[investor_id, node, time_]
+                        )
+                        - (
+                            power_start[investor_id, node]
+                            - discharge_start[investor_id, node, time_]
+                        )
+                    )
+                    ** 2
+                    for node in nodes
+                    for time_ in times
+                )
+                / (2.0 * len(times))
+            )
+            abs_price = (
+                math.sqrt(
+                    sum(
+                        (
+                            state.bid_price_charge[investor_id, node, time_]
+                            - charge_price_start[investor_id, node, time_]
+                        )
+                        ** 2
+                        + (
+                            state.offer_price_discharge[investor_id, node, time_]
+                            - discharge_price_start[investor_id, node, time_]
+                        )
+                        ** 2
+                        for node in nodes
+                        for time_ in times
+                    )
+                    / (2.0 * len(times))
+                )
+                if cfg.strategic_bid_prices
+                else 0.0
+            )
             max_rel_power = max(max_rel_power, rel_power)
             max_rel_energy = max(max_rel_energy, rel_energy)
             max_rel_offer = max(max_rel_offer, rel_offer)
+            max_rel_price = max(max_rel_price, rel_price)
+            max_abs_capacity = max(max_abs_capacity, abs_capacity)
+            max_abs_offer = max(max_abs_offer, abs_offer)
+            max_abs_price = max(max_abs_price, abs_price)
             state.history.append(
                 {
                     "iteration": iteration,
@@ -606,6 +941,9 @@ def run_epec(
                     "total_energy_mwh": sum(state.x_energy[investor_id, node] for node in nodes),
                     "max_rel_delta_power": rel_power,
                     "max_rel_delta_energy": rel_energy,
+                    "abs_capacity_step_mw_equivalent": abs_capacity,
+                    "abs_offer_step_mw": abs_offer,
+                    "abs_price_step_eur_per_mwh": abs_price,
                     "max_undamped_delta_power_mw": max(
                         abs(response.proposed_power[node] - power_start[investor_id, node]) for node in nodes
                     ),
@@ -616,12 +954,37 @@ def run_epec(
                     "iteration": iteration,
                     "investor": investor_id,
                     "max_rel_delta_offer": rel_offer,
+                    "max_rel_delta_price": rel_price,
+                    "abs_offer_step_mw": abs_offer,
+                    "abs_price_step_eur_per_mwh": abs_price,
                     "charge_offer_capacity_hours_mwh": sum(
                         state.offer_charge[investor_id, node, time_] for node in nodes for time_ in times
                     ),
                     "discharge_offer_capacity_hours_mwh": sum(
                         state.offer_discharge[investor_id, node, time_] for node in nodes for time_ in times
                     ),
+                    "mean_charge_bid_price_eur_per_mwh": sum(
+                        state.bid_price_charge[investor_id, node, time_]
+                        for node in nodes
+                        for time_ in times
+                    ) / (len(nodes) * len(times)),
+                    "mean_discharge_offer_price_eur_per_mwh": sum(
+                        state.offer_price_discharge[investor_id, node, time_]
+                        for node in nodes
+                        for time_ in times
+                    ) / (len(nodes) * len(times)),
+                }
+            )
+            state.proximal_history.append(
+                {
+                    "iteration": iteration,
+                    "investor": investor_id,
+                    "proximal_coefficient_eur_per_mw2_day": iteration_proximal_coefficient,
+                    "unpenalized_profit_eur_per_day": response.optimistic_mpec_profit_eur_per_day,
+                    "proximal_penalty_eur_per_day": response.proximal_penalty_eur_per_day,
+                    "strategic_epsilon_penalty": cfg.strategic_epsilon_penalty,
+                    "epsilon_penalty_eur_per_day": response.epsilon_penalty_eur_per_day,
+                    "penalized_objective_eur_per_day": response.penalized_objective_eur_per_day,
                 }
             )
             for node in nodes:
@@ -642,9 +1005,28 @@ def run_epec(
                     }
                 )
 
+        sweep_converged = (
+            all_ok
+            and max_abs_capacity < cfg.strategic_tol_abs_capacity_mw
+            and max_abs_offer < cfg.strategic_tol_abs_offer_mw
+            and max_abs_price < cfg.strategic_tol_abs_price_eur_per_mwh
+        )
+        state.consecutive_converged_sweeps = (
+            state.consecutive_converged_sweeps + 1 if sweep_converged else 0
+        )
+        for row in state.history[-len(responses):]:
+            row["converged_sweep_streak"] = state.consecutive_converged_sweeps
+
         print(
-            f"iter {iteration:2d} [strategic seidel] max_rel "
-            f"dP={max_rel_power:.4f} dE={max_rel_energy:.4f} dOffer={max_rel_offer:.4f}; "
+            f"iter {iteration:2d} [strategic seidel] abs "
+            f"dStrategy={max_abs_capacity:.4f} MW-eq "
+            f"dOffer={max_abs_offer:.4f} MW "
+            f"dPrice={max_abs_price:.4f} EUR/MWh; "
+            f"streak={state.consecutive_converged_sweeps}/"
+            f"{cfg.strategic_consecutive_converged_sweeps}; "
+            f"max_rel dP={max_rel_power:.4f} dE={max_rel_energy:.4f} "
+            f"dOffer={max_rel_offer:.4f} dPrice={max_rel_price:.4f}; "
+            f"rho={iteration_proximal_coefficient:g}; "
             + ", ".join(
                 f"{response.investor_id}={response.optimistic_mpec_profit_eur_per_day:,.0f}"
                 if response.ok
@@ -658,13 +1040,14 @@ def run_epec(
             state.stop_reason = "aborted: repeated strategic MPEC failures"
             should_stop = True
         elif (
-            all_ok
-            and max_rel_power < cfg.tol_rel
-            and max_rel_energy < cfg.tol_rel
-            and max_rel_offer < cfg.tol_rel
+            state.consecutive_converged_sweeps
+            >= cfg.strategic_consecutive_converged_sweeps
         ):
             state.converged = True
-            state.stop_reason = f"converged in {iteration} iterations"
+            state.stop_reason = (
+                f"converged in {iteration} iterations after "
+                f"{cfg.strategic_consecutive_converged_sweeps} consecutive sweeps"
+            )
             should_stop = True
         state.final_models = {
             response.investor_id: response.model
@@ -687,13 +1070,48 @@ def export_checkpoint(output_dir: Path, state: StrategicEpecState, cfg: EpecConf
         "status": state.stop_reason,
         "iteration": state.iteration,
         "converged": state.converged,
+        "investor_solve_order": [
+            investor.investor_id for investor in cfg.investors
+        ],
         "node_limit_mw": cfg.node_limit_mw,
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
+        "proximal_penalty_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_eur_per_mw2_day
+        ),
+        "proximal_energy_scale_hours": cfg.strategic_proximal_energy_scale_hours,
+        "proximal_price_scale_eur_per_mwh": (
+            cfg.strategic_proximal_price_scale_eur_per_mwh
+        ),
+        "proximal_penalty_step_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+        ),
+        "proximal_penalty_step_iterations": (
+            cfg.strategic_proximal_penalty_step_iterations
+        ),
+        "strategic_bid_prices": cfg.strategic_bid_prices,
+        "strategic_bid_price_bound_eur_per_mwh": (
+            cfg.strategic_bid_price_bound_eur_per_mwh
+        ),
+        "strategic_epsilon_penalty": cfg.strategic_epsilon_penalty,
+        "tol_abs_capacity_mw_equivalent": cfg.strategic_tol_abs_capacity_mw,
+        "tol_abs_offer_mw": cfg.strategic_tol_abs_offer_mw,
+        "tol_abs_price_eur_per_mwh": cfg.strategic_tol_abs_price_eur_per_mwh,
+        "consecutive_converged_sweeps_required": (
+            cfg.strategic_consecutive_converged_sweeps
+        ),
+        "consecutive_converged_sweeps": state.consecutive_converged_sweeps,
         "x_power_mw": {f"{i}|{n}": v for (i, n), v in state.x_power.items()},
         "x_energy_mwh": {f"{i}|{n}": v for (i, n), v in state.x_energy.items()},
         "offer_charge_mw": {f"{i}|{n}|{t}": v for (i, n, t), v in state.offer_charge.items()},
         "offer_discharge_mw": {f"{i}|{n}|{t}": v for (i, n, t), v in state.offer_discharge.items()},
+        "bid_price_charge_eur_per_mwh": {
+            f"{i}|{n}|{t}": v for (i, n, t), v in state.bid_price_charge.items()
+        },
+        "offer_price_discharge_eur_per_mwh": {
+            f"{i}|{n}|{t}": v
+            for (i, n, t), v in state.offer_price_discharge.items()
+        },
     }
     (output_dir / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2), encoding="utf-8")
 
@@ -715,16 +1133,45 @@ def load_checkpoint(path: Path, data, cfg: EpecConfig) -> StrategicEpecState:
             restored[investor, node, int(time_)] = float(value_)
         return restored
 
+    charge_prices = (
+        offers("bid_price_charge_eur_per_mwh")
+        if "bid_price_charge_eur_per_mwh" in raw
+        else {
+            (investor.investor_id, node, int(time_)): -0.5
+            * investor.degradation_eur_per_mwh
+            for investor in cfg.investors
+            for node in data.nodes
+            for time_ in data.times
+        }
+    )
+    discharge_prices = (
+        offers("offer_price_discharge_eur_per_mwh")
+        if "offer_price_discharge_eur_per_mwh" in raw
+        else {
+            (investor.investor_id, node, int(time_)): 0.5
+            * investor.degradation_eur_per_mwh
+            for investor in cfg.investors
+            for node in data.nodes
+            for time_ in data.times
+        }
+    )
     state = StrategicEpecState(
         capacities("x_power_mw"),
         capacities("x_energy_mwh"),
         offers("offer_charge_mw"),
         offers("offer_discharge_mw"),
+        charge_prices,
+        discharge_prices,
         iteration=int(raw["iteration"]),
         initialization_method=str(raw.get("initialization_method", "checkpoint_resume")),
         initializer_summary=dict(raw.get("initializer_summary", {})),
+        consecutive_converged_sweeps=int(
+            raw.get("consecutive_converged_sweeps", 0)
+        ),
     )
-    clean_and_bound_state(state, cfg, list(data.nodes), [int(t) for t in data.times])
+    clean_and_bound_state(
+        state, cfg, list(data.nodes), [int(t) for t in data.times], data.eta
+    )
     return state
 
 
@@ -739,8 +1186,9 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
         output_dir / "strategic_quantity_offers.csv",
         [
             "investor", "hour", "node", "installed_power_mw",
-            "charge_offer_mw", "accepted_charge_mw",
-            "discharge_offer_mw", "accepted_discharge_mw",
+            "charge_offer_mw", "charge_bid_price_eur_per_mwh",
+            "accepted_charge_mw", "discharge_offer_mw",
+            "discharge_offer_price_eur_per_mwh", "accepted_discharge_mw",
             "joint_lambda_eur_per_mwh",
         ],
         [
@@ -750,8 +1198,16 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
                 "node": node,
                 "installed_power_mw": state.x_power[investor, node],
                 "charge_offer_mw": state.offer_charge[investor, node, int(time_)],
+                "charge_bid_price_eur_per_mwh": state.bid_price_charge[
+                    investor, node, int(time_)
+                ],
                 "accepted_charge_mw": value(reference.P_charge[investor, node, time_]),
-                "discharge_offer_mw": state.offer_discharge[investor, node, int(time_)],
+                "discharge_offer_mw": state.offer_discharge[
+                    investor, node, int(time_)
+                ],
+                "discharge_offer_price_eur_per_mwh": state.offer_price_discharge[
+                    investor, node, int(time_)
+                ],
                 "accepted_discharge_mw": value(reference.P_discharge[investor, node, time_]),
                 "joint_lambda_eur_per_mwh": prices[node, time_],
             }
@@ -763,22 +1219,102 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
     _write_csv(
         output_dir / "offer_convergence_history.csv",
         [
-            "iteration", "investor", "max_rel_delta_offer",
+            "iteration", "investor", "max_rel_delta_offer", "max_rel_delta_price",
+            "abs_offer_step_mw", "abs_price_step_eur_per_mwh",
             "charge_offer_capacity_hours_mwh", "discharge_offer_capacity_hours_mwh",
+            "mean_charge_bid_price_eur_per_mwh",
+            "mean_discharge_offer_price_eur_per_mwh",
         ],
         state.offer_convergence_history,
+    )
+    _write_csv(
+        output_dir / "proximal_history.csv",
+        [
+            "iteration", "investor", "proximal_coefficient_eur_per_mw2_day",
+            "unpenalized_profit_eur_per_day",
+            "proximal_penalty_eur_per_day", "strategic_epsilon_penalty",
+            "epsilon_penalty_eur_per_day", "penalized_objective_eur_per_day",
+        ],
+        state.proximal_history,
     )
     summary_path = output_dir / "summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     summary.update(
         {
-            "experiment": "multi_investor_strategic_hourly_quantity_offers",
+            "experiment": (
+                "multi_investor_strategic_two_sided_price_quantity_bids"
+                if cfg.strategic_bid_prices
+                else "multi_investor_strategic_hourly_quantity_offers"
+            ),
+            "investor_solve_order": [
+                investor.investor_id for investor in cfg.investors
+            ],
             "generator_calibration": calibration,
             "offer_convergence_required": True,
-            "strategy_space": "nodal MW/MWh investment plus hourly charge/discharge quantity offers",
+            "proximal_penalty_eur_per_mw2_day": (
+                cfg.strategic_proximal_penalty_eur_per_mw2_day
+            ),
+            "proximal_energy_scale_hours": cfg.strategic_proximal_energy_scale_hours,
+            "proximal_price_scale_eur_per_mwh": (
+                cfg.strategic_proximal_price_scale_eur_per_mwh
+            ),
+            "proximal_penalty_step_eur_per_mw2_day": (
+                cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+            ),
+            "proximal_penalty_step_iterations": (
+                cfg.strategic_proximal_penalty_step_iterations
+            ),
+            "final_proximal_coefficient_eur_per_mw2_day": (
+                proximal_coefficient_for_iteration(cfg, state.iteration)
+            ),
+            "proximal_penalty_target": (
+                "MW/MWh capacity, withheld charge/discharge quantity, and normalized "
+                "two-sided bid-price changes relative to the previous strategy"
+                if cfg.strategic_bid_prices
+                else "MW/MWh capacity and withheld charge/discharge quantity changes "
+                "relative to the investor's previous strategy"
+            ),
+            "equilibrium_interpretation": (
+                "regularized strategy-selection candidate; requires an "
+                "unpenalized best-response check"
+                if strategy_regularization_enabled(cfg)
+                else "unregularized optimistic EPEC candidate"
+            ),
+            "strategy_space": (
+                "nodal MW/MWh investment plus hourly charging buy-bid and "
+                "discharging sell-offer price/quantity pairs"
+                if cfg.strategic_bid_prices
+                else "nodal MW/MWh investment plus hourly charge/discharge quantity offers"
+            ),
+            "strategic_bid_prices": cfg.strategic_bid_prices,
+            "strategic_bid_price_bound_eur_per_mwh": (
+                cfg.strategic_bid_price_bound_eur_per_mwh
+            ),
+            "strategic_epsilon_penalty": cfg.strategic_epsilon_penalty,
+            "strategic_epsilon_penalty_target": (
+                "direct squared charging buy-bid and discharging sell-offer prices; "
+                "no direct capacity, energy, or quantity-offer term"
+            ),
+            "convergence_metric": "absolute strategy norms; relative maxima are diagnostics",
+            "tol_abs_capacity_mw_equivalent": cfg.strategic_tol_abs_capacity_mw,
+            "tol_abs_offer_mw": cfg.strategic_tol_abs_offer_mw,
+            "tol_abs_price_eur_per_mwh": cfg.strategic_tol_abs_price_eur_per_mwh,
+            "consecutive_converged_sweeps_required": (
+                cfg.strategic_consecutive_converged_sweeps
+            ),
+            "consecutive_converged_sweeps": state.consecutive_converged_sweeps,
+            "strategic_bid_price_semantics": (
+                "complete submitted prices replace private degradation in ISO clearing; "
+                "physical degradation remains in investor profit"
+                if cfg.strategic_bid_prices
+                else "ISO clearing uses physical degradation costs"
+            ),
             "rival_representation": (
                 "separate battery per investor with frozen nodal MW/MWh and "
-                "hourly charge/discharge offers"
+                "hourly charge/discharge price-quantity bids"
+                if cfg.strategic_bid_prices
+                else "separate battery per investor with frozen nodal MW/MWh and "
+                "hourly charge/discharge quantity offers"
             ),
         }
     )
@@ -787,9 +1323,41 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
     run_config = json.loads(run_config_path.read_text(encoding="utf-8"))
     run_config.update(
         {
-            "experiment": "multi_investor_strategic_hourly_quantity_offers",
+            "experiment": (
+                "multi_investor_strategic_two_sided_price_quantity_bids"
+                if cfg.strategic_bid_prices
+                else "multi_investor_strategic_hourly_quantity_offers"
+            ),
+            "investor_solve_order": [
+                investor.investor_id for investor in cfg.investors
+            ],
             "generator_calibration": calibration,
             "offer_convergence_required": True,
+            "proximal_penalty_eur_per_mw2_day": (
+                cfg.strategic_proximal_penalty_eur_per_mw2_day
+            ),
+            "proximal_energy_scale_hours": cfg.strategic_proximal_energy_scale_hours,
+            "proximal_price_scale_eur_per_mwh": (
+                cfg.strategic_proximal_price_scale_eur_per_mwh
+            ),
+            "proximal_penalty_step_eur_per_mw2_day": (
+                cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+            ),
+            "proximal_penalty_step_iterations": (
+                cfg.strategic_proximal_penalty_step_iterations
+            ),
+            "strategic_bid_prices": cfg.strategic_bid_prices,
+            "strategic_bid_price_bound_eur_per_mwh": (
+                cfg.strategic_bid_price_bound_eur_per_mwh
+            ),
+            "strategic_epsilon_penalty": cfg.strategic_epsilon_penalty,
+            "convergence_metric": "absolute strategy norms",
+            "tol_abs_capacity_mw_equivalent": cfg.strategic_tol_abs_capacity_mw,
+            "tol_abs_offer_mw": cfg.strategic_tol_abs_offer_mw,
+            "tol_abs_price_eur_per_mwh": cfg.strategic_tol_abs_price_eur_per_mwh,
+            "consecutive_converged_sweeps_required": (
+                cfg.strategic_consecutive_converged_sweeps
+            ),
         }
     )
     run_config_path.write_text(json.dumps(run_config, indent=2), encoding="utf-8")
@@ -799,11 +1367,49 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Strategic-operation EPEC diagonalization")
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
     parser.add_argument("--investor-set", choices=["portfolio4", "wacc"], default="portfolio4")
+    parser.add_argument(
+        "--investor-order",
+        nargs="+",
+        default=None,
+        help=(
+            "Explicit Gauss-Seidel solve order using configured investor IDs, "
+            "for example: --investor-order I3 I1 I4 I2."
+        ),
+    )
     parser.add_argument("--wacc", type=float, nargs="+", default=[0.08, 0.12])
     parser.add_argument("--damping", type=float, default=DEFAULT_DAMPING)
     parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
     parser.add_argument("--max-iters", type=int, default=60)
-    parser.add_argument("--tol-rel", type=float, default=DEFAULT_TOL_REL)
+    parser.add_argument(
+        "--tol-rel",
+        type=float,
+        default=DEFAULT_TOL_REL,
+        help="Diagnostic relative tolerance; no longer used to stop this EPEC.",
+    )
+    parser.add_argument(
+        "--tol-abs-capacity-mw",
+        type=float,
+        default=0.5,
+        help="Absolute MW-equivalent norm tolerance for each investor's MW/MWh step.",
+    )
+    parser.add_argument(
+        "--tol-abs-offer-mw",
+        type=float,
+        default=0.25,
+        help="Absolute RMS tolerance for changes in withheld charge/discharge MW.",
+    )
+    parser.add_argument(
+        "--tol-abs-price-eur-per-mwh",
+        type=float,
+        default=0.5,
+        help="Absolute RMS tolerance for strategic bid-price changes.",
+    )
+    parser.add_argument(
+        "--consecutive-converged-sweeps",
+        type=int,
+        default=3,
+        help="Number of consecutive sweeps that must satisfy all absolute tolerances.",
+    )
     parser.add_argument("--floor-mw", type=float, default=DEFAULT_FLOOR_MW)
     parser.add_argument("--floor-mwh", type=float, default=DEFAULT_FLOOR_MWH)
     parser.add_argument("--seed-power-mw", type=float, default=DEFAULT_INITIAL_POWER_MW)
@@ -815,7 +1421,73 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
     parser.add_argument("--price-bound-eur-per-mwh", type=float, default=DEFAULT_PRICE_BOUND_EUR_PER_MWH)
     parser.add_argument("--dual-bound-eur-per-mwh", type=float, default=DEFAULT_DUAL_BOUND_EUR_PER_MWH)
+    parser.add_argument(
+        "--strategic-bid-prices",
+        action="store_true",
+        help=(
+            "Enable strategic charging buy-bid and discharging sell-offer prices; "
+            "without this flag the quantity-only experiment is reproduced."
+        ),
+    )
+    parser.add_argument(
+        "--bid-price-bound-eur-per-mwh",
+        type=float,
+        default=DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+        help="Symmetric bound on strategic charge/discharge bid prices.",
+    )
+    parser.add_argument(
+        "--floor-price-eur-per-mwh",
+        type=float,
+        default=1.0,
+        help="Denominator floor used by the relative bid-price convergence test.",
+    )
+    parser.add_argument(
+        "--strategic-epsilon-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "Coefficient epsilon on the direct sum of squared strategic charging "
+            "buy-bid and discharging sell-offer prices; capacity, energy, and "
+            "quantity offers are excluded; zero preserves the prior objective."
+        ),
+    )
     parser.add_argument("--dispatch-regularization", type=float, default=0.0)
+    parser.add_argument(
+        "--proximal-penalty-eur-per-mw2-day",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional coefficient on squared changes from each investor's previous "
+            "MW-equivalent strategy; zero preserves the unregularized game."
+        ),
+    )
+    parser.add_argument(
+        "--proximal-energy-scale-hours",
+        type=float,
+        default=4.0,
+        help="Hours used to convert MWh changes to MW-equivalent proximal distance.",
+    )
+    parser.add_argument(
+        "--proximal-price-scale-eur-per-mwh",
+        type=float,
+        default=10.0,
+        help="Price change corresponding to one normalized proximal-distance unit.",
+    )
+    parser.add_argument(
+        "--proximal-penalty-step-eur-per-mw2-day",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional staircase increment: the first block has zero penalty, "
+            "then each block increases the coefficient by this amount."
+        ),
+    )
+    parser.add_argument(
+        "--proximal-penalty-step-iters",
+        type=int,
+        default=5,
+        help="Number of Seidel iterations per staircase proximal-penalty block.",
+    )
     parser.add_argument("--capacity-cleanup-tol", type=float, default=DEFAULT_CAPACITY_CLEANUP_TOL_MW_MWH)
     parser.add_argument("--conventional-capacity-adder-mw", type=float, default=20.0)
     parser.add_argument("--peaker-node", type=str, default="N5")
@@ -834,14 +1506,43 @@ def main() -> int:
         raise SystemExit("--damping must be in (0, 1].")
     if args.max_iters <= 0:
         raise SystemExit("--max-iters must be positive.")
+    if (
+        args.tol_abs_capacity_mw <= 0.0
+        or args.tol_abs_offer_mw <= 0.0
+        or args.tol_abs_price_eur_per_mwh <= 0.0
+    ):
+        raise SystemExit("All absolute convergence tolerances must be positive.")
+    if args.consecutive_converged_sweeps <= 0:
+        raise SystemExit("--consecutive-converged-sweeps must be positive.")
     if args.solver_tol <= 0.0:
         raise SystemExit("--solver-tol must be positive.")
     if args.price_bound_eur_per_mwh <= 0.0 or args.dual_bound_eur_per_mwh <= 0.0:
         raise SystemExit("Price and dual bounds must be positive.")
+    if args.bid_price_bound_eur_per_mwh <= 0.0:
+        raise SystemExit("--bid-price-bound-eur-per-mwh must be positive.")
+    if args.floor_price_eur_per_mwh <= 0.0:
+        raise SystemExit("--floor-price-eur-per-mwh must be positive.")
+    if args.strategic_epsilon_penalty < 0.0:
+        raise SystemExit("--strategic-epsilon-penalty must be non-negative.")
     if args.seed_power_mw < 0.0 or args.initializer_snapshot_power_mw < 0.0:
         raise SystemExit("Seed and initializer power must be non-negative.")
     if args.dispatch_regularization < 0.0 or args.capacity_cleanup_tol < 0.0:
         raise SystemExit("Regularization and cleanup tolerance must be non-negative.")
+    if args.proximal_penalty_eur_per_mw2_day < 0.0:
+        raise SystemExit("--proximal-penalty-eur-per-mw2-day must be non-negative.")
+    if args.proximal_penalty_step_eur_per_mw2_day < 0.0:
+        raise SystemExit("--proximal-penalty-step-eur-per-mw2-day must be non-negative.")
+    if (
+        args.proximal_penalty_eur_per_mw2_day > 0.0
+        and args.proximal_penalty_step_eur_per_mw2_day > 0.0
+    ):
+        raise SystemExit("Choose either a fixed or staircase proximal penalty, not both.")
+    if args.proximal_penalty_step_iters <= 0:
+        raise SystemExit("--proximal-penalty-step-iters must be positive.")
+    if args.proximal_energy_scale_hours <= 0.0:
+        raise SystemExit("--proximal-energy-scale-hours must be positive.")
+    if args.proximal_price_scale_eur_per_mwh <= 0.0:
+        raise SystemExit("--proximal-price-scale-eur-per-mwh must be positive.")
     base_data = load_market_data(args.data)
     data, calibration = apply_generator_calibration(
         base_data,
@@ -858,6 +1559,10 @@ def main() -> int:
             for k, wacc in enumerate(args.wacc)
         )
     )
+    try:
+        investors = order_investors(investors, args.investor_order)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     cfg = EpecConfig(
         investors=investors,
         node_limit_mw=args.node_limit_mw,
@@ -879,6 +1584,29 @@ def main() -> int:
         automatic_jacobi_initializer=not args.skip_jacobi_initializer,
         jacobi_initializer_snapshot_power_mw=args.initializer_snapshot_power_mw,
         jacobi_initializer_snapshot_ratio_hours=args.initializer_snapshot_ratio_hours,
+        strategic_proximal_penalty_eur_per_mw2_day=(
+            args.proximal_penalty_eur_per_mw2_day
+        ),
+        strategic_proximal_energy_scale_hours=args.proximal_energy_scale_hours,
+        strategic_proximal_price_scale_eur_per_mwh=(
+            args.proximal_price_scale_eur_per_mwh
+        ),
+        strategic_proximal_penalty_step_eur_per_mw2_day=(
+            args.proximal_penalty_step_eur_per_mw2_day
+        ),
+        strategic_proximal_penalty_step_iterations=args.proximal_penalty_step_iters,
+        strategic_bid_prices=args.strategic_bid_prices,
+        strategic_bid_price_bound_eur_per_mwh=args.bid_price_bound_eur_per_mwh,
+        strategic_price_floor_eur_per_mwh=args.floor_price_eur_per_mwh,
+        strategic_epsilon_penalty=args.strategic_epsilon_penalty,
+        strategic_tol_abs_capacity_mw=args.tol_abs_capacity_mw,
+        strategic_tol_abs_offer_mw=args.tol_abs_offer_mw,
+        strategic_tol_abs_price_eur_per_mwh=(
+            args.tol_abs_price_eur_per_mwh
+        ),
+        strategic_consecutive_converged_sweeps=(
+            args.consecutive_converged_sweeps
+        ),
     )
     initial_state = None
     if args.resume_from:
@@ -898,8 +1626,18 @@ def main() -> int:
         )
     print(
         f"Strategic-operation EPEC: {len(investors)} investors, "
+        f"solve_order={','.join(i.investor_id for i in investors)}, "
         f"Jacobi initializer={'on' if cfg.automatic_jacobi_initializer else 'off'}, "
-        f"Gauss-Seidel damping={cfg.damping}, tol_rel={cfg.tol_rel}, "
+        f"Gauss-Seidel damping={cfg.damping}, absolute tolerances="
+        f"({cfg.strategic_tol_abs_capacity_mw:g} MW-eq, "
+        f"{cfg.strategic_tol_abs_offer_mw:g} MW, "
+        f"{cfg.strategic_tol_abs_price_eur_per_mwh:g} EUR/MWh) for "
+        f"{cfg.strategic_consecutive_converged_sweeps} sweeps, "
+        f"strategic_prices={'on' if cfg.strategic_bid_prices else 'off'}, "
+        f"epsilon={cfg.strategic_epsilon_penalty:g}, "
+        f"proximal_fixed={cfg.strategic_proximal_penalty_eur_per_mw2_day:g}, "
+        f"proximal_step={cfg.strategic_proximal_penalty_step_eur_per_mw2_day:g} "
+        f"EUR/MW^2/day every {cfg.strategic_proximal_penalty_step_iterations} iterations, "
         f"calibration={calibration}"
     )
     if cfg.resume_from:

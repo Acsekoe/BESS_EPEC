@@ -29,6 +29,7 @@ from single_investor_mpec import (
 )
 from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
+from ieee9_strategic_operation_mpec import apply_fixed_two_sided_bids_to_primal
 
 
 #### Export schemas
@@ -46,6 +47,10 @@ ITERATION_HISTORY_FIELDS = [
     "total_energy_mwh",
     "max_rel_delta_power",
     "max_rel_delta_energy",
+    "abs_capacity_step_mw_equivalent",
+    "abs_offer_step_mw",
+    "abs_price_step_eur_per_mwh",
+    "converged_sweep_streak",
     "max_undamped_delta_power_mw",
 ]
 
@@ -117,6 +122,26 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             reference.T,
             rule=lambda model, i, n, t: model.P_discharge[i, n, t]
             <= max(0.0, state.offer_discharge[i, n, int(t)]),
+        )
+    if (
+        getattr(cfg, "strategic_bid_prices", False)
+        and hasattr(state, "bid_price_charge")
+        and hasattr(state, "offer_price_discharge")
+    ):
+        apply_fixed_two_sided_bids_to_primal(
+            reference,
+            bid_price_charge_eur_per_mwh={
+                (i, n, int(t)): state.bid_price_charge[i, n, int(t)]
+                for i in reference.I
+                for n in reference.N
+                for t in reference.T
+            },
+            offer_price_discharge_eur_per_mwh={
+                (i, n, int(t)): state.offer_price_discharge[i, n, int(t)]
+                for i in reference.I
+                for n in reference.N
+                for t in reference.T
+            },
         )
     results = get_ipopt_solver(
         {
@@ -257,6 +282,15 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         max(0.0, shares["total_mw"] - shares["limit_mw"])
         for shares in node_shares.values()
     )
+    simultaneous_dispatch = [
+        min(
+            value(reference.P_charge[i, n, t]),
+            value(reference.P_discharge[i, n, t]),
+        )
+        for i in reference.I
+        for n in reference.N
+        for t in reference.T
+    ]
     return {
         "termination": termination,
         "joint_lower_level_objective_eur_per_day": value(
@@ -270,6 +304,8 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         "node_shares": node_shares,
         "max_node_overload_mw": max_node_overload,
         "shared_limit_feasible": max_node_overload <= 1e-6,
+        "simultaneous_charge_discharge_mwh": sum(simultaneous_dispatch),
+        "max_simultaneous_charge_discharge_mw": max(simultaneous_dispatch, default=0.0),
         "reference_lambda": settle_price,
         "reference_model": reference,
     }
@@ -291,6 +327,12 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
         "  joint settlement lambda range: "
         f"{settlement['lambda_min_eur_per_mwh']:,.4f} to {settlement['lambda_max_eur_per_mwh']:,.4f} EUR/MWh"
     )
+    if settlement.get("max_simultaneous_charge_discharge_mw", 0.0) > 1e-5:
+        print(
+            "  WARNING: joint re-clear has simultaneous charge/discharge up to "
+            f"{settlement['max_simultaneous_charge_discharge_mw']:.6f} MW "
+            f"({settlement['simultaneous_charge_discharge_mwh']:.6f} MWh total)."
+        )
     for i, row in settlement["investors"].items():
         gen_rent = row.get("settled_generation_rent_eur_per_day", 0.0)
         gen_str = f" gen rent {gen_rent:11,.2f}," if gen_rent else ""
@@ -340,6 +382,7 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
         "starting_iteration": cfg.starting_iteration,
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
+        "investor_solve_order": [inv.investor_id for inv in cfg.investors],
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
         "damping": cfg.damping,
@@ -377,6 +420,7 @@ def export_epec_results(
     run_config = {
         "data_path": str(data_path),
         "update_rule": cfg.update_rule,
+        "investor_solve_order": [inv.investor_id for inv in cfg.investors],
         "initialization_method": state.initialization_method,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
         "dual_selection": "optimistic_mpec_no_price_penalty",
@@ -505,6 +549,7 @@ def export_epec_results(
         "additional_max_iters": cfg.max_iters,
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
+        "investor_solve_order": [inv.investor_id for inv in cfg.investors],
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
@@ -521,6 +566,12 @@ def export_epec_results(
         "shared_limit_feasible": settlement["shared_limit_feasible"],
         "joint_lambda_min_eur_per_mwh": settlement["lambda_min_eur_per_mwh"],
         "joint_lambda_max_eur_per_mwh": settlement["lambda_max_eur_per_mwh"],
+        "simultaneous_charge_discharge_mwh": settlement.get(
+            "simultaneous_charge_discharge_mwh", 0.0
+        ),
+        "max_simultaneous_charge_discharge_mw": settlement.get(
+            "max_simultaneous_charge_discharge_mw", 0.0
+        ),
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 

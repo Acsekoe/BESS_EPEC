@@ -168,6 +168,7 @@ class EpecConfig:
     strategic_tol_abs_offer_mw: float = 0.25
     strategic_tol_abs_price_eur_per_mwh: float = 0.5
     strategic_consecutive_converged_sweeps: int = 3
+    strategic_parallel_workers: int = 1
     starting_iteration: int = 0
     resume_from: str | None = None
 

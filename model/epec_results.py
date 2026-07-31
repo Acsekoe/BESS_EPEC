@@ -52,6 +52,9 @@ ITERATION_HISTORY_FIELDS = [
     "abs_price_step_eur_per_mwh",
     "converged_sweep_streak",
     "max_undamped_delta_power_mw",
+    "undamped_capacity_residual_mw_equivalent",
+    "undamped_offer_residual_mw",
+    "undamped_price_residual_eur_per_mwh",
 ]
 
 CAPACITY_TRAJECTORY_FIELDS = [
@@ -233,8 +236,19 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         )
         model = state.final_models.get(i)
         if model is None:
-            lambda_diff = None
-            access_shadow_prices = None
+            selected_prices = getattr(state, "final_selected_prices", {}).get(i)
+            access_shadow_prices = getattr(
+                state, "final_access_shadow_prices", {}
+            ).get(i)
+            lambda_diff = (
+                max(
+                    abs(selected_prices[n, int(t)] - settle_price[n, t])
+                    for n in nodes
+                    for t in reference.T
+                )
+                if selected_prices
+                else None
+            )
         elif cfg.system_price_settlement:
             access_shadow_prices = {
                 n: investment_headroom_shadow_price(model, n) for n in model.N

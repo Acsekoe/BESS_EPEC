@@ -164,6 +164,23 @@ below 0.001 EUR/day per investor. An immediate unpenalized sweep moved again
 Therefore the penalized result is an equilibrium-selection/numerical candidate,
 not evidence that the original raw strategy map has a unique fixed point.
 
+The strategic driver now supports both full Gauss--Jacobi and Gauss--Seidel
+updates. In strategic Jacobi mode every investor solves against one frozen
+snapshot containing all rivals' MW, MWh, charge/discharge quantities, and bid
+prices; damped proposals are applied simultaneously after the complete sweep.
+Independent best responses can run in separate worker processes. A same-snapshot
+serial-versus-four-worker verification matched capacities, hourly offers, bid
+prices, objectives, termination states, strong-duality gaps, and joint price
+bounds exactly. Checkpoints are written only after complete sweeps. The first
+200 MW two-sided-price Jacobi run reached 100 iterations without convergence.
+Aggregate investment ended at 177.129 MW / 594.405 MWh, almost entirely at N8
+and N6, but quantity offers and especially bid prices remained unstable. The
+run used no proximal or dispatch regularization; its only objective selector
+was a direct `1e-6` squared-price epsilon whose realized cost was economically
+tiny. All MPECs were optimal, strong-duality gaps were small, and no projection
+occurred, so this is a stable physical-investment candidate rather than a
+converged strategic price-and-quantity equilibrium.
+
 An optional two-sided strategic bidding mode is enabled with
 `--strategic-bid-prices`. Each investor then chooses an hourly charging buy-bid
 price/quantity pair and discharging sell-offer price/quantity pair. Submitted

@@ -1,19 +1,20 @@
-"""Multi-investor strategic-operation EPEC via Jacobi-initialized Gauss-Seidel.
+"""Multi-investor strategic-operation EPEC via Jacobi or Gauss-Seidel.
 
 This driver is deliberately separate from ``epec_diagonalization.py``. The
 maintained driver keeps storage fully available to the ISO; this experiment
 adds hourly charge/discharge quantities and, optionally, charging buy-bid and
 discharging sell-offer prices to every investor's strategy.
 
-A fresh run first solves one common-snapshot Gauss-Jacobi best-response sweep,
-projects overloaded nodes proportionally, and then starts damped Gauss-Seidel.
-Capacities and effective hourly offers are both frozen for rivals and updated
-for the active investor.
+A fresh run first solves one common-snapshot Gauss-Jacobi best-response sweep
+and projects overloaded nodes proportionally. Subsequent sweeps use either
+full Gauss-Jacobi or Gauss-Seidel updates. In Jacobi mode every investor sees
+the same complete sweep-start strategy; all damped proposals are applied only
+after every best response has finished.
 
 An optional proximal penalty can select a nearby capacity/withholding best
-response during Gauss-Seidel. It is disabled by default and excluded from the
-Jacobi initializer. A converged penalized run remains a regularized candidate
-that requires an unpenalized best-response check.
+response during diagonalization. It is disabled by default and excluded from
+the Jacobi initializer. A converged penalized run remains a regularized
+candidate that requires an unpenalized best-response check.
 
 An optional direct epsilon-times-square penalty pins strategic bid prices
 toward zero without directly penalizing capacity, energy, or quantity offers.
@@ -28,6 +29,7 @@ import json
 import math
 import time
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -93,6 +95,7 @@ class StrategicBestResponse:
     penalized_objective_eur_per_day: float
     access_shadow_price_eur_per_mw_day: dict[str, float]
     strong_duality_gap: float
+    selected_price_eur_per_mwh: dict[tuple[str, int], float]
     model: pyo.ConcreteModel | None
 
     @property
@@ -115,6 +118,12 @@ class StrategicEpecState:
     trajectory: list[dict] = field(default_factory=list)
     projection_events: list[dict] = field(default_factory=list)
     final_models: dict[str, pyo.ConcreteModel] = field(default_factory=dict)
+    final_selected_prices: dict[str, dict[tuple[str, int], float]] = field(
+        default_factory=dict
+    )
+    final_access_shadow_prices: dict[str, dict[str, float]] = field(
+        default_factory=dict
+    )
     initialization_method: str = "uniform_seed_full_availability"
     initializer_summary: dict = field(default_factory=dict)
     offer_convergence_history: list[dict] = field(default_factory=list)
@@ -203,7 +212,7 @@ def _effective_bid_price(
 
 
 def proximal_coefficient_for_iteration(cfg: EpecConfig, iteration: int) -> float:
-    """Return the fixed or staircase proximal coefficient for one Seidel sweep."""
+    """Return the fixed or staircase proximal coefficient for one sweep."""
 
     step = cfg.strategic_proximal_penalty_step_eur_per_mw2_day
     if step <= 0.0:
@@ -374,6 +383,7 @@ def solve_best_response(
             float("nan"),
             {node: float("nan") for node in nodes},
             float("nan"),
+            {},
             None,
         )
 
@@ -450,8 +460,122 @@ def solve_best_response(
         value(model.objective.expr),
         {node: investment_headroom_shadow_price(model, node) for node in nodes},
         abs(value(model.primal_objective_expr) - value(model.dual_objective_expr)),
+        {
+            (node, time_): value(model.lam_sys[time_])
+            if cfg.system_price_settlement
+            else value(model.lam[node, time_])
+            for node in nodes
+            for time_ in times
+        },
         model,
     )
+
+
+@dataclass(frozen=True)
+class StrategicBestResponseTask:
+    investor_id: str
+    arguments: tuple
+    initial_guess_power: dict[str, float] | None = None
+    initial_guess_energy: dict[str, float] | None = None
+
+
+def best_response_task(
+    data,
+    cfg: EpecConfig,
+    investor: InvestorConfig,
+    state: StrategicEpecState,
+    nodes: list[str],
+    times: list[int],
+    *,
+    initial_guess_power: dict[str, float] | None = None,
+    initial_guess_energy: dict[str, float] | None = None,
+) -> StrategicBestResponseTask:
+    investor_id = investor.investor_id
+    rival = separate_rival_strategies(state, cfg, nodes, times, investor_id)
+    arguments = (
+        data,
+        cfg,
+        investor,
+        *rival,
+        {node: state.x_power[investor_id, node] for node in nodes},
+        {node: state.x_energy[investor_id, node] for node in nodes},
+        {
+            (node, time_): state.offer_charge[investor_id, node, time_]
+            for node in nodes
+            for time_ in times
+        },
+        {
+            (node, time_): state.offer_discharge[investor_id, node, time_]
+            for node in nodes
+            for time_ in times
+        },
+        {
+            (node, time_): state.bid_price_charge[investor_id, node, time_]
+            for node in nodes
+            for time_ in times
+        },
+        {
+            (node, time_): state.offer_price_discharge[investor_id, node, time_]
+            for node in nodes
+            for time_ in times
+        },
+    )
+    return StrategicBestResponseTask(
+        investor_id,
+        arguments,
+        initial_guess_power,
+        initial_guess_energy,
+    )
+
+
+def _solve_best_response_task(
+    task: StrategicBestResponseTask, *, retain_model: bool, tee: bool
+) -> StrategicBestResponse:
+    response = solve_best_response(
+        *task.arguments,
+        initial_guess_power=task.initial_guess_power,
+        initial_guess_energy=task.initial_guess_energy,
+        tee=tee,
+    )
+    if not retain_model:
+        response.model = None
+    return response
+
+
+def solve_best_response_tasks(
+    tasks: list[StrategicBestResponseTask],
+    *,
+    parallel_workers: int,
+    tee: bool,
+) -> list[StrategicBestResponse]:
+    """Solve tasks in parallel while returning results in configured ID order."""
+
+    if parallel_workers <= 1:
+        return [
+            _solve_best_response_task(task, retain_model=True, tee=tee)
+            for task in tasks
+        ]
+    if tee:
+        raise ValueError("Parallel strategic solves do not support --tee.")
+    with ProcessPoolExecutor(max_workers=parallel_workers) as executor:
+        futures = {
+            task.investor_id: executor.submit(
+                _solve_best_response_task,
+                task,
+                retain_model=False,
+                tee=False,
+            )
+            for task in tasks
+        }
+        responses = []
+        for task in tasks:
+            try:
+                responses.append(futures[task.investor_id].result())
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Parallel strategic best response failed for {task.investor_id}: {exc}"
+                ) from exc
+        return responses
 
 
 def clean_and_bound_state(
@@ -603,7 +727,6 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
         },
         initialization_method="strategic_jacobi_common_snapshot_projected",
     )
-    responses: list[StrategicBestResponse] = []
     numerical_power = {node: cfg.seed_power_mw for node in nodes}
     numerical_energy = {
         node: cfg.seed_power_mw * cfg.seed_ratio_hours for node in nodes
@@ -617,49 +740,30 @@ def projected_jacobi_initial_state(data, cfg, *, tee=False) -> StrategicEpecStat
         f"{snapshot_power:g} MW/node; numerical guess {cfg.seed_power_mw:g} MW/node; "
         "proximal penalty off"
     )
-    for investor in cfg.investors:
-        rival = separate_rival_strategies(
-            snapshot, initializer_cfg, nodes, times, investor.investor_id
-        )
-        investor_id = investor.investor_id
-        response = solve_best_response(
+    tasks = [
+        best_response_task(
             data,
             initializer_cfg,
             investor,
-            *rival,
-            {node: snapshot.x_power[investor_id, node] for node in nodes},
-            {node: snapshot.x_energy[investor_id, node] for node in nodes},
-            {
-                (node, time_): snapshot.offer_charge[investor_id, node, time_]
-                for node in nodes
-                for time_ in times
-            },
-            {
-                (node, time_): snapshot.offer_discharge[investor_id, node, time_]
-                for node in nodes
-                for time_ in times
-            },
-            {
-                (node, time_): snapshot.bid_price_charge[investor_id, node, time_]
-                for node in nodes
-                for time_ in times
-            },
-            {
-                (node, time_): snapshot.offer_price_discharge[
-                    investor_id, node, time_
-                ]
-                for node in nodes
-                for time_ in times
-            },
+            snapshot,
+            nodes,
+            times,
             initial_guess_power=numerical_power,
             initial_guess_energy=numerical_energy,
-            tee=tee,
         )
+        for investor in cfg.investors
+    ]
+    responses = solve_best_response_tasks(
+        tasks,
+        parallel_workers=cfg.strategic_parallel_workers,
+        tee=tee,
+    )
+    for response in responses:
+        investor_id = response.investor_id
         if not response.ok:
             raise RuntimeError(
                 f"Strategic Jacobi initializer failed for {investor_id}: {response.termination}"
             )
-        responses.append(response)
         print(
             f"  {investor_id}: desired {sum(response.proposed_power.values()):.3f} MW / "
             f"{sum(response.proposed_energy.values()):.3f} MWh"
@@ -727,13 +831,18 @@ def run_epec(
     checkpoint_callback: Callable[[StrategicEpecState], None] | None = None,
     initial_state: StrategicEpecState | None = None,
 ) -> StrategicEpecState:
+    if cfg.update_rule not in {"jacobi", "seidel"}:
+        raise ValueError(f"Unsupported strategic update rule: {cfg.update_rule!r}")
     nodes = list(data.nodes)
     times = [int(time_) for time_ in data.times]
     if initial_state is None and cfg.automatic_jacobi_initializer:
         state = projected_jacobi_initial_state(data, cfg, tee=tee)
         if checkpoint_callback:
             checkpoint_callback(state)
-        print("Strategic Jacobi initializer complete; starting Gauss-Seidel.")
+        print(
+            "Strategic Jacobi initializer complete; starting "
+            f"Gauss-{cfg.update_rule.capitalize()}."
+        )
     elif initial_state is None:
         seed = min(cfg.seed_power_mw, cfg.node_limit_mw / len(cfg.investors))
         state = StrategicEpecState(
@@ -777,25 +886,34 @@ def run_epec(
         discharge_price_start = dict(state.offer_price_discharge)
         responses = []
 
-        for investor in cfg.investors:
-            investor_id = investor.investor_id
-            rival = separate_rival_strategies(state, cfg, nodes, times, investor_id)
-            response = solve_best_response(
-                data,
-                iteration_cfg,
-                investor,
-                *rival,
-                {node: state.x_power[investor_id, node] for node in nodes},
-                {node: state.x_energy[investor_id, node] for node in nodes},
-                {(node, time_): state.offer_charge[investor_id, node, time_] for node in nodes for time_ in times},
-                {(node, time_): state.offer_discharge[investor_id, node, time_] for node in nodes for time_ in times},
-                {(node, time_): state.bid_price_charge[investor_id, node, time_] for node in nodes for time_ in times},
-                {(node, time_): state.offer_price_discharge[investor_id, node, time_] for node in nodes for time_ in times},
+        if cfg.update_rule == "jacobi":
+            tasks = [
+                best_response_task(
+                    data, iteration_cfg, investor, state, nodes, times
+                )
+                for investor in cfg.investors
+            ]
+            responses = solve_best_response_tasks(
+                tasks,
+                parallel_workers=cfg.strategic_parallel_workers,
                 tee=tee,
             )
-            responses.append(response)
-            if response.ok:
-                apply_damped_update(state, cfg, nodes, times, response, data.eta)
+        else:
+            for investor in cfg.investors:
+                task = best_response_task(
+                    data, iteration_cfg, investor, state, nodes, times
+                )
+                response = solve_best_response_tasks(
+                    [task], parallel_workers=1, tee=tee
+                )[0]
+                responses.append(response)
+                if response.ok:
+                    apply_damped_update(state, cfg, nodes, times, response, data.eta)
+
+        if cfg.update_rule == "jacobi":
+            for response in responses:
+                if response.ok:
+                    apply_damped_update(state, cfg, nodes, times, response, data.eta)
 
         project_joint_limit(state, cfg, nodes, times, data.eta)
         all_ok = all(response.ok for response in responses)
@@ -921,6 +1039,70 @@ def run_epec(
                 if cfg.strategic_bid_prices
                 else 0.0
             )
+            undamped_capacity = math.sqrt(
+                sum(
+                    (response.proposed_power[node] - power_start[investor_id, node]) ** 2
+                    + (
+                        (
+                            response.proposed_energy[node]
+                            - energy_start[investor_id, node]
+                        )
+                        / cfg.strategic_proximal_energy_scale_hours
+                    )
+                    ** 2
+                    for node in nodes
+                )
+            )
+            undamped_offer = math.sqrt(
+                sum(
+                    (
+                        (
+                            response.proposed_power[node]
+                            - response.proposed_offer_charge[node, time_]
+                        )
+                        - (
+                            power_start[investor_id, node]
+                            - charge_start[investor_id, node, time_]
+                        )
+                    )
+                    ** 2
+                    + (
+                        (
+                            response.proposed_power[node]
+                            - response.proposed_offer_discharge[node, time_]
+                        )
+                        - (
+                            power_start[investor_id, node]
+                            - discharge_start[investor_id, node, time_]
+                        )
+                    )
+                    ** 2
+                    for node in nodes
+                    for time_ in times
+                )
+                / (2.0 * len(times))
+            )
+            undamped_price = (
+                math.sqrt(
+                    sum(
+                        (
+                            response.proposed_bid_price_charge[node, time_]
+                            - charge_price_start[investor_id, node, time_]
+                        )
+                        ** 2
+                        + (
+                            response.proposed_offer_price_discharge[node, time_]
+                            - discharge_price_start[investor_id, node, time_]
+                        )
+                        ** 2
+                        for node in nodes
+                        for time_ in times
+                    )
+                    / (2.0 * len(times))
+                )
+                if cfg.strategic_bid_prices
+                else 0.0
+            )
             max_rel_power = max(max_rel_power, rel_power)
             max_rel_energy = max(max_rel_energy, rel_energy)
             max_rel_offer = max(max_rel_offer, rel_offer)
@@ -947,6 +1129,9 @@ def run_epec(
                     "max_undamped_delta_power_mw": max(
                         abs(response.proposed_power[node] - power_start[investor_id, node]) for node in nodes
                     ),
+                    "undamped_capacity_residual_mw_equivalent": undamped_capacity,
+                    "undamped_offer_residual_mw": undamped_offer,
+                    "undamped_price_residual_eur_per_mwh": undamped_price,
                 }
             )
             state.offer_convergence_history.append(
@@ -957,6 +1142,8 @@ def run_epec(
                     "max_rel_delta_price": rel_price,
                     "abs_offer_step_mw": abs_offer,
                     "abs_price_step_eur_per_mwh": abs_price,
+                    "undamped_offer_residual_mw": undamped_offer,
+                    "undamped_price_residual_eur_per_mwh": undamped_price,
                     "charge_offer_capacity_hours_mwh": sum(
                         state.offer_charge[investor_id, node, time_] for node in nodes for time_ in times
                     ),
@@ -1018,7 +1205,7 @@ def run_epec(
             row["converged_sweep_streak"] = state.consecutive_converged_sweeps
 
         print(
-            f"iter {iteration:2d} [strategic seidel] abs "
+            f"iter {iteration:2d} [strategic {cfg.update_rule}] abs "
             f"dStrategy={max_abs_capacity:.4f} MW-eq "
             f"dOffer={max_abs_offer:.4f} MW "
             f"dPrice={max_abs_price:.4f} EUR/MWh; "
@@ -1054,6 +1241,16 @@ def run_epec(
             for response in responses
             if response.model is not None
         }
+        state.final_selected_prices = {
+            response.investor_id: response.selected_price_eur_per_mwh
+            for response in responses
+            if response.selected_price_eur_per_mwh
+        }
+        state.final_access_shadow_prices = {
+            response.investor_id: response.access_shadow_price_eur_per_mw_day
+            for response in responses
+            if response.ok
+        }
         if checkpoint_callback:
             checkpoint_callback(state)
         if should_stop:
@@ -1073,6 +1270,8 @@ def export_checkpoint(output_dir: Path, state: StrategicEpecState, cfg: EpecConf
         "investor_solve_order": [
             investor.investor_id for investor in cfg.investors
         ],
+        "update_rule": cfg.update_rule,
+        "parallel_workers": cfg.strategic_parallel_workers,
         "node_limit_mw": cfg.node_limit_mw,
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
@@ -1119,6 +1318,12 @@ def export_checkpoint(output_dir: Path, state: StrategicEpecState, cfg: EpecConf
 def load_checkpoint(path: Path, data, cfg: EpecConfig) -> StrategicEpecState:
     checkpoint_path = path / "checkpoint.json" if path.is_dir() else path
     raw = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    checkpoint_update_rule = raw.get("update_rule")
+    if checkpoint_update_rule is not None and checkpoint_update_rule != cfg.update_rule:
+        raise ValueError(
+            "checkpoint update rule does not match this run: "
+            f"{checkpoint_update_rule!r} != {cfg.update_rule!r}"
+        )
 
     def capacities(field):
         return {
@@ -1221,6 +1426,7 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
         [
             "iteration", "investor", "max_rel_delta_offer", "max_rel_delta_price",
             "abs_offer_step_mw", "abs_price_step_eur_per_mwh",
+            "undamped_offer_residual_mw", "undamped_price_residual_eur_per_mwh",
             "charge_offer_capacity_hours_mwh", "discharge_offer_capacity_hours_mwh",
             "mean_charge_bid_price_eur_per_mwh",
             "mean_discharge_offer_price_eur_per_mwh",
@@ -1249,6 +1455,8 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
             "investor_solve_order": [
                 investor.investor_id for investor in cfg.investors
             ],
+            "update_rule": cfg.update_rule,
+            "parallel_workers": cfg.strategic_parallel_workers,
             "generator_calibration": calibration,
             "offer_convergence_required": True,
             "proximal_penalty_eur_per_mw2_day": (
@@ -1331,6 +1539,8 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
             "investor_solve_order": [
                 investor.investor_id for investor in cfg.investors
             ],
+            "update_rule": cfg.update_rule,
+            "parallel_workers": cfg.strategic_parallel_workers,
             "generator_calibration": calibration,
             "offer_convergence_required": True,
             "proximal_penalty_eur_per_mw2_day": (
@@ -1372,9 +1582,21 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=None,
         help=(
-            "Explicit Gauss-Seidel solve order using configured investor IDs, "
+            "Deterministic solve/result order using configured investor IDs, "
             "for example: --investor-order I3 I1 I4 I2."
         ),
+    )
+    parser.add_argument(
+        "--update-rule",
+        choices=["jacobi", "seidel"],
+        default="seidel",
+        help="Full-sweep strategic update rule.",
+    )
+    parser.add_argument(
+        "--parallel-workers",
+        type=int,
+        default=1,
+        help="Independent worker processes for Jacobi best responses.",
     )
     parser.add_argument("--wacc", type=float, nargs="+", default=[0.08, 0.12])
     parser.add_argument("--damping", type=float, default=DEFAULT_DAMPING)
@@ -1486,7 +1708,7 @@ def parse_args() -> argparse.Namespace:
         "--proximal-penalty-step-iters",
         type=int,
         default=5,
-        help="Number of Seidel iterations per staircase proximal-penalty block.",
+        help="Number of iterations per staircase proximal-penalty block.",
     )
     parser.add_argument("--capacity-cleanup-tol", type=float, default=DEFAULT_CAPACITY_CLEANUP_TOL_MW_MWH)
     parser.add_argument("--conventional-capacity-adder-mw", type=float, default=20.0)
@@ -1506,6 +1728,12 @@ def main() -> int:
         raise SystemExit("--damping must be in (0, 1].")
     if args.max_iters <= 0:
         raise SystemExit("--max-iters must be positive.")
+    if args.parallel_workers <= 0:
+        raise SystemExit("--parallel-workers must be positive.")
+    if args.update_rule == "seidel" and args.parallel_workers != 1:
+        raise SystemExit("--parallel-workers greater than one requires --update-rule jacobi.")
+    if args.tee and args.parallel_workers > 1:
+        raise SystemExit("--tee is not supported with parallel strategic solves.")
     if (
         args.tol_abs_capacity_mw <= 0.0
         or args.tol_abs_offer_mw <= 0.0
@@ -1566,7 +1794,7 @@ def main() -> int:
     cfg = EpecConfig(
         investors=investors,
         node_limit_mw=args.node_limit_mw,
-        update_rule="seidel",
+        update_rule=args.update_rule,
         damping=args.damping,
         max_iters=args.max_iters,
         tol_rel=args.tol_rel,
@@ -1607,6 +1835,7 @@ def main() -> int:
         strategic_consecutive_converged_sweeps=(
             args.consecutive_converged_sweeps
         ),
+        strategic_parallel_workers=args.parallel_workers,
     )
     initial_state = None
     if args.resume_from:
@@ -1628,11 +1857,12 @@ def main() -> int:
         f"Strategic-operation EPEC: {len(investors)} investors, "
         f"solve_order={','.join(i.investor_id for i in investors)}, "
         f"Jacobi initializer={'on' if cfg.automatic_jacobi_initializer else 'off'}, "
-        f"Gauss-Seidel damping={cfg.damping}, absolute tolerances="
+        f"Gauss-{cfg.update_rule.capitalize()} damping={cfg.damping}, absolute tolerances="
         f"({cfg.strategic_tol_abs_capacity_mw:g} MW-eq, "
         f"{cfg.strategic_tol_abs_offer_mw:g} MW, "
         f"{cfg.strategic_tol_abs_price_eur_per_mwh:g} EUR/MWh) for "
         f"{cfg.strategic_consecutive_converged_sweeps} sweeps, "
+        f"parallel_workers={cfg.strategic_parallel_workers}, "
         f"strategic_prices={'on' if cfg.strategic_bid_prices else 'off'}, "
         f"epsilon={cfg.strategic_epsilon_penalty:g}, "
         f"proximal_fixed={cfg.strategic_proximal_penalty_eur_per_mw2_day:g}, "
@@ -1643,7 +1873,7 @@ def main() -> int:
     if cfg.resume_from:
         print(
             f"Resuming from iteration {initial_state.iteration}; "
-            f"--max-iters={cfg.max_iters} means additional Seidel sweeps."
+            f"--max-iters={cfg.max_iters} means additional {cfg.update_rule} sweeps."
         )
     checkpoint_callback = None
     if not args.no_export:

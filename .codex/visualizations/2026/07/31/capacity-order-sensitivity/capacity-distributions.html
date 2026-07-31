@@ -1,0 +1,82 @@
+<div class="capviz" role="figure" aria-label="Capacity-only nodal power distributions for four investors across 22 completed order-sensitivity runs">
+  <style>
+    .capviz { color: var(--foreground); font-family: var(--font-sans); width: 100%; }
+    .capviz * { box-sizing: border-box; }
+    .capviz .note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin: 0 0 12px 52px; color: var(--muted-foreground); font-size: 12px; line-height: 1.4; }
+    .capviz .legend { display: inline-flex; flex-wrap: wrap; gap: 14px; }
+    .capviz .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .capviz .dot, .capviz .ring { width: 8px; height: 8px; border-radius: 50%; display: inline-block; border: 1.5px solid var(--viz-series-1); }
+    .capviz .dot { background: var(--viz-series-1); }
+    .capviz .ring { background: transparent; }
+    .capviz .median { width: 13px; height: 3px; border-radius: 2px; display: inline-block; background: var(--foreground); }
+    .capviz .grid { display: grid; grid-template-columns: 46px repeat(3, minmax(135px, 1fr)); gap: 4px 8px; align-items: stretch; }
+    .capviz .head { text-align: center; font-size: 13px; font-weight: 650; padding: 0 0 3px; }
+    .capviz .head small { display: block; margin-top: 2px; color: var(--muted-foreground); font-size: 10px; font-weight: 400; }
+    .capviz .investor { display: flex; align-items: center; justify-content: flex-end; padding-right: 4px; font-size: 13px; font-weight: 650; }
+    .capviz .panel { position: relative; min-width: 0; }
+    .capviz svg { display: block; width: 100%; height: 142px; overflow: visible; }
+    .capviz .gridline { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .capviz .baseline { stroke: var(--muted-foreground); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .capviz .tick { fill: var(--muted-foreground); font-size: 9px; }
+    .capviz .medline { stroke: var(--foreground); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    .capviz .point { cursor: crosshair; opacity: .78; transition: opacity 120ms ease, r 120ms ease; vector-effect: non-scaling-stroke; }
+    .capviz .point:hover { opacity: 1; r: 5.2px; }
+    .capviz .tooltip { position: fixed; z-index: 10; display: none; max-width: 255px; pointer-events: none; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 3px 12px color-mix(in srgb, var(--foreground) 14%, transparent); font-size: 11px; line-height: 1.45; }
+    .capviz .foot { margin: 8px 0 0 52px; color: var(--muted-foreground); font-size: 11px; line-height: 1.4; }
+    @media (max-width: 560px) {
+      .capviz .grid { grid-template-columns: 38px repeat(3, minmax(88px, 1fr)); gap: 2px 3px; }
+      .capviz .note, .capviz .foot { margin-left: 41px; }
+      .capviz svg { height: 130px; }
+      .capviz .head { font-size: 12px; }
+    }
+  </style>
+  <div class="note">
+    <span>Power capacity (MW); horizontal jitter has no quantitative meaning.</span>
+    <span class="legend"><span><i class="dot"></i>run</span><span><i class="ring"></i>tail-warning run</span><span><i class="median"></i>median</span></span>
+  </div>
+  <div class="grid" id="capviz-grid"></div>
+  <div class="foot">Only N3, N8, and N9 are material. N1, N4, N5, and N6 are exactly zero; N2 and N7 contain only numerical traces (&lt;0.011 MW).</div>
+  <div class="tooltip" id="capviz-tooltip"></div>
+  <script>
+    (() => {
+      const data=[{"o":"I1-I2-I3-I4","w":true,"v":[0.004,15.593,1.026,0.002,11.744,6.957,0.001,39.619,28.724,58.728,33.044,0.008]},{"o":"I1-I2-I4-I3","w":false,"v":[1.023,15.593,0.004,6.96,11.744,0,0,32.125,44.286,0,40.538,43.178]},{"o":"I1-I3-I2-I4","w":false,"v":[0.004,15.674,1.062,6.191,16.649,0,0,35.299,26.853,0,32.377,61.34]},{"o":"I1-I3-I4-I2","w":false,"v":[0,15.057,0,0.003,11.591,17.144,0,36.86,26.25,52.055,36.492,0]},{"o":"I1-I4-I2-I3","w":true,"v":[1.931,15.142,0.007,4.332,14.592,0.002,0.009,29.865,52.675,36.483,40.401,0.007]},{"o":"I1-I4-I3-I2","w":false,"v":[0.001,15.352,6.505,0.003,12.359,7.284,0.001,32.039,42.945,0.001,40.25,38.709]},{"o":"I2-I1-I3-I4","w":true,"v":[6.685,27.657,0.003,2.563,4.085,0.001,0.001,36.23,27.752,58.442,32.027,0.003]},{"o":"I2-I1-I4-I3","w":false,"v":[8.042,28.237,0.003,0.003,3.28,0.674,0,31.161,44.117,42.613,37.323,0]},{"o":"I2-I3-I1-I4","w":false,"v":[14.366,37.845,0.002,0.93,4.306,0,0.001,22.774,17.762,62.388,35.075,0.003]},{"o":"I2-I3-I4-I1","w":false,"v":[38.235,33.006,0.003,3.864,4.404,0.001,0,22.092,24.107,0.001,40.498,29.241]},{"o":"I2-I4-I1-I3","w":false,"v":[8.487,36.075,0,1.766,3.988,0.001,0.003,30.787,60.014,25.179,29.15,0]},{"o":"I2-I4-I3-I1","w":false,"v":[0.003,31.986,37.083,6.186,4.072,0.002,0,36.092,22.302,29.875,27.85,0]},{"o":"I3-I1-I2-I4","w":false,"v":[7.157,28.907,0,0.003,21.932,11.004,0,12.804,14.496,62.784,36.358,0.005]},{"o":"I3-I1-I4-I2","w":false,"v":[0.004,28.693,9.053,7.93,15.567,0,0,12.09,20.829,0.004,43.651,57.63]},{"o":"I3-I2-I1-I4","w":false,"v":[0.004,42.255,14.864,3.615,8.531,0,0,12.816,14.427,62.541,36.398,0]},{"o":"I3-I2-I4-I1","w":false,"v":[6.455,33.929,28.49,5.694,10.509,0.001,0.002,12.075,25.194,29.611,43.487,0.002]},{"o":"I3-I4-I1-I2","w":false,"v":[0,34.892,29.286,18.281,12.944,0.116,0,11.303,25.178,22.589,40.86,0]},{"o":"I3-I4-I2-I1","w":false,"v":[20.186,31.944,21.045,3.974,15.663,0.001,0.001,11.48,27.08,23.157,40.913,0.003]},{"o":"I4-I1-I2-I3","w":false,"v":[0.01,40.112,1.531,12.703,14.505,0,59.132,29.839,0,22.074,15.544,0]},{"o":"I4-I1-I3-I2","w":false,"v":[2.767,40.112,0.001,0.003,12.346,10.548,0.001,31.998,55.187,26.943,15.544,0]},{"o":"I4-I2-I1-I3","w":false,"v":[10.706,40.306,0.015,1.497,11.429,0,60.703,32.056,0,22.53,16.209,0]},{"o":"I4-I2-I3-I1","w":false,"v":[24.026,32.975,13.905,1.967,11.429,0,0,39.387,25.123,30.43,16.209,0]}];
+      const investors=['I1','I2','I3','I4'];
+      const nodes=['N3','N8','N9'];
+      const colors=['var(--viz-series-1)','var(--viz-series-2)','var(--viz-series-3)','var(--viz-series-4)'];
+      const grid=document.getElementById('capviz-grid');
+      const tip=document.getElementById('capviz-tooltip');
+      const ns='http://www.w3.org/2000/svg';
+      const svgEl=(name,attrs={})=>{const e=document.createElementNS(ns,name); Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); return e;};
+      const quantile=(values,p)=>{const a=[...values].sort((x,y)=>x-y); const q=(a.length-1)*p, lo=Math.floor(q), hi=Math.ceil(q); return a[lo]+(a[hi]-a[lo])*(q-lo);};
+      const jitter=(s)=>{let h=2166136261; for(let i=0;i<s.length;i++){h^=s.charCodeAt(i); h=Math.imul(h,16777619);} return 35+((h>>>0)%1000)/1000*130;};
+      const y=v=>119-(Math.min(65,Math.max(0,v))/65)*101;
+      grid.appendChild(document.createElement('span'));
+      nodes.forEach((node,i)=>{const h=document.createElement('div'); h.className='head'; h.innerHTML=`${node}<small>${i===1?'stable system total':'variable system total'}</small>`; grid.appendChild(h);});
+      investors.forEach((inv,ii)=>{
+        const label=document.createElement('div'); label.className='investor'; label.style.color=colors[ii]; label.textContent=inv; grid.appendChild(label);
+        nodes.forEach((node,ni)=>{
+          const wrap=document.createElement('div'); wrap.className='panel';
+          const svg=svgEl('svg',{viewBox:'0 0 200 140',role:'img','aria-label':`${inv} capacity at ${node} across 22 runs`});
+          const title=svgEl('title'); title.textContent=`${inv} at ${node}`; svg.appendChild(title);
+          [0,20,40,60].forEach(t=>{
+            const gy=y(t); svg.appendChild(svgEl('line',{x1:25,y1:gy,x2:190,y2:gy,class:t===0?'baseline':'gridline'}));
+            if(ni===0){const tx=svgEl('text',{x:21,y:gy+3,'text-anchor':'end',class:'tick'}); tx.textContent=t; svg.appendChild(tx);}
+          });
+          const vals=data.map(d=>d.v[ii*3+ni]);
+          const med=quantile(vals,.5);
+          svg.appendChild(svgEl('line',{x1:78,y1:y(med),x2:147,y2:y(med),class:'medline'}));
+          data.forEach(d=>{
+            const value=d.v[ii*3+ni];
+            const c=svgEl('circle',{cx:jitter(d.o+inv+node),cy:y(value),r:4,class:'point',fill:d.w?'var(--background)':colors[ii],stroke:colors[ii],'stroke-width':d.w?2:1});
+            const ct=svgEl('title'); ct.textContent=`${d.o}: ${value.toFixed(3)} MW${d.w?' · tail warning':''}`; c.appendChild(ct);
+            c.addEventListener('pointerenter',()=>{tip.innerHTML=`<strong>${inv} · ${node}: ${value.toFixed(3)} MW</strong><br>solve order ${d.o}${d.w?'<br>tail-drift warning':''}`; tip.style.display='block';});
+            c.addEventListener('pointermove',e=>{tip.style.left=`${Math.min(window.innerWidth-270,e.clientX+12)}px`; tip.style.top=`${Math.max(8,e.clientY-52)}px`;});
+            c.addEventListener('pointerleave',()=>{tip.style.display='none';});
+            svg.appendChild(c);
+          });
+          wrap.appendChild(svg); grid.appendChild(wrap);
+        });
+      });
+    })();
+  </script>
+</div>

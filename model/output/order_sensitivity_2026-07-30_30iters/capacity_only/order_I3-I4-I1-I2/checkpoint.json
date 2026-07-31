@@ -1,0 +1,216 @@
+{
+  "status": "converged in 26 iterations",
+  "converged": true,
+  "iteration": 26,
+  "starting_iteration": 0,
+  "resume_from": null,
+  "update_rule": "seidel",
+  "investor_solve_order": [
+    "I3",
+    "I4",
+    "I1",
+    "I2"
+  ],
+  "initialization_method": "jacobi_common_snapshot_projected",
+  "initializer_summary": {
+    "interpretation": "feasible initialization heuristic, not an equilibrium",
+    "snapshot_power_mw_per_investor_node": 0.0,
+    "snapshot_ratio_hours": 2.0,
+    "numerical_guess_power_mw_per_node": 10.0,
+    "numerical_guess_ratio_hours": 2.0,
+    "responses": {
+      "I3": {
+        "termination": "optimal",
+        "solve_seconds": 5.191822400000092,
+        "desired_power_mw": 212.74894053872816,
+        "desired_energy_mwh": 649.2747328732174,
+        "optimistic_mpec_profit_eur_per_day": 146449.34921139412,
+        "strong_duality_gap": 0.0007280993741005659
+      },
+      "I4": {
+        "termination": "optimal",
+        "solve_seconds": 2.1009544000007736,
+        "desired_power_mw": 195.47281216164134,
+        "desired_energy_mwh": 632.0848489635098,
+        "optimistic_mpec_profit_eur_per_day": 209357.06607104937,
+        "strong_duality_gap": 0.0017574653029441833
+      },
+      "I1": {
+        "termination": "optimal",
+        "solve_seconds": 16.840216099999452,
+        "desired_power_mw": 195.4509787528982,
+        "desired_energy_mwh": 632.0847748391104,
+        "optimistic_mpec_profit_eur_per_day": 22398.118568127342,
+        "strong_duality_gap": 0.020384147530421615
+      },
+      "I2": {
+        "termination": "optimal",
+        "solve_seconds": 1.7836170999999013,
+        "desired_power_mw": 98.21729262597343,
+        "desired_energy_mwh": 367.43617022678336,
+        "optimistic_mpec_profit_eur_per_day": 11059.374399585793,
+        "strong_duality_gap": 0.001411856443155557
+      }
+    },
+    "nodes": {
+      "N1": {
+        "desired_total_power_mw": 2.2526797627744707e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N2": {
+        "desired_total_power_mw": 19.392754247627085,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 19.392750426910055,
+        "limit_mw": 100.0
+      },
+      "N3": {
+        "desired_total_power_mw": 131.97542034618144,
+        "projection_scale": 0.7577168516508036,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      },
+      "N4": {
+        "desired_total_power_mw": 2.229157340383822e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N5": {
+        "desired_total_power_mw": 2.0427930181241168e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N6": {
+        "desired_total_power_mw": 1.167422361888438e-05,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 0.0,
+        "limit_mw": 100.0
+      },
+      "N7": {
+        "desired_total_power_mw": 48.15519549714368,
+        "projection_scale": 1.0,
+        "projected_total_power_mw": 48.15519173430083,
+        "limit_mw": 100.0
+      },
+      "N8": {
+        "desired_total_power_mw": 335.2050495351469,
+        "projection_scale": 0.29832486156958926,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      },
+      "N9": {
+        "desired_total_power_mw": 167.1615275326172,
+        "projection_scale": 0.5982237747886553,
+        "projected_total_power_mw": 100.0,
+        "limit_mw": 100.0
+      }
+    }
+  },
+  "damping": 0.7,
+  "capacity_cleanup_tol_mw_mwh": 0.0001,
+  "price_bound_eur_per_mwh": 500.0,
+  "dual_bound_eur_per_mwh": 10000.0,
+  "node_limit_mw": 100.0,
+  "node_total_power_mw": {
+    "N1": 0.0,
+    "N2": 0.0,
+    "N3": 40.87033714350376,
+    "N4": 0.0,
+    "N5": 0.0,
+    "N6": 0.0,
+    "N7": 0.0,
+    "N8": 99.99999993052545,
+    "N9": 54.58065946601796
+  },
+  "node_excess_mw": {
+    "N1": -100.0,
+    "N2": -100.0,
+    "N3": -59.12966285649624,
+    "N4": -100.0,
+    "N5": -100.0,
+    "N6": -100.0,
+    "N7": -100.0,
+    "N8": -6.947455233330402e-08,
+    "N9": -45.41934053398204
+  },
+  "max_node_overload_mw": 0.0,
+  "x_power_mw": {
+    "I3|N1": 0.0,
+    "I4|N1": 0.0,
+    "I1|N1": 0.0,
+    "I2|N1": 0.0,
+    "I3|N2": 0.0,
+    "I4|N2": 0.0,
+    "I1|N2": 0.0,
+    "I2|N2": 0.0,
+    "I3|N3": 5.522516149579758e-05,
+    "I4|N3": 22.589027989244794,
+    "I1|N3": 0.000400433819869366,
+    "I2|N3": 18.2808534952776,
+    "I3|N4": 0.0,
+    "I4|N4": 0.0,
+    "I1|N4": 0.0,
+    "I2|N4": 0.0,
+    "I3|N5": 0.0,
+    "I4|N5": 0.0,
+    "I1|N5": 0.0,
+    "I2|N5": 0.0,
+    "I3|N6": 0.0,
+    "I4|N6": 0.0,
+    "I1|N6": 0.0,
+    "I2|N6": 0.0,
+    "I3|N7": 0.0,
+    "I4|N7": 0.0,
+    "I1|N7": 0.0,
+    "I2|N7": 0.0,
+    "I3|N8": 11.303358129574345,
+    "I4|N8": 40.859869429365965,
+    "I1|N8": 34.89229448854435,
+    "I2|N8": 12.944477883040788,
+    "I3|N9": 25.17796547553655,
+    "I4|N9": 6.213308078682242e-05,
+    "I1|N9": 29.286281845841017,
+    "I2|N9": 0.11635001155960917
+  },
+  "x_energy_mwh": {
+    "I3|N1": 0.0,
+    "I4|N1": 0.0,
+    "I1|N1": 0.0,
+    "I2|N1": 0.0,
+    "I3|N2": 0.0,
+    "I4|N2": 0.0,
+    "I1|N2": 0.0,
+    "I2|N2": 0.0,
+    "I3|N3": 0.00011741958742011279,
+    "I4|N3": 45.17812443971478,
+    "I1|N3": 0.0010875727328690465,
+    "I2|N3": 48.42549222836116,
+    "I3|N4": 0.0,
+    "I4|N4": 0.0,
+    "I1|N4": 0.0,
+    "I2|N4": 0.0,
+    "I3|N5": 0.0,
+    "I4|N5": 0.0,
+    "I1|N5": 0.0,
+    "I2|N5": 0.0,
+    "I3|N6": 0.0,
+    "I4|N6": 0.0,
+    "I1|N6": 0.0,
+    "I2|N6": 0.0,
+    "I3|N7": 0.0,
+    "I4|N7": 0.0,
+    "I1|N7": 0.0,
+    "I2|N7": 0.0,
+    "I3|N8": 52.81731799439929,
+    "I4|N8": 167.56139348723912,
+    "I1|N8": 138.93091878920077,
+    "I2|N8": 69.83762580628479,
+    "I3|N9": 50.355962037537076,
+    "I4|N9": 0.00014570237948784764,
+    "I1|N9": 58.650806823342826,
+    "I2|N9": 0.32577861083141757
+  }
+}

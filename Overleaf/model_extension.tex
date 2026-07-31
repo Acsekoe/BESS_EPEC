@@ -15,7 +15,7 @@
 
 \setlength{\mathindent}{0pt}
 
-\title{Spot-Market BESS EPEC Extension}
+\title{Capacity and Strategic-Operation BESS EPEC Models}
 \author{Author}
 \date{\today}
 
@@ -23,17 +23,15 @@
 
 \maketitle
 
-\section*{Notation}
-
-\noindent The revised extension focuses only on deterministic day-ahead spot-market operation.
+\section{Notation}
 
 \begingroup
-\renewcommand{\arraystretch}{1.15}
+\renewcommand{\arraystretch}{1.12}
 \setlength{\LTleft}{0pt}
 \setlength{\LTright}{0pt}
-\begin{longtable}{@{}p{0.22\textwidth}
-                  @{\hspace{0.015\textwidth}}p{0.55\textwidth}
-                  @{\hspace{0.015\textwidth}}p{0.18\textwidth}@{}}
+\begin{longtable}{@{}p{0.23\textwidth}
+                  @{\hspace{0.015\textwidth}}p{0.58\textwidth}
+                  @{\hspace{0.015\textwidth}}p{0.14\textwidth}@{}}
 \hline
 \textbf{Symbol} & \textbf{Description} & \textbf{Unit} \\
 \hline
@@ -44,242 +42,224 @@
 \endhead
 \hline
 \endfoot
-\multicolumn{3}{@{}l}{\textbf{Sets and Indices}} \\
-\hline
-\(t \in \mathcal{T}\) & Time-period index and set. & -- \\
-\(\tau \in \mathcal{T}^{SOC}\) & State-of-charge time index, including the initial state. & -- \\
-\(g \in \mathcal{G}\) & Generator index and set. & -- \\
-\(n \in \mathcal{N}\) & Network node index and set. & -- \\
-\(G_n\) & Set of generators located at node \(n\). & -- \\
-\(i \in \mathcal{I}\) & BESS investor or storage-unit index and set. & -- \\
-\(l \in \mathcal{L}\) & Transmission-line index and set. & -- \\
-\hline
-\multicolumn{3}{@{}l}{\textbf{Upper-Level Decision Variables}} \\
-\hline
-\(X^{power}_{i,n}\) & Installed BESS power capacity chosen by investor \(i\) at node \(n\). & MW \\
-\(X^{energy}_{i,n}\) & Installed BESS energy capacity chosen by investor \(i\) at node \(n\). & MWh \\
-\hline
-\multicolumn{3}{@{}l}{\textbf{Lower-Level Decision Variables}} \\
-\hline
-\(P_{g,t}\) & Dispatch of generator \(g\) in time period \(t\). & MW \\
-\(P^{shed}_{n,t}\) & Load shedding at node \(n\) and time \(t\). & MW \\
-\(NetInjection_{n,t}\) & Net nodal injection used in the DC network representation. & MW \\
-\(P^{charge}_{i,n,t}\) & BESS charging power. & MW \\
-\(P^{discharge}_{i,n,t}\) & BESS discharging power. & MW \\
-\(SOC_{i,n,\tau}\) & State of charge of BESS \(i\) at node \(n\) and SOC time \(\tau\). & MWh \\
-\hline
-\multicolumn{3}{@{}l}{\textbf{Dual Variables}} \\
-\hline
-\(\lambda_{n,t}\) & Dual variable of the nodal net-injection definition. & \texteuro{}/MWh \\
-\(\lambda_{sys,t}\) & Dual variable of system-wide power balance. & \texteuro{}/MWh \\
-\(\nu^-_{g,t},\nu^+_{g,t}\) & Dual variables of the lower and upper generator dispatch bounds. & \texteuro{}/MWh \\
-\(\mu^-_{l,t},\mu^+_{l,t}\) & Dual variables of the lower and upper transmission-flow bounds. & \texteuro{}/MWh \\
-\(\rho^+_{i,n,t}\) & Dual variable of the BESS charging power-capacity bound. & \texteuro{}/MWh \\
-\(\sigma^+_{i,n,t}\) & Dual variable of the BESS discharging power-capacity bound. & \texteuro{}/MWh \\
-\(\gamma_{i,n,t}\) & Dual variable of the SOC transition equation. & \texteuro{}/MWh \\
-\(\delta^-_{i,n,\tau},\delta^+_{i,n,\tau}\) & Dual variables of the lower and upper SOC energy bounds. & \texteuro{}/MWh \\
-\(\xi^-_{n,t},\xi^+_{n,t}\) & Dual variables of the lower and upper load-shedding bounds. & \texteuro{}/MWh \\
-\(\lambda^{cap}_n\) & Nodal BESS connection-capacity price (planned extension): dual of the shared access limit, common to all investors. & \texteuro{}/MW/day \\
-\hline
-\multicolumn{3}{@{}l}{\textbf{Parameters}} \\
-\hline
-\(C_g\) & Marginal generation cost of generator \(g\). & \texteuro{}/MWh \\
-\(\alpha,\beta\) & Intercept and slope of the affine inverse-demand (curtailment) curve; marginal willingness to pay to avoid shedding is \(\alpha+\beta\,P^{shed}_{n,t}/D^{el}_{n,t}\). & \texteuro{}/MWh \\
-\(P^{max}_{g,t}\) & Maximum available dispatch of generator \(g\) in time period \(t\). & MW \\
-\(Limit_l\) & Transmission capacity limit on line \(l\). & MW \\
-\(PTDF_{l,n}\) & Power transfer distribution factor from node \(n\) to line \(l\). & dimensionless \\
-\(D^{el}_{n,t}\) & Electricity demand at node \(n\) and time \(t\). & MW \\
-\(\eta\) & One-way BESS charging and discharging efficiency, \(0 < \eta \leq 1\). & dimensionless \\
-\(Limit^{node}_n\) & Accessible BESS power connection capacity at node \(n\). & MW \\
-\(Ratio^{min}, Ratio^{max}\) & Minimum and maximum BESS energy-to-power ratios. & h \\
-\(C^{power}_i, C^{energy}_i\) & Investor \(i\) power and energy capital cost. & \texteuro{}/MW, \texteuro{}/MWh \\
-\(d_i\) & Investor \(i\) throughput degradation cost. & \texteuro{}/MWh \\
-\(r_i, L_i\) & Investor \(i\) WACC and project lifetime; \(CRF_i=\dfrac{r_i(1+r_i)^{L_i}}{(1+r_i)^{L_i}-1}\). & --, a \\
-\(s_{i,g}\) & Share of generator \(g\)'s spot rent owned by investor \(i\); \(0\) for a stand-alone merchant. & dimensionless \\
+\(i\in\mathcal I\), \(n\in\mathcal N\), \(t\in\mathcal T\) & Investors, nodes, and hourly periods. & -- \\
+\(g\in\mathcal G\), \(l\in\mathcal L\) & Generators and transmission lines; \(\mathcal G_n\) denotes generators at node \(n\). & -- \\
+\(X^P_{i,n},X^E_{i,n}\) & Installed BESS power and energy capacity. & MW, MWh \\
+\(q^{ch}_{i,n,t},q^{dis}_{i,n,t}\) & Strategic charging and discharging quantity offers. & MW \\
+\(b^{ch}_{i,n,t},b^{dis}_{i,n,t}\) & Charging buy-bid and discharging sell-offer prices. & \texteuro{}/MWh \\
+\(P_{g,t}\) & Cleared generator dispatch. & MW \\
+\(p^{ch}_{i,n,t},p^{dis}_{i,n,t}\) & Cleared BESS charging and discharging power. & MW \\
+\(e_{i,n,t}\) & BESS state of charge. & MWh \\
+\(z_{n,t}\) & Net injection at node \(n\). & MW \\
+\(\lambda_{n,t},\lambda^{sys}_t\) & Duals of nodal injection and system balance; the former is the LMP. & \texteuro{}/MWh \\
+\(\rho_{i,n,t},\sigma_{i,n,t}\) & Duals of the charging and discharging upper bounds. & \texteuro{}/MWh \\
+\(C_g,\overline P_{g,t}\) & Generator marginal cost and available capacity. & \texteuro{}/MWh, MW \\
+\(D_{n,t}\) & Fixed electricity demand. & MW \\
+\(H_{l,n},\overline F_l\) & PTDF and symmetric line-flow limit. & --, MW \\
+\(\eta\) & One-way charging and discharging efficiency. & -- \\
+\(\overline X_n\) & Shared nodal BESS connection limit. & MW \\
+\(r^{min},r^{max}\) & Minimum and maximum energy-to-power ratios; here 2 and 8. & h \\
+\(c^P_i,c^E_i,d_i\) & Power CAPEX, energy CAPEX, and physical throughput degradation cost. & \texteuro{}/MW; \texteuro{}/MWh \\
+\(s_{i,g}\) & Share of generator \(g\)'s spot rent owned by investor \(i\). & -- \\
 \end{longtable}
 \endgroup
 
-\section{Model Direction}
+\section{Components Shared by Both EPECs}
 
-\noindent The extension now returns to a spot-market EPEC. The central research object is competition for scarce accessible BESS power capacity at each node, followed by strategic spot-market operation through the lower-level DC-OPF market-clearing problem. Investor heterogeneity is no longer limited to WACC: the maintained four-investor specification pairs two stand-alone merchant BESS investors (differing only by WACC) with two same-WACC renewable-portfolio investors that additionally own a wind- or solar-heavy share of the existing generation fleet and its spot rent.
+\subsection{Market physics}
 
-\subsection*{Lower-Level Problem --- Spot-Market Clearing}
+Let \(y=(P,p^{ch},p^{dis},e,z)\) collect the lower-level variables. Both models use fixed demand, no load shedding, and the same PTDF DC network and storage equations:
+\begin{subequations}\label{eq:common-market}
+\begin{align}
+z_{n,t}
+&=\sum_{g\in\mathcal G_n}P_{g,t}
+ +\sum_i\left(p^{dis}_{i,n,t}-p^{ch}_{i,n,t}\right)-D_{n,t},
+&&\forall n,t, \label{eq:nodal-injection}\\
+\sum_n z_{n,t}&=0,
+&&\forall t, \label{eq:system-balance}\\
+0\le P_{g,t}&\le\overline P_{g,t},
+&&\forall g,t, \label{eq:generation-bounds}\\
+-\overline F_l\le\sum_n H_{l,n}z_{n,t}&\le\overline F_l,
+&&\forall l,t, \label{eq:line-bounds}\\
+e_{i,n,t+1}&=e_{i,n,t}+\eta p^{ch}_{i,n,t}
+-\eta^{-1}p^{dis}_{i,n,t},
+&&\forall i,n,t, \label{eq:soc-balance}\\
+0\le e_{i,n,t}&\le X^E_{i,n},
+&&\forall i,n,t, \label{eq:soc-bounds}\\
+e_{i,n,0}&=e_{i,n,|\mathcal T|},
+&&\forall i,n. \label{eq:cyclic-soc}
+\end{align}
+\end{subequations}
+The model-specific charging and discharging bounds and the market objective are given separately below.
 
-\paragraph{Objective}
-\begin{align*}
-\min \quad
-&\sum_{t,g} C_g P_{g,t}
-\;+\;
-\sum_{n,t}
-\left(
-\alpha \, P^{shed}_{n,t}
-+ \frac{\beta}{2 D^{el}_{n,t}} \left(P^{shed}_{n,t}\right)^2
+\subsection{Investment feasibility and investor profit}
+
+Each best response takes rival capacities as fixed. The active investor's feasible capacity set is
+\begin{subequations}\label{eq:capacity-feasibility}
+\begin{align}
+0\le X^P_{i,n}&\le \overline X_n-\sum_{j\ne i}X^P_{j,n},
+&&\forall n, \label{eq:private-headroom}\\
+r^{min}X^P_{i,n}\le X^E_{i,n}&\le r^{max}X^P_{i,n},
+&&\forall n. \label{eq:duration-envelope}
+\end{align}
+\end{subequations}
+Thus every jointly feasible outcome satisfies \(\sum_iX^P_{i,n}\le\overline X_n\). The daily economic profit used in both models is
+\begin{subequations}\label{eq:investor-profit}
+\begin{align}
+\Pi_i
+&=R_i^{BESS}+R_i^{gen}-C_i^{deg}-K_i, \label{eq:profit}\\
+R_i^{BESS}
+&=\sum_{n,t}\pi_{n,t}
+\left(p^{dis}_{i,n,t}-p^{ch}_{i,n,t}\right), \label{eq:bess-revenue}\\
+R_i^{gen}
+&=\sum_{g,t}s_{i,g}
+\left(\pi_{n(g),t}-C_g\right)P_{g,t}, \label{eq:generation-rent}\\
+C_i^{deg}
+&=\frac{d_i}{2}\sum_{n,t}
+\left(p^{ch}_{i,n,t}+p^{dis}_{i,n,t}\right), \label{eq:degradation}\\
+K_i
+&=\frac{CRF_i}{365.25}\sum_n
+\left(c^P_iX^P_{i,n}+c^E_iX^E_{i,n}\right), \label{eq:daily-capex}\\
+CRF_i
+&=\frac{r_i(1+r_i)^{L_i}}{(1+r_i)^{L_i}-1}. \label{eq:crf}
+\end{align}
+\end{subequations}
+Here \(\pi_{n,t}=\lambda_{n,t}\) under nodal settlement and \(\pi_{n,t}=\lambda^{sys}_t\) under the optional single-zone settlement. Stand-alone merchants have \(s_{i,g}=0\); portfolio investors internalize their owned generators' spot rents.
+
+\subsection{Lower-level embedding}
+
+For fixed upper-level decisions, each market-clearing problem below is a linear program. In investor \(i\)'s MPEC it is replaced by primal feasibility, dual feasibility, and strong duality:
+\begin{equation}\label{eq:mpec-embedding}
+\operatorname{PF}(y;x_i,x_{-i}),\qquad
+\operatorname{DF}(u;x_i,x_{-i}),\qquad
+Z^{P}(y;x_i,x_{-i})=Z^{D}(u;x_i,x_{-i}),
+\end{equation}
+where \(u\) collects the lower-level dual variables. This is the implemented primal--dual reformulation; no explicit complementarity products are added.
+
+\section{Model 1: Capacity-Only EPEC}
+
+In the capacity-only model investor \(i\) chooses only installed MW and MWh,
+\begin{equation}\label{eq:capacity-strategy}
+x_i^{C}=\left\{X^P_{i,n},X^E_{i,n}\right\}_{n\in\mathcal N}.
+\end{equation}
+The ISO retains full control of storage dispatch within installed power:
+\begin{equation}\label{eq:capacity-dispatch-bounds}
+0\le p^{ch}_{i,n,t}\le X^P_{i,n},\qquad
+0\le p^{dis}_{i,n,t}\le X^P_{i,n},
+\qquad\forall i,n,t.
+\end{equation}
+Given the capacities, the ISO solves
+\begin{equation}\label{eq:capacity-iso}
+\min_{y}\quad
+Z_C^P=
+\sum_{g,t}C_gP_{g,t}
++\frac{1}{2}\sum_{i,n,t}d_i
+\left(p^{ch}_{i,n,t}+p^{dis}_{i,n,t}\right)
+\quad\text{s.t.}\quad
+\eqref{eq:common-market},\ \eqref{eq:capacity-dispatch-bounds}.
+\end{equation}
+Investor \(i\)'s capacity-only MPEC is therefore
+\begin{equation}\label{eq:capacity-mpec}
+\boxed{
+\max_{x_i^C,y,u}\ \Pi_i
+\quad\text{s.t.}\quad
+\eqref{eq:capacity-feasibility},\
+\operatorname{PF}_C,\operatorname{DF}_C,\ Z_C^P=Z_C^D
+}
+\qquad\text{given }x_{-i}^C.
+\end{equation}
+Storage bids are not upper-level decisions in this model. The degradation term in \eqref{eq:capacity-iso} therefore guides ISO dispatch, while \eqref{eq:degradation} records the same physical cost in private profit; these are two appearances of one cost, not two charges to the investor.
+
+\section{Model 2: Strategic-Operation EPEC}
+
+The strategic-operation model adds hourly charge/discharge quantities and two-sided prices to the investment decision:
+\begin{equation}\label{eq:strategic-strategy}
+x_i^{S}=\left\{X^P_{i,n},X^E_{i,n},
+q^{ch}_{i,n,t},q^{dis}_{i,n,t},
+b^{ch}_{i,n,t},b^{dis}_{i,n,t}\right\}_{n,t}.
+\end{equation}
+The submitted quantities must be feasible, and the ISO may accept any dispatch inside them:
+\begin{subequations}\label{eq:strategic-quantity}
+\begin{align}
+0\le q^{ch}_{i,n,t}&\le X^P_{i,n}, &
+0\le q^{dis}_{i,n,t}&\le X^P_{i,n}, &&\forall i,n,t,\label{eq:offer-capacity}\\
+0\le p^{ch}_{i,n,t}&\le q^{ch}_{i,n,t}, &
+0\le p^{dis}_{i,n,t}&\le q^{dis}_{i,n,t}, &&\forall i,n,t.\label{eq:offer-dispatch}
+\end{align}
+\end{subequations}
+With the symmetric price bound \(\overline b\), the two-sided prices satisfy
+\begin{equation}\label{eq:strategic-price-feasibility}
+-\overline b\le b^{ch}_{i,n,t},b^{dis}_{i,n,t}\le\overline b,
+\qquad
+b^{dis}_{i,n,t}\ge\frac{b^{ch}_{i,n,t}}{\eta^2},
+\qquad\forall i,n,t.
+\end{equation}
+The second inequality prevents bids that reward an instantaneous charge--discharge loss cycle. A charging bid is a willingness to pay and consequently enters market cost with a negative sign; a discharging offer enters with a positive sign. The ISO problem is
+\begin{equation}\label{eq:strategic-iso}
+\min_y\quad
+Z_S^P=
+\sum_{g,t}C_gP_{g,t}
++\sum_{i,n,t}\left(
+b^{dis}_{i,n,t}p^{dis}_{i,n,t}
+-b^{ch}_{i,n,t}p^{ch}_{i,n,t}
 \right)
-\end{align*}
-\nopagebreak[4]
+\quad\text{s.t.}\quad
+\eqref{eq:common-market},\ \eqref{eq:offer-dispatch}.
+\end{equation}
+Submitted prices replace degradation coefficients only in the ISO objective. Physical degradation remains \eqref{eq:degradation} in realized investor profit. The quantity-only variant is recovered by fixing truthful prices,
+\begin{equation}\label{eq:quantity-only-prices}
+b^{ch}_{i,n,t}=-\frac{d_i}{2},
+\qquad
+b^{dis}_{i,n,t}=\frac{d_i}{2},
+\qquad\forall i,n,t.
+\end{equation}
 
-\noindent The curtailment term replaces the earlier linear value-of-lost-load penalty by a strictly convex cost, i.e.\ an affine inverse-demand curve with marginal willingness to pay \(\alpha+\beta\,P^{shed}_{n,t}/D^{el}_{n,t}\). Wherever curtailment is interior this pins the nodal price to the curve, which makes the lower-level dual (and hence the price \(\lambda_{n,t}\)) unique there and bounds price spikes without a hard VOLL cap.
+The strong-duality term associated with the two dispatch upper bounds changes because their right-hand sides are offers rather than installed power:
+\begin{equation}\label{eq:strategic-dual-change}
+\underbrace{X^P_{i,n}\left(\rho_{i,n,t}+\sigma_{i,n,t}\right)}_{\text{capacity-only}}
+\quad\longrightarrow\quad
+\underbrace{q^{ch}_{i,n,t}\rho_{i,n,t}
++q^{dis}_{i,n,t}\sigma_{i,n,t}}_{\text{strategic operation}}.
+\end{equation}
 
-\noindent The maintained base configuration instead fixes demand and omits load shedding altogether: \(P^{shed}_{n,t}\equiv 0\), and the shedding bounds and duals \((\xi^-_{n,t},\xi^+_{n,t})\) do not appear in the lower level. The quadratic-curtailment formulation above is retained as an explicit, non-default robustness option (\texttt{--demand-model quadratic}).
+The strategic-operation MPEC is
+\begin{equation}\label{eq:strategic-mpec}
+\boxed{
+\max_{x_i^S,y,u}\
+\Pi_i-\Phi^{prox}_{i,k}-\Phi_i^{\epsilon}
+\quad\text{s.t.}\quad
+\eqref{eq:capacity-feasibility},\
+\eqref{eq:strategic-quantity},\
+\eqref{eq:strategic-price-feasibility},\
+\operatorname{PF}_S,\operatorname{DF}_S,\ Z_S^P=Z_S^D
+}
+\qquad\text{given }x_{-i}^S.
+\end{equation}
+The optional numerical selectors are
+\begin{equation}\label{eq:strategic-regularization}
+\Phi^{prox}_{i,k}=\frac{\kappa_k}{2}
+\left\|w_i^S-w^{S,ref}_{i,k}\right\|_W^2,
+\qquad
+\Phi_i^{\epsilon}=\epsilon\sum_{n,t}
+\left[\left(b^{ch}_{i,n,t}\right)^2+
+\left(b^{dis}_{i,n,t}\right)^2\right].
+\end{equation}
+Here \(w_i^S\) stacks power capacity, scaled energy capacity, withheld quantities \(X_i^P-q_i^{ch/dis}\), and scaled bid prices; the weights reproduce the hourly averaging and unit normalization used in the implementation. The proximal term is zero in the unregularized model. The direct \(\epsilon\)-term acts only on bid prices. Neither term is included in reported economic profit \(\Pi_i\).
 
-\paragraph{Subject to}
-\begin{align*}
-&\sum_{g \in G_n} P_{g,t}
-  + \sum_i \left(P^{discharge}_{i,n,t} - P^{charge}_{i,n,t}\right)
-  + P^{shed}_{n,t}
-  - D^{el}_{n,t}
-  = NetInjection_{n,t},
-  &&\forall n,t
-  \quad (\lambda_{n,t})
-\\
-\intertext{This defines nodal net injections from generation, storage dispatch, load shedding, and demand.}
-&\sum_n NetInjection_{n,t}=0,
-  &&\forall t
-  \quad (\lambda_{sys,t})
-\\
-\intertext{This enforces system-wide power balance.}
-&0 \le P_{g,t} \le P^{max}_{g,t},
-  &&\forall g,t
-  \quad (\nu^-_{g,t},\nu^+_{g,t})
-\\
-\intertext{This keeps conventional and renewable generation within available capacity.}
-&-Limit_l
-  \le
-  \sum_n PTDF_{l,n} NetInjection_{n,t}
-  \le
-  Limit_l,
-  &&\forall l,t
-  \quad (\mu^-_{l,t},\mu^+_{l,t})
-\\
-\intertext{This represents network feasibility through PTDF-based transmission limits.}
-&0 \le P^{charge}_{i,n,t} \le X^{power}_{i,n},
-  &&\forall i,n,t
-  \quad (\rho^+_{i,n,t})
-\\
-&0 \le P^{discharge}_{i,n,t} \le X^{power}_{i,n},
-  &&\forall i,n,t
-  \quad (\sigma^+_{i,n,t})
-\\
-\intertext{These constraints limit storage charging and discharging by installed power capacity.}
-&SOC_{i,n,t}
-  =
-  SOC_{i,n,t-1}
-  + \eta P^{charge}_{i,n,t}
-  - \frac{1}{\eta} P^{discharge}_{i,n,t},
-  &&\forall i,n,t
-  \quad (\gamma_{i,n,t})
-\\
-\intertext{This updates the BESS state of charge from spot-market operation only.}
-&0 \le SOC_{i,n,\tau} \le X^{energy}_{i,n},
-  &&\forall i,n,\tau
-  \quad (\delta^-_{i,n,\tau},\delta^+_{i,n,\tau})
-\\
-&SOC_{i,n,0}=SOC_{i,n,24},
-  &&\forall i,n
-\\
-\intertext{These constraints keep stored energy within installed capacity and impose daily SOC consistency.}
-&0 \le P^{shed}_{n,t} \le D^{el}_{n,t},
-  &&\forall n,t
-  \quad (\xi^-_{n,t},\xi^+_{n,t})
-\end{align*}
+\section{Equilibrium and Settlement}
 
-\bigskip
-\noindent\textit{Exogenous parameters fixed from the upper level or input data:}
-\begin{align*}
-&X^{power}_{i,n},\; X^{energy}_{i,n},\; C_g,\; P^{max}_{g,t},\;
-D^{el}_{n,t},\; Limit_l,\; PTDF_{l,n},\; \eta,\; \alpha,\; \beta.
-\end{align*}
+For either model \(m\in\{C,S\}\), a generalized Nash equilibrium is a fixed point of the investor best responses:
+\begin{equation}\label{eq:epec-equilibrium}
+x_i^{m,*}\in
+\arg\max_{x_i^m\in\mathcal X_i(x_{-i}^{m,*})}
+\left\{\Pi_i-\Phi_i^m\right\},
+\qquad\forall i\in\mathcal I,
+\end{equation}
+where \(\Phi_i^C=0\), \(\Phi_i^S=\Phi^{prox}_{i,k}+\Phi_i^\epsilon\), and \(\mathcal X_i\) contains the corresponding MPEC constraints and the rival-dependent nodal headroom. The capacity-only implementation supports damped Gauss--Seidel and Gauss--Jacobi diagonalization. The current strategic-operation implementation instead uses one common-snapshot Gauss--Jacobi initialization followed by damped Gauss--Seidel updates. In both implementations, proportional projection onto the shared nodal capacity limits is retained as a feasibility safeguard.
 
-\subsection*{Upper-Level Investment Structure}
+An important modelling direction is a fully simultaneous Gauss--Jacobi diagonalization of the strategic-operation EPEC, covering investment capacities, hourly quantity offers, and two-sided bid prices. In every sweep, all investors would solve against the same frozen rival-strategy snapshot, after which the damped proposals would be applied simultaneously. This removes artificial within-sweep early- and late-mover advantages and is therefore the preferred symmetric algorithmic convention for a simultaneous-investment game. It does not by itself guarantee convergence or a unique equilibrium: robustness should still be assessed across common initial states and damping parameters, and any projection events, regularization terms, and unregularized best-response residuals should be reported explicitly.
 
-\noindent Each investor chooses nodal BESS power and energy capacity before the lower-level spot market clears, maximizing deterministic spot-market profit from its BESS arbitrage and its owned generation, net of degradation and annualized CAPEX:
-\begin{align*}
-\max \; NPV_i
-=&
-\sum_{t,n}
-\pi_{n,t}
-\left(P^{discharge}_{i,n,t}-P^{charge}_{i,n,t}\right)
-+ GenRent_i
-- Cost^{degrad}_i
-- CAPEX^{daily}_i,
-\\[2pt]
-GenRent_i
-=&
-\sum_{g}\; s_{i,g}
-\sum_{t}
-\left(\pi_{n(g),t}-C_g\right) P_{g,t},
-\\[2pt]
-Cost^{degrad}_i
-=&
-\tfrac{1}{2} d_i
-\sum_{t,n}
-\left(P^{charge}_{i,n,t}+P^{discharge}_{i,n,t}\right),
-\\[2pt]
-CAPEX^{daily}_i
-=&
-\frac{CRF_i}{365.25}
-\sum_{n}
-\left(C^{power}_i X^{power}_{i,n}+C^{energy}_i X^{energy}_{i,n}\right).
-\end{align*}
-
-\noindent The settlement price \(\pi_{n,t}\) is, by default, the nodal marginal price \(\lambda_{n,t}\) (locational marginal pricing). The implementation also supports a uniform single-zone settlement in which \(\pi_{n,t}=\lambda_{sys,t}\) for all nodes, used to study how bidding-zone pricing distorts siting relative to nodal pricing.
-
-\noindent Investment is subject to two constraints. The shared nodal access constraint is the core competition mechanism:
-\begin{align*}
-&\sum_i X^{power}_{i,n} \le Limit^{node}_n,
-  &&\forall n.
-\end{align*}
-
-\noindent A practical storage-sizing envelope is retained, with a 2--8 hour energy-to-power ratio:
-\begin{align*}
-&2 \, X^{power}_{i,n}
-\le
-X^{energy}_{i,n}
-\le
-8 \, X^{power}_{i,n},
-&&\forall i,n.
-\end{align*}
-
-\noindent Investor heterogeneity enters through WACC, CAPEX, degradation, and business model. A \emph{stand-alone merchant} investor operates only BESS. A \emph{portfolio-backed} investor additionally owns a share \(s_{i,g}\in[0,1]\) of one or more of the exogenous generators already present in the lower level and collects the corresponding inframarginal spot rent \(GenRent_i\), where \(MC_g\) is the generator marginal cost, \(P_{gen,g,t}\) its cleared output, and \(n(g)\) its node; renewables have \(C_g=0\). Ownership shares are exogenous and enter only the upper-level objective, so the lower-level clearing is unchanged. Since the price \(\pi_{n,t}\) and dispatch \(P_{g,t}\) are shared with the lower level, a portfolio investor anticipates how its own BESS siting shifts the price its generation earns --- for example a solar-heavy investor time-shifting midday PV output to lift its otherwise near-zero midday nodal price.
-
-\subsection*{Lower-Level Embedding (MPEC)}
-
-\noindent Because the lower level is a convex quadratic program, each investor's problem is closed as a single-level MPEC by replacing the lower level with its optimality conditions, embedded through a primal--dual (strong-duality) reformulation:
-\begin{itemize}
-\item \emph{Primal feasibility:} all lower-level constraints above.
-\item \emph{Dual feasibility:} the stationarity conditions in the dual variables listed in the notation, together with the sign restrictions on the inequality multipliers.
-\item \emph{Strong duality:} the lower-level primal objective equals its dual objective, which for the convex QP is equivalent to complementary slackness and forces the embedded \((P,\lambda)\) pair onto the lower-level optimal set.
-\end{itemize}
-\noindent The investor's installed capacities \(X^{power}_{i,n},X^{energy}_{i,n}\) and the price \(\pi_{n,t}\) enter this MPEC simultaneously, so the investor anticipates the market-clearing response of its own investment.
-
-\paragraph{Optimistic dual selection.} At congested or curtailed node-hours the lower-level dual is not unique, and the maximization is free to select the most favorable optimal price from that set. The embedded (``belief'') prices therefore differ from the neutral clearing prices, and the difference is reported as a diagnostic (see below).
-
-\subsection*{Equilibrium Solution and Price Settlement}
-
-\noindent The EPEC is solved by diagonalization over the investors. In each pass an investor solves its MPEC while every rival is frozen at its current capacities, but each rival remains a separate non-strategic storage unit with its own nodal MW/MWh capacities inside the lower-level clearing --- rivals are not collapsed into one virtual battery. Updates use either Gauss--Jacobi (all investors respond to the same previous iterate) or Gauss--Seidel (sequential; later investors within a pass see earlier same-pass updates, a potential first-mover artifact); capacity iterates are damped, and after each pass the joint capacities are projected onto the shared nodal access limit \(\sum_i X^{power}_{i,n}\le Limit^{node}_n\), preserving each investor's energy-to-power ratio. A fresh Gauss--Seidel run is by default initialized by one common-snapshot Gauss--Jacobi sweep, proportionally projected only at overloaded nodes, before Gauss--Seidel iteration begins.
-
-\paragraph{Settlement and diagnostics.} Reported quantities are \emph{not} the embedded belief prices. Once the diagonalization converges, the market is cleared once more with all installed fleets fixed, and profits are settled at the resulting neutral prices \(\pi_{n,t}\) (the dual of the nodal balance for LMP settlement, or of the system balance for single-zone settlement). For each investor the model reports settled profit, the belief-minus-settled gap, and the maximum absolute difference between the embedded MPEC prices and the neutral clearing prices, so the effect of optimistic dual selection is quantified rather than hidden.
-
-\paragraph{Robustness check against a non-strategic benchmark.} Non-unique lower-level duals raise a natural concern: if the belief price each investor embeds is not unique, is the converged capacity vector itself an artifact of which price happened to be selected, rather than a genuine equilibrium outcome? This is addressed by comparing the converged EPEC to a non-strategic benchmark that solves the identical lower-level physics --- generation dispatch, curtailment, PTDF network, storage/SOC dynamics --- and the identical shared nodal access limit and \(Ratio^{min}/Ratio^{max}\) envelope, but chooses every \(X^{power}_{i,n},X^{energy}_{i,n}\) jointly to minimize total system resource cost instead of as competing profit-maximizers. Two quantities are reported from this comparison: (i) the aggregate gap, the relative difference between total EPEC and total planner installed power/energy, \(\big|\sum_{i,n}X^{power}_{i,n}-\sum_n X^{power,\text{planner}}_n\big|/\sum_n X^{power,\text{planner}}_n\); and (ii) the siting divergence, an \(L^1\) distance between the two nodal allocation vectors after normalizing both to the same total, isolating \emph{where} capacity is placed from \emph{how much} is built. A small aggregate gap together with a non-trivial siting divergence is the expected signature when the underlying degeneracy is spatial: by standard LP duality, multiple primal optima (several nodes achieving essentially the same system cost, as evidenced by the near-zero spread in their settled hourly prices) are the counterpart of a degenerate dual, i.e.\ of the very price non-uniqueness that optimistic dual selection exploits. Under this reading, optimistic dual selection is expected to bias \emph{which} node and \emph{which investor} the capacity is attributed to, and each investor's profit level, but not the total quantity the system supports, which is instead pinned by the point where system-wide marginal storage value equals marginal storage cost.
-
-\subsection*{Discarded Experiment: Nodal Access Pricing}
-
-\noindent The diagonalization above enforces \(\sum_i X^{power}_{i,n}\le Limit^{node}_n\) by giving each investor a private, iterate-dependent headroom bound and projecting the joint sum back onto the limit whenever it is exceeded. Because that headroom depends on which investors have already updated within the current pass, the resulting split is partly an artifact of solve order rather than of relative value. A shared node price \(\lambda^{cap}_n\) was tested as an alternative, so that access would be allocated by willingness to pay instead of by iteration order, while leaving the aggregate limit itself unchanged.
-
-\noindent The tested change made two changes to the upper-level problem:
-\begin{align*}
-&\text{(i) } X^{power}_{i,n} \text{ no longer bounded by } Limit^{node}_n; \text{ only the } Ratio^{min}/Ratio^{max} \text{ envelope remains.}\\[2pt]
-&\text{(ii) } NPV_i \;\longrightarrow\; NPV_i - \sum_n \lambda^{cap}_n X^{power}_{i,n}.
-\end{align*}
-
-\noindent The shared constraint was enforced only in aggregate, through the market-clearing condition
-\begin{align*}
-0 \;\le\; \lambda^{cap}_n \;\perp\; \Big(Limit^{node}_n - \sum_i X^{power}_{i,n}\Big) \;\ge\; 0,
-\qquad \forall n,
-\end{align*}
-\noindent found by an outer per-node price search wrapped around the existing investor diagonalization.
-
-\noindent Both a sweep-level and an investor-level version of this projected-price update were implemented and tested; neither eliminated a discontinuous multi-node capacity cycle. The final investor-level run was stopped after iteration 19 (N8 at 132.06~MW, an N8 price of 74.49~EUR/MW/day, and a 32.06~MW overload/residual), with every completed MPEC solve in that run optimal --- so the failure is algorithmic, not attributable to solver termination. This mechanism is therefore archived as a diagnostic rather than reported as an equilibrium, clearing access price, or settled investor profit, and the private-headroom-plus-projection mechanism described above remains the maintained one. If nodal access allocation is revisited, the recommended path is a separate, explicit quantity-and-price bid auction with deterministic merit-order clearing --- a two-follower access-auction MPEC prototype along these lines is archived under \texttt{model/auction/} --- rather than extending this discarded t\^{a}tonnement.
+After the final iterate, the ISO is cleared independently with all capacities and, for Model~2, all offers fixed. Reported prices and profits use this joint re-clear. Embedded MPEC prices are retained only as diagnostics because lower-level dual non-uniqueness permits optimistic price selection.
 
 \section*{Nine-Bus Test Network}
 

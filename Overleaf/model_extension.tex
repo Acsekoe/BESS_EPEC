@@ -23,6 +23,39 @@
 
 \maketitle
 
+\section{Model Layers and Reading Guide}
+
+The formulation is deliberately separated into an economic core and optional
+numerical devices. This distinction is important because a penalty that helps
+diagonalization converge is not part of the unregularized economic game.
+
+\begin{center}
+\begin{tabular}{p{0.21\textwidth}p{0.70\textwidth}}
+\hline
+\textbf{Layer} & \textbf{Contents} \\
+\hline
+Core shared model & Fixed-demand PTDF market clearing, generation and network
+limits, BESS physics, endogenous MW/MWh investment, shared nodal access limits,
+LMP settlement, physical degradation, CAPEX, and portfolio generation rent. \\
+Capacity-only case & Investors choose nodal MW and MWh; every installed MW is
+available to the ISO at the physical degradation coefficient. \\
+Strategic-operation case & Investors additionally choose hourly charge and
+discharge quantity offers and, in the two-sided-price version, charging buy bids
+and discharging sell offers. \\
+Optional numerical layer & Lower-level quadratic dispatch tie-break, proximal
+strategy penalty, direct squared-price epsilon selector, damping, projection,
+and canonicalization. These devices are identified explicitly below and are
+zero or absent in the core model. \\
+\hline
+\end{tabular}
+\end{center}
+
+The core capacity-only and strategic-operation games are obtained by setting
+the dispatch coefficient \(\kappa^{disp}=0\), the proximal coefficient
+\(\kappa_k^{prox}=0\), and the direct price coefficient \(\epsilon=0\).
+Price and dual bounds remain explicit finite implementation bounds and are not
+objective penalties.
+
 \section{Notation}
 
 \begingroup
@@ -42,7 +75,8 @@
 \endhead
 \hline
 \endfoot
-\(i\in\mathcal I\), \(n\in\mathcal N\), \(t\in\mathcal T\) & Investors, nodes, and hourly periods. & -- \\
+\(i,j\in\mathcal I\), \(n\in\mathcal N\), \(t\in\mathcal T\) & Investors, nodes, and hourly periods. & -- \\
+\(\tau\in\mathcal T_0=\{0,\ldots,|\mathcal T|\}\) & State-of-charge periods, including both day boundaries. & -- \\
 \(g\in\mathcal G\), \(l\in\mathcal L\) & Generators and transmission lines; \(\mathcal G_n\) denotes generators at node \(n\). & -- \\
 \(X^P_{i,n},X^E_{i,n}\) & Installed BESS power and energy capacity. & MW, MWh \\
 \(q^{ch}_{i,n,t},q^{dis}_{i,n,t}\) & Strategic charging and discharging quantity offers. & MW \\
@@ -61,6 +95,7 @@
 \(r^{min},r^{max}\) & Minimum and maximum energy-to-power ratios; here 2 and 8. & h \\
 \(c^P_i,c^E_i,d_i\) & Power CAPEX, energy CAPEX, and physical throughput degradation cost. & \texteuro{}/MW; \texteuro{}/MWh \\
 \(s_{i,g}\) & Share of generator \(g\)'s spot rent owned by investor \(i\). & -- \\
+\(\kappa^{disp},\kappa_k^{prox},\epsilon\) & Dispatch tie-break, proximal, and direct price-selector coefficients. & see Section~\ref{sec:numerical-layer} \\
 \end{longtable}
 \endgroup
 
@@ -81,16 +116,20 @@ z_{n,t}
 &&\forall g,t, \label{eq:generation-bounds}\\
 -\overline F_l\le\sum_n H_{l,n}z_{n,t}&\le\overline F_l,
 &&\forall l,t, \label{eq:line-bounds}\\
-e_{i,n,t+1}&=e_{i,n,t}+\eta p^{ch}_{i,n,t}
+e_{i,n,t}&=e_{i,n,t-1}+\eta p^{ch}_{i,n,t}
 -\eta^{-1}p^{dis}_{i,n,t},
 &&\forall i,n,t, \label{eq:soc-balance}\\
-0\le e_{i,n,t}&\le X^E_{i,n},
-&&\forall i,n,t, \label{eq:soc-bounds}\\
+0\le e_{i,n,\tau}&\le X^E_{i,n},
+&&\forall i,n,\tau, \label{eq:soc-bounds}\\
 e_{i,n,0}&=e_{i,n,|\mathcal T|},
 &&\forall i,n. \label{eq:cyclic-soc}
 \end{align}
 \end{subequations}
 The model-specific charging and discharging bounds and the market objective are given separately below.
+There is no fixed initial state of charge; only daily periodicity is imposed.
+There is also no binary restriction excluding simultaneous charge and discharge.
+Efficiency losses, submitted bids, and physical operating costs normally make
+such a loop unattractive; any residual simultaneous operation is reported.
 
 \subsection{Investment feasibility and investor profit}
 
@@ -128,13 +167,22 @@ Here \(\pi_{n,t}=\lambda_{n,t}\) under nodal settlement and \(\pi_{n,t}=\lambda^
 
 \subsection{Lower-level embedding}
 
-For fixed upper-level decisions, each market-clearing problem below is a linear program. In investor \(i\)'s MPEC it is replaced by primal feasibility, dual feasibility, and strong duality:
+For fixed upper-level decisions, each market-clearing problem below is a linear
+program when \(\kappa^{disp}=0\) and a convex quadratic program when
+\(\kappa^{disp}>0\). In investor \(i\)'s MPEC it is replaced by primal
+feasibility, dual feasibility/stationarity, and strong duality:
 \begin{equation}\label{eq:mpec-embedding}
 \operatorname{PF}(y;x_i,x_{-i}),\qquad
 \operatorname{DF}(u;x_i,x_{-i}),\qquad
 Z^{P}(y;x_i,x_{-i})=Z^{D}(u;x_i,x_{-i}),
 \end{equation}
-where \(u\) collects the lower-level dual variables. This is the implemented primal--dual reformulation; no explicit complementarity products are added.
+where \(u\) collects the lower-level dual variables. This is the implemented
+primal--dual reformulation; no explicit complementarity products are added.
+Section~\ref{sec:kkt-details} writes out the stationarity and dual-objective
+terms that differ between the two cases. Because the investor maximizes over a
+lower-level primal--dual optimum, a non-singleton optimal face is resolved
+optimistically in the investor's favour. This price-selection convention is
+part of the MPEC interpretation, not a regularization term.
 
 \section{Model 1: Capacity-Only EPEC}
 
@@ -155,9 +203,12 @@ Z_C^P=
 \sum_{g,t}C_gP_{g,t}
 +\frac{1}{2}\sum_{i,n,t}d_i
 \left(p^{ch}_{i,n,t}+p^{dis}_{i,n,t}\right)
++R^{disp}(y)
 \quad\text{s.t.}\quad
 \eqref{eq:common-market},\ \eqref{eq:capacity-dispatch-bounds}.
 \end{equation}
+The core capacity-only model sets \(R^{disp}(y)=0\). The optional expression
+and its interpretation are given in Section~\ref{sec:dispatch-regularizer}.
 Investor \(i\)'s capacity-only MPEC is therefore
 \begin{equation}\label{eq:capacity-mpec}
 \boxed{
@@ -203,9 +254,11 @@ Z_S^P=
 b^{dis}_{i,n,t}p^{dis}_{i,n,t}
 -b^{ch}_{i,n,t}p^{ch}_{i,n,t}
 \right)
++R^{disp}(y)
 \quad\text{s.t.}\quad
 \eqref{eq:common-market},\ \eqref{eq:offer-dispatch}.
 \end{equation}
+Again, \(R^{disp}(y)=0\) in the core strategic-operation game.
 Submitted prices replace degradation coefficients only in the ISO objective. Physical degradation remains \eqref{eq:degradation} in realized investor profit. The quantity-only variant is recovered by fixing truthful prices,
 \begin{equation}\label{eq:quantity-only-prices}
 b^{ch}_{i,n,t}=-\frac{d_i}{2},
@@ -235,16 +288,221 @@ The strategic-operation MPEC is
 }
 \qquad\text{given }x_{-i}^S.
 \end{equation}
-The optional numerical selectors are
-\begin{equation}\label{eq:strategic-regularization}
-\Phi^{prox}_{i,k}=\frac{\kappa_k}{2}
-\left\|w_i^S-w^{S,ref}_{i,k}\right\|_W^2,
-\qquad
-\Phi_i^{\epsilon}=\epsilon\sum_{n,t}
-\left[\left(b^{ch}_{i,n,t}\right)^2+
-\left(b^{dis}_{i,n,t}\right)^2\right].
+The economic core is recovered by setting both penalties to zero. Their exact
+forms, units, and effects are separated from the model in
+Section~\ref{sec:numerical-layer}.
+
+\section{Explicit Lower-Level Optimality System}\label{sec:kkt-details}
+
+This section makes the MPEC embedding explicit. Define the dispatch upper
+bounds and the marginal storage coefficients seen by the ISO as
+\begin{equation}\label{eq:case-map}
+\begin{array}{c|cc|cc}
+&\overline q^{ch}_{i,n,t}&\overline q^{dis}_{i,n,t}
+&a^{ch}_{i,n,t}&a^{dis}_{i,n,t}\\
+\hline
+\text{capacity-only}
+&X^P_{i,n}&X^P_{i,n}&d_i/2&d_i/2\\
+\text{strategic prices and quantities}
+&q^{ch}_{i,n,t}&q^{dis}_{i,n,t}&-b^{ch}_{i,n,t}&b^{dis}_{i,n,t}
+\end{array}
 \end{equation}
-Here \(w_i^S\) stacks power capacity, scaled energy capacity, withheld quantities \(X_i^P-q_i^{ch/dis}\), and scaled bid prices; the weights reproduce the hourly averaging and unit normalization used in the implementation. The proximal term is zero in the unregularized model. The direct \(\epsilon\)-term acts only on bid prices. Neither term is included in reported economic profit \(\Pi_i\).
+so that the storage part of the ISO objective is
+\(\sum_{i,n,t}(a^{ch}_{i,n,t}p^{ch}_{i,n,t}
++a^{dis}_{i,n,t}p^{dis}_{i,n,t})\).
+
+The implementation uses \(\nu_{g,t}\le0\) for the generation upper bound,
+\(\mu^{up}_{l,t}\le0\) and \(\mu^{dn}_{l,t}\ge0\) for the line bounds,
+\(\rho_{i,n,t}\le0\) and \(\sigma_{i,n,t}\le0\) for the charging and
+discharging upper bounds, and \(\delta_{i,n,\tau}\le0\) for the SOC upper
+bound. The balance, SOC-transition, and periodicity multipliers
+\(\lambda_{n,t}\), \(\lambda_t^{sys}\), \(\gamma_{i,n,t}\), and
+\(\rho^{per}_{i,n}\) are free. Because the corresponding primal variables are
+nonnegative, their stationarity conditions take inequality form:
+\begin{subequations}\label{eq:stationarity}
+\begin{align}
+\lambda_{n(g),t}+\nu_{g,t}
+&\le C_g+\kappa^{disp}P_{g,t}, &&\forall g,t,
+\label{eq:stat-generation}\\
+-\lambda_{n,t}+\rho_{i,n,t}-\eta\gamma_{i,n,t}
+&\le a^{ch}_{i,n,t}+\kappa^{disp}p^{ch}_{i,n,t},
+&&\forall i,n,t,\label{eq:stat-charge}\\
+\lambda_{n,t}+\sigma_{i,n,t}+\eta^{-1}\gamma_{i,n,t}
+&\le a^{dis}_{i,n,t}+\kappa^{disp}p^{dis}_{i,n,t},
+&&\forall i,n,t,\label{eq:stat-discharge}\\
+-\lambda_{n,t}+\lambda_t^{sys}
++\sum_lH_{l,n}(\mu^{up}_{l,t}+\mu^{dn}_{l,t})
+&=\kappa^{disp}z_{n,t}, &&\forall n,t.
+\label{eq:stat-injection}
+\end{align}
+\end{subequations}
+SOC stationarity is
+\begin{equation}\label{eq:stat-soc}
+\delta_{i,n,\tau}
++\mathbf 1_{\{\tau\in\mathcal T\}}\gamma_{i,n,\tau}
+-\mathbf 1_{\{\tau+1\in\mathcal T\}}\gamma_{i,n,\tau+1}
++\mathbf 1_{\{\tau=0\}}\rho^{per}_{i,n}
+-\mathbf 1_{\{\tau=|\mathcal T|\}}\rho^{per}_{i,n}
+\le \kappa^{disp}e_{i,n,\tau}.
+\end{equation}
+
+For fixed demand, the dual objective used in strong duality is
+\begin{align}
+Z^D={}&
+\sum_{n,t}D_{n,t}\lambda_{n,t}
++\sum_{g,t}\overline P_{g,t}\nu_{g,t}
++\sum_{l,t}\overline F_l(\mu^{up}_{l,t}-\mu^{dn}_{l,t})
+\notag\\
+&+\sum_{i,n,t}\left(
+\overline q^{ch}_{i,n,t}\rho_{i,n,t}
++\overline q^{dis}_{i,n,t}\sigma_{i,n,t}\right)
++\sum_{i,n,\tau}X^E_{i,n}\delta_{i,n,\tau}
+-R^{disp}(y).
+\label{eq:dual-objective}
+\end{align}
+Primal feasibility, the sign restrictions and stationarity equations above,
+and \(Z^P=Z^D\) characterize a lower-level optimum. Equation
+\eqref{eq:case-map} shows exactly what changes between the capacity-only case
+and the strategic operation case. Products such as \(X^P\rho\), \(q\rho\), and
+\(b p\), together with LMP settlement revenue, make the upper-level MPEC
+nonconvex even though the lower-level market problem is convex for fixed bids
+and capacities.
+
+The implemented electricity-price bounds are
+\begin{equation}
+\lambda_{n,t},\lambda_t^{sys}\in[-500,500]
+\quad\text{\texteuro{}/MWh}.
+\end{equation}
+Other embedded duals are bounded in absolute value by 10,000. These are finite
+numerical and price-selection bounds, not additions to either objective.
+
+\section{Optional Regularizers and Algorithmic Safeguards}
+\label{sec:numerical-layer}
+
+None of the following objects should be silently interpreted as physical cost
+or market design. Every reported experiment must state which coefficients were
+active.
+
+\subsection{Lower-level quadratic dispatch tie-break}
+\label{sec:dispatch-regularizer}
+
+The optional ISO-level term is
+\begin{align}
+R^{disp}(y)=\frac{\kappa^{disp}}{2}\Bigg[&
+\sum_{g,t}P_{g,t}^2
++\sum_{i,n,t}\left((p^{ch}_{i,n,t})^2+(p^{dis}_{i,n,t})^2\right)
+\notag\\
+&+\sum_{i,n,\tau}e_{i,n,\tau}^2
++\sum_{n,t}z_{n,t}^2\Bigg].
+\label{eq:dispatch-regularizer}
+\end{align}
+Its coefficient has units \(\text{\texteuro{}}/(\mathrm{MW}^2\mathrm{h})\).
+It turns the lower-level LP into a convex QP and selects a primal dispatch among
+otherwise equivalent solutions. It does not directly penalize investment,
+withholding, or bid prices, and strict primal convexity does not in general
+guarantee a unique dual price vector. The core model uses
+\(\kappa^{disp}=0\). The term \(-R^{disp}(y)\) in
+\eqref{eq:dual-objective} is the Wolfe-dual correction required by the
+quadratic objective.
+
+\subsection{Full-strategy proximal penalty}
+
+Let a bar denote investor \(i\)'s reference strategy, normally its previous
+iterate, and define withheld quantities
+\begin{equation}
+w^{ch}_{i,n,t}=X^P_{i,n}-q^{ch}_{i,n,t},\qquad
+w^{dis}_{i,n,t}=X^P_{i,n}-q^{dis}_{i,n,t}.
+\end{equation}
+With energy scale \(h_E>0\), price scale \(s_b>0\), and
+\(T=|\mathcal T|\), the exact implemented squared distance is
+\begin{align}
+\mathcal D_{i,k}={}&
+\sum_n(X^P_{i,n}-\overline X^P_{i,n})^2
++\sum_n\left(\frac{X^E_{i,n}-\overline X^E_{i,n}}{h_E}\right)^2
+\notag\\
+&+\frac{1}{2T}\sum_{n,t}\left[
+(w^{ch}_{i,n,t}-\overline w^{ch}_{i,n,t})^2
++(w^{dis}_{i,n,t}-\overline w^{dis}_{i,n,t})^2\right]
+\notag\\
+&+\frac{1}{2T}\sum_{n,t}\left[
+\left(\frac{b^{ch}_{i,n,t}-\overline b^{ch}_{i,n,t}}{s_b}\right)^2
++\left(\frac{b^{dis}_{i,n,t}-\overline b^{dis}_{i,n,t}}{s_b}\right)^2
+\right].
+\label{eq:prox-distance}
+\end{align}
+The price line is omitted in quantity-only mode. The objective penalty is
+\begin{equation}\label{eq:prox-penalty}
+\Phi^{prox}_{i,k}=\frac{\kappa_k^{prox}}{2}\mathcal D_{i,k}.
+\end{equation}
+The current scales are \(h_E=4\)~h and \(s_b=10\)~\texteuro{}/MWh. Measuring
+\(X^P-q\) means that the term penalizes a \emph{change in withholding}; it does
+not reward full availability and does not double-penalize offers when installed
+power changes. A fixed coefficient can be used, or a staircase continuation
+can set
+\begin{equation}
+\kappa_k^{prox}=\Delta\kappa
+\left\lfloor\frac{k-1}{m}\right\rfloor,
+\end{equation}
+where \(m\) is the number of sweeps in each block. A positive proximal
+coefficient changes the best-response objective and therefore selects a
+regularized fixed point; it is not evidence of a unique fixed point of the raw
+game. It is excluded from the automatic Jacobi initializer.
+
+\subsection{Direct squared-price epsilon selector}
+
+When two-sided strategic prices are enabled, the optional price-only term is
+\begin{equation}\label{eq:epsilon-penalty}
+\Phi_i^\epsilon=\epsilon\sum_{n,t}\left[
+(b^{ch}_{i,n,t})^2+(b^{dis}_{i,n,t})^2\right].
+\end{equation}
+There is no factor one half. This selector directly affects only bid prices; it
+contains no MW, MWh, or quantity-offer term. Even if its realized monetary
+value is tiny, a run with \(\epsilon>0\) is not literally unregularized in bid
+prices. Economic profit \(\Pi_i\) is always reported separately from both
+\(\Phi^{prox}_{i,k}\) and \(\Phi_i^\epsilon\).
+
+\subsection{Devices that are not objective regularizers}
+
+For Jacobi damping, all best responses use the same frozen rival snapshot and
+the applied update is
+\begin{equation}\label{eq:damped-update}
+x_i^{k+1}=(1-\alpha)x_i^k+\alpha\,BR_i(x_{-i}^k),
+\qquad 0<\alpha\le1.
+\end{equation}
+Gauss--Seidel instead lets later investors observe earlier within-sweep
+updates. Damping changes the iteration path, not the best-response objective.
+Four parallel workers merely solve the four independent same-snapshot Jacobi
+problems concurrently; they do not change the mathematical update.
+
+The proportional shared-limit projection is a final feasibility safeguard for
+an overloaded iterate. It preserves each affected battery's energy-to-power
+ratio and scales its quantity offers consistently; it is not an access auction
+or an equilibrium condition. The \(10^{-4}\) MW/MWh zero-capacity cleanup,
+truthful-price assignment at zero offered quantity, slack-offer
+canonicalization, and finite price/dual bounds are likewise numerical
+normalizations or diagnostics rather than economic penalties.
+
+\subsection{Recent 200 MW strategic Jacobi experiment}
+
+The recent 100-iteration experiment used the following specialization:
+\begin{center}
+\begin{tabular}{p{0.48\textwidth}p{0.34\textwidth}}
+\hline
+Nodal connection limit & \(\overline X_n=200\) MW \\
+Update and workers & Jacobi, four workers \\
+Damping & \(\alpha=0.25\) \\
+Strategic quantities and prices & enabled \\
+Dispatch regularizer & \(\kappa^{disp}=0\) \\
+Fixed/staircase proximal penalty & both zero \\
+Direct squared-price selector & \(\epsilon=10^{-6}\) \\
+\hline
+\end{tabular}
+\end{center}
+Consequently, the run had no dispatch or proximal regularization, but it did
+have a very small direct bid-price selector. It reached the iteration limit
+without convergence; stable aggregate physical investment should therefore be
+described as a candidate, not as a converged strategic price-and-quantity
+equilibrium.
 
 \section{Equilibrium and Settlement}
 
@@ -255,9 +513,29 @@ x_i^{m,*}\in
 \left\{\Pi_i-\Phi_i^m\right\},
 \qquad\forall i\in\mathcal I,
 \end{equation}
-where \(\Phi_i^C=0\), \(\Phi_i^S=\Phi^{prox}_{i,k}+\Phi_i^\epsilon\), and \(\mathcal X_i\) contains the corresponding MPEC constraints and the rival-dependent nodal headroom. Both the capacity-only and strategic-operation implementations support damped Gauss--Seidel and Gauss--Jacobi diagonalization. In strategic Gauss--Jacobi mode, one complete snapshot of capacities, hourly quantity offers, and two-sided prices is frozen for every investor in a sweep; all damped best-response proposals are then applied simultaneously. Proportional projection onto the shared nodal capacity limits is retained as a feasibility safeguard.
+where \(\mathcal X_i\) contains the corresponding MPEC constraints and the
+rival-dependent nodal headroom. For the economic core,
+\(\Phi_i^C=\Phi_i^S=0\). In a declared regularized strategic experiment,
+\(\Phi_i^S=\Phi^{prox}_{i,k}+\Phi_i^\epsilon\). The capacity-only model has no
+upper-level proximal or epsilon penalty; only the optional lower-level dispatch
+term can be enabled. Both implementations support damped Gauss--Seidel and
+Gauss--Jacobi diagonalization. In strategic Gauss--Jacobi mode, one complete
+snapshot of capacities, hourly quantity offers, and two-sided prices is frozen
+for every investor in a sweep; all damped best-response proposals are then
+applied simultaneously. Proportional projection onto the shared nodal capacity
+limits is retained as a feasibility safeguard.
 
-The fully simultaneous strategic Gauss--Jacobi implementation removes artificial within-sweep early- and late-mover advantages and is therefore the preferred symmetric algorithmic convention for a simultaneous-investment game. Its independent investor problems can be solved in separate processes; a same-snapshot serial-versus-parallel check produced identical capacities, hourly bids, objectives, termination states, strong-duality gaps, and joint-settlement price bounds. This algorithmic symmetry does not by itself guarantee convergence or a unique equilibrium: robustness must still be assessed across common initial states and damping parameters, and projection events, regularization terms, damped steps, and raw undamped best-response residuals are reported explicitly.
+The fully simultaneous strategic Gauss--Jacobi implementation removes
+artificial early- and late-mover effects within a sweep. It is therefore the
+preferred symmetric algorithmic convention for a simultaneous investment game.
+Its independent investor problems can be solved in separate processes. A
+same-snapshot serial-versus-parallel check produced identical capacities,
+hourly bids, objectives, termination states, strong-duality gaps, and joint
+settlement price bounds. This algorithmic symmetry does not by itself guarantee
+convergence or a unique equilibrium. Robustness must still be assessed across
+common initial states and damping parameters, while projection events,
+regularization terms, damped steps, and raw undamped best-response residuals
+are reported explicitly.
 
 After the final iterate, the ISO is cleared independently with all capacities and, for Model~2, all offers fixed. Reported prices and profits use this joint re-clear. Embedded MPEC prices are retained only as diagnostics because lower-level dual non-uniqueness permits optimistic price selection.
 

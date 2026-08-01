@@ -144,6 +144,8 @@ class EpecConfig:
     seed_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS
     max_cpu_time: float = 500.0
     price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH
+    price_lower_bound_eur_per_mwh: float | None = None
+    price_upper_bound_eur_per_mwh: float | None = None
     dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH
     max_consecutive_failures: int = 3
     print_mpec_lambdas: bool = False
@@ -309,6 +311,8 @@ def solve_best_response(
             },
             node_limit_mw=cfg.node_limit_mw,
             price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
+            price_lower_bound_eur_per_mwh=cfg.price_lower_bound_eur_per_mwh,
+            price_upper_bound_eur_per_mwh=cfg.price_upper_bound_eur_per_mwh,
             dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
             initial_power_mw=cfg.seed_power_mw,
             initial_ratio_hours=cfg.seed_ratio_hours,

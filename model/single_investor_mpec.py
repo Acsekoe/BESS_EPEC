@@ -411,6 +411,8 @@ def build_single_investor_mpec(
     initial_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS,
     fixed_power_mw: float | None = None,
     price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+    price_lower_bound_eur_per_mwh: float | None = None,
+    price_upper_bound_eur_per_mwh: float | None = None,
     dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH,
     existing_power_mw: float = 0.0,
     existing_ratio_hours: float = 2.0,
@@ -448,6 +450,18 @@ def build_single_investor_mpec(
 
     if price_bound_eur_per_mwh <= 0.0:
         raise ValueError("price_bound_eur_per_mwh must be positive.")
+    price_lower_bound = (
+        -float(price_bound_eur_per_mwh)
+        if price_lower_bound_eur_per_mwh is None
+        else float(price_lower_bound_eur_per_mwh)
+    )
+    price_upper_bound = (
+        float(price_bound_eur_per_mwh)
+        if price_upper_bound_eur_per_mwh is None
+        else float(price_upper_bound_eur_per_mwh)
+    )
+    if price_lower_bound >= price_upper_bound:
+        raise ValueError("The lower electricity-price bound must be below the upper bound.")
     if dual_bound_eur_per_mwh <= 0.0:
         raise ValueError("dual_bound_eur_per_mwh must be positive.")
     if investor is not None and (wacc, ratio_min, ratio_max) != (DEFAULT_WACC, DEFAULT_RATIO_MIN, DEFAULT_RATIO_MAX):
@@ -608,8 +622,18 @@ def build_single_investor_mpec(
     m.NetInjection = pyo.Var(m.N, m.T, domain=pyo.Reals, initialize=0.0)
 
     # Lower-level dual variables with broad finite bounds for Ipopt stability.
-    m.lam = pyo.Var(m.N, m.T, bounds=(-price_bound, price_bound), initialize=80.0)
-    m.lam_sys = pyo.Var(m.T, bounds=(-price_bound, price_bound), initialize=80.0)
+    price_initial = min(price_upper_bound, max(price_lower_bound, 80.0))
+    m.lam = pyo.Var(
+        m.N,
+        m.T,
+        bounds=(price_lower_bound, price_upper_bound),
+        initialize=price_initial,
+    )
+    m.lam_sys = pyo.Var(
+        m.T,
+        bounds=(price_lower_bound, price_upper_bound),
+        initialize=price_initial,
+    )
     m.nu_gen = pyo.Var(m.GT, bounds=(-dual_bound, 0.0), initialize=0.0)
     m.mu_up = pyo.Var(m.L, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
     m.mu_dn = pyo.Var(m.L, m.T, bounds=(0.0, dual_bound), initialize=0.0)
@@ -892,6 +916,8 @@ def build_single_investor_mpec(
     m._quad_demand = quad_demand
     m._use_demand_curve = use_demand_curve
     m._price_bound_eur_per_mwh = price_bound
+    m._price_lower_bound_eur_per_mwh = price_lower_bound
+    m._price_upper_bound_eur_per_mwh = price_upper_bound
     m._dual_bound_eur_per_mwh = dual_bound
     m._solver_tol = solver_tol
     return m
@@ -935,11 +961,17 @@ def _initialize_from_quadratic_llp(
         return
 
     lam_ref = quadratic_reference_lambda(qp, quad) if model._use_demand_curve else fixed_demand_reference_lambda(qp)
+    def clipped_price(raw: float) -> float:
+        return min(
+            model._price_upper_bound_eur_per_mwh,
+            max(model._price_lower_bound_eur_per_mwh, float(raw)),
+        )
+
     gen_nodes = _nodes_of_generator(lp_data)
     node_count = max(1, len(list(model.N)))
     for g, t in model.GT:
         model.P_gen[g, t].set_value(max(0.0, value(qp.P_gen[g, t])))
-        lam_g = sum(lam_ref[n, t] for n in gen_nodes.get(g, []))
+        lam_g = sum(clipped_price(lam_ref[n, t]) for n in gen_nodes.get(g, []))
         marginal_cost = (
             lp_data.generation_cost[g]
             + model._dispatch_regularization_eur_per_mw2h * value(qp.P_gen[g, t])
@@ -948,12 +980,14 @@ def _initialize_from_quadratic_llp(
     for n in model.N:
         for t in model.T:
             model.NetInjection[n, t].set_value(value(qp.NetInjection[n, t]))
-            model.lam[n, t].set_value(lam_ref[n, t])
+            model.lam[n, t].set_value(clipped_price(lam_ref[n, t]))
             if model._use_demand_curve:
                 model.P_shed[n, t].set_value(max(0.0, value(qp.P_shed[n, t])))
                 model.xi_shed[n, t].set_value(0.0)
     for t in model.T:
-        model.lam_sys[t].set_value(sum(lam_ref[n, t] for n in model.N) / node_count)
+        model.lam_sys[t].set_value(
+            clipped_price(sum(lam_ref[n, t] for n in model.N) / node_count)
+        )
     for i, n in model.IN:
         for t in model.T:
             model.P_charge[i, n, t].set_value(max(0.0, value(qp.P_charge[i, n, t])))

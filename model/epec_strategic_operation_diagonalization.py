@@ -281,6 +281,8 @@ def solve_best_response(
             initial_power_mw=cfg.seed_power_mw,
             initial_ratio_hours=cfg.seed_ratio_hours,
             price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
+            price_lower_bound_eur_per_mwh=cfg.price_lower_bound_eur_per_mwh,
+            price_upper_bound_eur_per_mwh=cfg.price_upper_bound_eur_per_mwh,
             dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
             system_price_settlement=cfg.system_price_settlement,
@@ -1273,6 +1275,8 @@ def export_checkpoint(output_dir: Path, state: StrategicEpecState, cfg: EpecConf
         "update_rule": cfg.update_rule,
         "parallel_workers": cfg.strategic_parallel_workers,
         "node_limit_mw": cfg.node_limit_mw,
+        "price_lower_bound_eur_per_mwh": cfg.price_lower_bound_eur_per_mwh,
+        "price_upper_bound_eur_per_mwh": cfg.price_upper_bound_eur_per_mwh,
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
         "proximal_penalty_eur_per_mw2_day": (
@@ -1458,6 +1462,8 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
             "update_rule": cfg.update_rule,
             "parallel_workers": cfg.strategic_parallel_workers,
             "generator_calibration": calibration,
+            "price_lower_bound_eur_per_mwh": cfg.price_lower_bound_eur_per_mwh,
+            "price_upper_bound_eur_per_mwh": cfg.price_upper_bound_eur_per_mwh,
             "offer_convergence_required": True,
             "proximal_penalty_eur_per_mw2_day": (
                 cfg.strategic_proximal_penalty_eur_per_mw2_day
@@ -1542,6 +1548,8 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
             "update_rule": cfg.update_rule,
             "parallel_workers": cfg.strategic_parallel_workers,
             "generator_calibration": calibration,
+            "price_lower_bound_eur_per_mwh": cfg.price_lower_bound_eur_per_mwh,
+            "price_upper_bound_eur_per_mwh": cfg.price_upper_bound_eur_per_mwh,
             "offer_convergence_required": True,
             "proximal_penalty_eur_per_mw2_day": (
                 cfg.strategic_proximal_penalty_eur_per_mw2_day
@@ -1641,7 +1649,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-jacobi-initializer", action="store_true")
     parser.add_argument("--max-cpu-time", type=float, default=180.0)
     parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
-    parser.add_argument("--price-bound-eur-per-mwh", type=float, default=DEFAULT_PRICE_BOUND_EUR_PER_MWH)
+    parser.add_argument(
+        "--price-bound-eur-per-mwh",
+        type=float,
+        default=DEFAULT_PRICE_BOUND_EUR_PER_MWH,
+        help="Legacy symmetric absolute bound for lam and lam_sys.",
+    )
+    parser.add_argument(
+        "--price-lower-bound-eur-per-mwh",
+        type=float,
+        default=None,
+        help="Optional asymmetric lower bound for lam and lam_sys.",
+    )
+    parser.add_argument(
+        "--price-upper-bound-eur-per-mwh",
+        type=float,
+        default=None,
+        help="Optional asymmetric upper bound for lam and lam_sys.",
+    )
     parser.add_argument("--dual-bound-eur-per-mwh", type=float, default=DEFAULT_DUAL_BOUND_EUR_PER_MWH)
     parser.add_argument(
         "--strategic-bid-prices",
@@ -1746,6 +1771,18 @@ def main() -> int:
         raise SystemExit("--solver-tol must be positive.")
     if args.price_bound_eur_per_mwh <= 0.0 or args.dual_bound_eur_per_mwh <= 0.0:
         raise SystemExit("Price and dual bounds must be positive.")
+    effective_price_lower = (
+        -args.price_bound_eur_per_mwh
+        if args.price_lower_bound_eur_per_mwh is None
+        else args.price_lower_bound_eur_per_mwh
+    )
+    effective_price_upper = (
+        args.price_bound_eur_per_mwh
+        if args.price_upper_bound_eur_per_mwh is None
+        else args.price_upper_bound_eur_per_mwh
+    )
+    if effective_price_lower >= effective_price_upper:
+        raise SystemExit("The lower electricity-price bound must be below the upper bound.")
     if args.bid_price_bound_eur_per_mwh <= 0.0:
         raise SystemExit("--bid-price-bound-eur-per-mwh must be positive.")
     if args.floor_price_eur_per_mwh <= 0.0:
@@ -1804,6 +1841,8 @@ def main() -> int:
         seed_ratio_hours=args.seed_ratio_hours,
         max_cpu_time=args.max_cpu_time,
         price_bound_eur_per_mwh=args.price_bound_eur_per_mwh,
+        price_lower_bound_eur_per_mwh=args.price_lower_bound_eur_per_mwh,
+        price_upper_bound_eur_per_mwh=args.price_upper_bound_eur_per_mwh,
         dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
         use_demand_curve=False,
         dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,

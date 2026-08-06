@@ -1,0 +1,119 @@
+{
+  "wacc": 0.08,
+  "system_cost_eur_per_day": 438789.21908594144,
+  "generation_cost_eur_per_day": 438789.2041006694,
+  "curtailment_cost_eur_per_day": 0.0,
+  "storage_capex_eur_per_day": 0.009078584449999347,
+  "degradation_cost_eur_per_day": 0.00590668759763237,
+  "dispatch_regularization_eur_per_day": 0.0,
+  "dispatch_regularization_eur_per_mw2h": 0.0,
+  "demand_model": "fixed",
+  "solver_tol": 0.0001,
+  "total_power_mw": 0.0006277796136041152,
+  "total_energy_mwh": 0.0012893342196912119,
+  "lambda_min_eur_per_mwh": 41.330733424024,
+  "lambda_max_eur_per_mwh": 67.14999979409914,
+  "system_price_min_eur_per_mwh": 52.20000014835078,
+  "system_price_max_eur_per_mwh": 67.14999957325654,
+  "per_node": {
+    "N1": {
+      "x_power_mw": 6.454033658633788e-05,
+      "x_energy_mwh": 0.00013265010774532113,
+      "ratio_hours": 2.055305484313216,
+      "charge_mwh": 2.387732805334881e-05,
+      "discharge_mwh": 2.0918831598227104e-05,
+      "share_of_node_limit": 3.227016829316894e-07
+    },
+    "N2": {
+      "x_power_mw": 6.45748013813857e-05,
+      "x_energy_mwh": 0.00013271926583268085,
+      "ratio_hours": 2.0552795052179356,
+      "charge_mwh": 2.470609557523023e-05,
+      "discharge_mwh": 2.164491150907639e-05,
+      "share_of_node_limit": 3.228740069069285e-07
+    },
+    "N3": {
+      "x_power_mw": 6.501682762944478e-05,
+      "x_energy_mwh": 0.00013360568304980613,
+      "ratio_hours": 2.0549400504631645,
+      "charge_mwh": 3.4452295574703196e-05,
+      "discharge_mwh": 3.0183518343814796e-05,
+      "share_of_node_limit": 3.2508413814722393e-07
+    },
+    "N4": {
+      "x_power_mw": 6.454030533641357e-05,
+      "x_energy_mwh": 0.00013265004600405148,
+      "ratio_hours": 2.0553055228452797,
+      "charge_mwh": 2.3876289683245077e-05,
+      "discharge_mwh": 2.0917921886332446e-05,
+      "share_of_node_limit": 3.2270152668206786e-07
+    },
+    "N5": {
+      "x_power_mw": 6.454419592216753e-05,
+      "x_energy_mwh": 0.00013265809324711567,
+      "ratio_hours": 2.055306311462695,
+      "charge_mwh": 2.3891883409955098e-05,
+      "discharge_mwh": 2.0931583487927866e-05,
+      "share_of_node_limit": 3.227209796108376e-07
+    },
+    "N6": {
+      "x_power_mw": 0.00011034486880164354,
+      "x_energy_mwh": 0.0002259034138404276,
+      "ratio_hours": 2.0472489232509092,
+      "charge_mwh": 0.00020370389888355332,
+      "discharge_mwh": 0.0001784641709962837,
+      "share_of_node_limit": 5.517243440082178e-07
+    },
+    "N7": {
+      "x_power_mw": 6.457478008534416e-05,
+      "x_energy_mwh": 0.00013271922333701197,
+      "ratio_hours": 2.055279524941562,
+      "charge_mwh": 2.4705516353478517e-05,
+      "discharge_mwh": 2.164440405521703e-05,
+      "share_of_node_limit": 3.228739004267208e-07
+    },
+    "N8": {
+      "x_power_mw": 6.462667671368132e-05,
+      "x_energy_mwh": 0.00013282271666483023,
+      "ratio_hours": 2.055230493334527,
+      "charge_mwh": 2.6120246356195034e-05,
+      "discharge_mwh": 2.288384335167722e-05,
+      "share_of_node_limit": 3.231333835684066e-07
+    },
+    "N9": {
+      "x_power_mw": 6.50168211476967e-05,
+      "x_energy_mwh": 0.00013360566996996684,
+      "ratio_hours": 2.0549400541508938,
+      "charge_mwh": 3.445218540667219e-05,
+      "discharge_mwh": 3.0183421826044654e-05,
+      "share_of_node_limit": 3.250841057384835e-07
+    }
+  },
+  "pv_availability_scale": 0.7,
+  "pv_available_mwh": 3275.582625,
+  "pv_dispatched_mwh": 3275.5826531430193,
+  "pv_curtailment_mwh": -2.814301933540264e-05,
+  "throughput_mwh": 0.0007875583463509827,
+  "no_storage_system_cost_eur_per_day": 438789.2068629928,
+  "net_system_saving_vs_no_storage_eur_per_day": -0.012222948658745736,
+  "no_storage_pv_curtailment_mwh": -2.8154120627732482e-05,
+  "generator_calibration": {
+    "conventional_generators": [
+      "G_IEEE1",
+      "G_IEEE2",
+      "G_IEEE3"
+    ],
+    "conventional_capacity_adder_mw_each": 0.0,
+    "pv_generators": [
+      "RES_PV_N6",
+      "RES_PV_N8"
+    ],
+    "pv_availability_scale": 0.7,
+    "peaker_id": null,
+    "peaker_node": null,
+    "peaker_capacity_mw": 0.0,
+    "peaker_cost_eur_per_mwh": null
+  },
+  "data_path": "data\\processed\\market_data_IEEE_9Bus_distributed_congestion.json",
+  "node_limit_mw": 200.0
+}

@@ -23,13 +23,13 @@ from single_investor_mpec import (
     build_quadratic_primal_model,
     capital_recovery_factor,
     fixed_demand_reference_lambda,
+    initialize_from_reference_dispatch,
     investment_headroom_shadow_price,
     quadratic_reference_lambda,
     reference_system_price,
 )
 from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
-from ieee9_strategic_operation_mpec import apply_fixed_two_sided_bids_to_primal
 
 
 #### Export schemas
@@ -37,12 +37,25 @@ from ieee9_strategic_operation_mpec import apply_fixed_two_sided_bids_to_primal
 
 ITERATION_HISTORY_FIELDS = [
     "iteration",
+    "regularization_stage",
+    "dual_tikhonov_gamma",
+    "proximal_coefficient_eur_per_mw2_day",
+    "complementarity_epsilon",
     "investor",
     "termination",
     "solve_seconds",
+    "preparation_seconds",
+    "attempt_count",
+    "retry_status",
     "optimistic_mpec_profit_eur_per_day",
     "max_access_shadow_price_eur_per_mw_day",
     "strong_duality_gap",
+    "max_complementarity_product",
+    "sum_complementarity_products",
+    "max_original_nodal_balance_residual_mw",
+    "total_absolute_original_nodal_balance_residual_mwh",
+    "max_hourly_system_balance_residual_mw",
+    "signed_primal_dual_gap_eur_per_day",
     "total_power_mw",
     "total_energy_mwh",
     "max_rel_delta_power",
@@ -52,6 +65,9 @@ ITERATION_HISTORY_FIELDS = [
     "abs_price_step_eur_per_mwh",
     "converged_sweep_streak",
     "max_undamped_delta_power_mw",
+    "max_undamped_delta_energy_mwh",
+    "max_undamped_rel_delta_power",
+    "max_undamped_rel_delta_energy",
     "undamped_capacity_residual_mw_equivalent",
     "undamped_offer_residual_mw",
     "undamped_price_residual_eur_per_mwh",
@@ -107,6 +123,7 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             joint_data,
             storage_degradation_eur_per_mwh=degradation,
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
+            demand_expansion=getattr(cfg, "demand_expansion", None),
         )
     # The strategic-operation EPEC carries hourly quantity offers as part of
     # each investor's strategy. The maintained capacity-only EPEC has no such
@@ -131,6 +148,8 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
         and hasattr(state, "bid_price_charge")
         and hasattr(state, "offer_price_discharge")
     ):
+        from ieee9_strategic_operation_mpec import apply_fixed_two_sided_bids_to_primal
+
         apply_fixed_two_sided_bids_to_primal(
             reference,
             bid_price_charge_eur_per_mwh={
@@ -157,12 +176,79 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
     if termination != "optimal":
         raise RuntimeError(f"Joint settlement QP did not solve optimally (termination={termination}).")
 
-    lam = (
-        quadratic_reference_lambda(reference, quad)
-        if cfg.use_demand_curve
-        else fixed_demand_reference_lambda(reference)
-    )
-    dual_cross_check = _solver_dual_cross_check(reference, lam)
+    if cfg.lower_level_optimality == "iso-min-norm-dual":
+        from single_investor_mpec_min_norm_prices import (
+            build_single_investor_min_norm_price_mpec,
+            initialize_iso_min_norm_selection,
+        )
+
+        if cfg.system_price_settlement:
+            raise RuntimeError(
+                "ISO minimum-norm selection is currently defined for nodal LMP settlement only."
+            )
+        active = cfg.investors[0]
+        active_id = active.investor_id
+        min_norm_model = build_single_investor_min_norm_price_mpec(
+            data,
+            quad_demand=quad,
+            investor=active,
+            rival_power_mw_by_unit={
+                i: {n: max(0.0, state.x_power[i, n]) for n in nodes}
+                for i in units
+                if i != active_id
+            },
+            rival_energy_mwh_by_unit={
+                i: {n: max(0.0, state.x_energy[i, n]) for n in nodes}
+                for i in units
+                if i != active_id
+            },
+            rival_degradation_eur_per_mwh_by_unit={
+                inv.investor_id: inv.degradation_eur_per_mwh
+                for inv in cfg.investors
+                if inv.investor_id != active_id
+            },
+            node_limit_mw=cfg.node_limit_mw,
+            price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
+            price_lower_bound_eur_per_mwh=cfg.price_lower_bound_eur_per_mwh,
+            price_upper_bound_eur_per_mwh=cfg.price_upper_bound_eur_per_mwh,
+            dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
+            lambda_l2_penalty_coefficient=0.0,
+            initial_power_mw=cfg.seed_power_mw,
+            initial_ratio_hours=cfg.seed_ratio_hours,
+            system_price_settlement=False,
+            use_demand_curve=cfg.use_demand_curve,
+            dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
+            solver_tol=cfg.solver_tol,
+        )
+        for n in nodes:
+            min_norm_model.X_power[n].set_value(max(0.0, state.x_power[active_id, n]))
+            min_norm_model.X_energy[n].set_value(max(0.0, state.x_energy[active_id, n]))
+        initialize_from_reference_dispatch(
+            min_norm_model, data, cfg.seed_ratio_hours
+        )
+        min_norm_termination = initialize_iso_min_norm_selection(
+            min_norm_model,
+            max_cpu_time=min(60.0, cfg.max_cpu_time),
+            solver_tol=cfg.solver_tol,
+        )
+        if min_norm_termination != "optimal":
+            raise RuntimeError(
+                "Joint-settlement ISO minimum-norm QP did not solve optimally "
+                f"(termination={min_norm_termination})."
+            )
+        lam = {
+            (n, int(t)): value(min_norm_model.lam[n, t])
+            for n in min_norm_model.N
+            for t in min_norm_model.T
+        }
+        dual_cross_check = None
+    else:
+        lam = (
+            quadratic_reference_lambda(reference, quad)
+            if cfg.use_demand_curve
+            else fixed_demand_reference_lambda(reference)
+        )
+        dual_cross_check = _solver_dual_cross_check(reference, lam)
 
     # Settlement price: nodal LMP by default, or the uniform per-hour system
     # price (broadcast to every node) when the run uses zonal settlement, so
@@ -371,6 +457,37 @@ def print_epec_summary(state, cfg, settlement: dict) -> None:
 #### Checkpoint export
 # -----------------------------------------------------------------------------
 
+def _model_variant(cfg) -> str:
+    clean = (
+        cfg.lower_level_optimality == "strong-duality"
+        and not cfg.use_demand_curve
+        and getattr(cfg, "demand_expansion", None) is None
+        and cfg.dispatch_regularization_eur_per_mw2h == 0.0
+        and cfg.lambda_l2_penalty_coefficient == 0.0
+    )
+    return (
+        "clean-fixed-demand-exact-strong-duality"
+        if clean
+        else f"experimental-{cfg.lower_level_optimality}"
+    )
+
+
+def _demand_metadata(cfg) -> dict[str, float | str | None]:
+    expansion = getattr(cfg, "demand_expansion", None)
+    if cfg.use_demand_curve:
+        label = "quadratic-curtailment"
+    elif expansion is not None:
+        label = "quadratic-expansion"
+    else:
+        label = "fixed"
+    return {
+        "demand_model": label,
+        "demand_expansion_reference_price_eur_per_mwh": (
+            getattr(expansion, "reference_price_eur_per_mwh", None)
+        ),
+        "demand_expansion_elasticity": getattr(expansion, "elasticity", None),
+    }
+
 def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
     """Persist lightweight traces after every completed EPEC iteration.
 
@@ -390,19 +507,66 @@ def export_epec_checkpoint(output_dir: Path, state, cfg) -> None:
     }
     node_excess = {node: total - cfg.node_limit_mw for node, total in node_total_power.items()}
     checkpoint = {
+        "model_variant": _model_variant(cfg),
+        **_demand_metadata(cfg),
         "status": state.stop_reason or f"in progress after iteration {state.iteration}",
         "converged": state.converged,
         "iteration": state.iteration,
         "starting_iteration": cfg.starting_iteration,
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
+        "parallel_workers": cfg.strategic_parallel_workers,
         "investor_solve_order": [inv.investor_id for inv in cfg.investors],
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
         "damping": cfg.damping,
         "capacity_cleanup_tol_mw_mwh": cfg.capacity_cleanup_tol_mw_mwh,
+        "rival_sparsity_tol_mw": (
+            None if hasattr(state, "offer_charge") else cfg.rival_sparsity_tol_mw
+        ),
         "price_bound_eur_per_mwh": cfg.price_bound_eur_per_mwh,
         "dual_bound_eur_per_mwh": cfg.dual_bound_eur_per_mwh,
+        "lambda_l2_penalty_coefficient": cfg.lambda_l2_penalty_coefficient,
+        "lower_level_optimality": cfg.lower_level_optimality,
+        "iso_min_norm_complementarity_epsilon": (
+            cfg.iso_min_norm_complementarity_epsilon
+            if cfg.lower_level_optimality == "iso-min-norm-dual"
+            else None
+        ),
+        "complementarity_epsilon": (
+            cfg.complementarity_epsilon
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "complementarity_formulation": (
+            cfg.complementarity_formulation
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "complementarity_shift": (
+            cfg.complementarity_shift
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "dual_tikhonov_gamma": (
+            cfg.dual_tikhonov_gamma
+            if cfg.lower_level_optimality
+            in ("relaxed-kkt", "tikhonov-strong-duality")
+            else None
+        ),
+        "proximal_penalty_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_eur_per_mw2_day
+        ),
+        "proximal_energy_scale_hours": cfg.strategic_proximal_energy_scale_hours,
+        "proximal_penalty_step_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+        ),
+        "proximal_penalty_step_iterations": (
+            cfg.strategic_proximal_penalty_step_iterations
+        ),
+        "proximal_penalty_initial_zero_iterations": (
+            cfg.strategic_proximal_penalty_initial_zero_iterations
+        ),
         "node_limit_mw": cfg.node_limit_mw,
         "node_total_power_mw": node_total_power,
         "node_excess_mw": node_excess,
@@ -432,19 +596,89 @@ def export_epec_results(
     reference_quad = getattr(settlement["reference_model"], "_quad_demand", None)
 
     run_config = {
+        "model_variant": _model_variant(cfg),
+        **_demand_metadata(cfg),
         "data_path": str(data_path),
         "update_rule": cfg.update_rule,
+        "parallel_workers": cfg.strategic_parallel_workers,
         "investor_solve_order": [inv.investor_id for inv in cfg.investors],
         "initialization_method": state.initialization_method,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
-        "dual_selection": "optimistic_mpec_no_price_penalty",
-        "demand_model": "quadratic" if cfg.use_demand_curve else "fixed",
+        "dual_selection": (
+            "iso_minimum_norm_lmp_secondary_qp"
+            if cfg.lower_level_optimality == "iso-min-norm-dual"
+            else (
+                "exact_tikhonov_matched_primal_dual_strong_duality"
+                if cfg.lower_level_optimality == "tikhonov-strong-duality"
+                else (
+                    "direct_tikhonov_regularized_dual_kkt"
+                    if cfg.lower_level_optimality == "relaxed-kkt"
+                    and cfg.dual_tikhonov_gamma > 0.0
+                    else (
+                        "leader_lambda_l2_penalty"
+                        if cfg.lambda_l2_penalty_coefficient > 0.0
+                        else "optimistic_mpec_no_price_penalty"
+                    )
+                )
+            )
+        ),
+        "lambda_l2_penalty_coefficient": cfg.lambda_l2_penalty_coefficient,
+        "lower_level_optimality": cfg.lower_level_optimality,
+        "iso_min_norm_complementarity_epsilon": (
+            cfg.iso_min_norm_complementarity_epsilon
+            if cfg.lower_level_optimality == "iso-min-norm-dual"
+            else None
+        ),
+        "complementarity_epsilon": (
+            cfg.complementarity_epsilon
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "complementarity_formulation": (
+            cfg.complementarity_formulation
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "complementarity_shift": (
+            cfg.complementarity_shift
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "dual_tikhonov_gamma": (
+            cfg.dual_tikhonov_gamma
+            if cfg.lower_level_optimality
+            in ("relaxed-kkt", "tikhonov-strong-duality")
+            else None
+        ),
+        "proximal_penalty_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_eur_per_mw2_day
+        ),
+        "proximal_energy_scale_hours": cfg.strategic_proximal_energy_scale_hours,
+        "proximal_penalty_step_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+        ),
+        "proximal_penalty_step_iterations": (
+            cfg.strategic_proximal_penalty_step_iterations
+        ),
+        "proximal_penalty_initial_zero_iterations": (
+            cfg.strategic_proximal_penalty_initial_zero_iterations
+        ),
         "quadratic_demand_alpha_eur_per_mwh": reference_quad.alpha if reference_quad is not None else None,
         "quadratic_demand_beta_eur_per_mwh_per_share": reference_quad.beta if reference_quad is not None else None,
         "dispatch_regularization_eur_per_mw2h": cfg.dispatch_regularization_eur_per_mw2h,
         "solver_tol": cfg.solver_tol,
         "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
-        "embedded_sparsity": "active_investor_all_nodes; rivals_only_positive_mw_or_mwh; generators_only_positive_capacity_hours",
+        "rival_sparsity_tol_mw": (
+            None if hasattr(state, "offer_charge") else cfg.rival_sparsity_tol_mw
+        ),
+        "full_investor_model_exports_available": bool(state.final_models),
+        "embedded_sparsity": (
+            "active_investor_all_nodes; rivals_only_positive_mw_or_mwh; "
+            "generators_only_positive_capacity_hours"
+            if hasattr(state, "offer_charge")
+            else "active_investor_all_nodes; rival_node_blocks_only_above_configured_power_threshold; "
+            "generators_only_positive_capacity_hours"
+        ),
         "fixed_demand_shedding_block_omitted": not cfg.use_demand_curve,
         "capacity_cleanup_tol_mw_mwh": cfg.capacity_cleanup_tol_mw_mwh,
         "automatic_jacobi_initializer": cfg.automatic_jacobi_initializer,
@@ -512,7 +746,9 @@ def export_epec_results(
                 "last_best_response_access_shadow_price_eur_per_mw_day": (
                     investment_headroom_shadow_price(state.final_models[i], n)
                     if state.final_models.get(i) is not None
-                    else float("nan")
+                    else getattr(state, "final_access_shadow_prices", {})
+                    .get(i, {})
+                    .get(n, float("nan"))
                 ),
             }
             for i in units
@@ -531,6 +767,32 @@ def export_epec_results(
             for n in reference.N
         ],
     )
+    selected_prices = getattr(state, "final_selected_prices", {})
+    if selected_prices:
+        _write_csv(
+            output_dir / "last_best_response_prices.csv",
+            [
+                "investor",
+                "hour",
+                "node",
+                "lambda_best_response_eur_per_mwh",
+                "lambda_joint_eur_per_mwh",
+                "difference_eur_per_mwh",
+            ],
+            [
+                {
+                    "investor": investor,
+                    "hour": int(t),
+                    "node": n,
+                    "lambda_best_response_eur_per_mwh": prices[n, int(t)],
+                    "lambda_joint_eur_per_mwh": lam[n, int(t)],
+                    "difference_eur_per_mwh": prices[n, int(t)] - lam[n, int(t)],
+                }
+                for investor, prices in selected_prices.items()
+                for t in reference.T
+                for n in reference.N
+            ],
+        )
     _write_csv(
         output_dir / "joint_storage_hour_operation.csv",
         ["unit", "hour", "node", "p_charge_mw", "p_discharge_mw", "net_injection_mw", "lambda_joint_eur_per_mwh", "spot_revenue_eur"],
@@ -556,6 +818,8 @@ def export_epec_results(
     (output_dir / "joint_settlement.json").write_text(json.dumps(settlement_json, indent=2), encoding="utf-8")
 
     summary = {
+        "model_variant": _model_variant(cfg),
+        **_demand_metadata(cfg),
         "converged": state.converged,
         "stop_reason": state.stop_reason,
         "iterations": state.iteration,
@@ -563,14 +827,68 @@ def export_epec_results(
         "additional_max_iters": cfg.max_iters,
         "resume_from": cfg.resume_from,
         "update_rule": cfg.update_rule,
+        "parallel_workers": cfg.strategic_parallel_workers,
         "investor_solve_order": [inv.investor_id for inv in cfg.investors],
         "initialization_method": state.initialization_method,
         "initializer_summary": state.initializer_summary,
         "settlement_price_basis": "system" if cfg.system_price_settlement else "nodal",
-        "demand_model": "quadratic" if cfg.use_demand_curve else "fixed",
+        "lower_level_optimality": cfg.lower_level_optimality,
+        "iso_min_norm_complementarity_epsilon": (
+            cfg.iso_min_norm_complementarity_epsilon
+            if cfg.lower_level_optimality == "iso-min-norm-dual"
+            else None
+        ),
+        "dual_tikhonov_gamma": (
+            cfg.dual_tikhonov_gamma
+            if cfg.lower_level_optimality
+            in ("relaxed-kkt", "tikhonov-strong-duality")
+            else None
+        ),
+        "proximal_penalty_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_eur_per_mw2_day
+        ),
+        "proximal_penalty_step_eur_per_mw2_day": (
+            cfg.strategic_proximal_penalty_step_eur_per_mw2_day
+        ),
+        "proximal_penalty_step_iterations": (
+            cfg.strategic_proximal_penalty_step_iterations
+        ),
+        "proximal_penalty_initial_zero_iterations": (
+            cfg.strategic_proximal_penalty_initial_zero_iterations
+        ),
+        "complementarity_epsilon": (
+            cfg.complementarity_epsilon
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "complementarity_formulation": (
+            cfg.complementarity_formulation
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else None
+        ),
+        "last_sweep_max_original_nodal_balance_residual_mw": max(
+            (
+                row.get("max_original_nodal_balance_residual_mw", 0.0)
+                for row in state.history
+                if row.get("iteration") == state.iteration
+            ),
+            default=0.0,
+        ),
+        "last_sweep_max_hourly_system_balance_residual_mw": max(
+            (
+                row.get("max_hourly_system_balance_residual_mw", 0.0)
+                for row in state.history
+                if row.get("iteration") == state.iteration
+            ),
+            default=0.0,
+        ),
         "dispatch_regularization_eur_per_mw2h": cfg.dispatch_regularization_eur_per_mw2h,
         "solver_tol": cfg.solver_tol,
         "rival_representation": "separate_battery_per_investor_with_nodal_mw_mwh",
+        "rival_sparsity_tol_mw": (
+            None if hasattr(state, "offer_charge") else cfg.rival_sparsity_tol_mw
+        ),
+        "full_investor_model_exports_available": bool(state.final_models),
         "damping": cfg.damping,
         "tol_rel": cfg.tol_rel,
         "projection_event_count": len(state.projection_events),

@@ -86,6 +86,26 @@ def _add_complementarity(
     model.add_component(f"{name}_dual_bigm", pyo.Constraint(index, rule=_dual_con))
 
 
+def _add_smoothed_complementarity(
+    model: pyo.ConcreteModel,
+    name: str,
+    index: list[tuple],
+    slack_rule,
+    dual_magnitude_rule,
+) -> None:
+    """Smoothed complementarity: slack * dual_magnitude = mu.
+
+    Both slack and dual_magnitude must be structurally >= 0.
+    """
+    def _smooth_comp_rule(m, *idx):
+        # We add a tiny epsilon to the slack to prevent evaluating 0 * dual
+        # at initialization, which can sometimes crash the IPOPT evaluator.
+        slack = slack_rule(m, *idx)
+        dual_mag = dual_magnitude_rule(m, *idx)
+        return (slack + 1e-8) * dual_mag == m.mu_smooth
+
+    model.add_component(f"{name}_smooth", pyo.Constraint(index, rule=_smooth_comp_rule))
+
 def build_single_investor_mpec_kkt(
     data: MarketData,
     *,

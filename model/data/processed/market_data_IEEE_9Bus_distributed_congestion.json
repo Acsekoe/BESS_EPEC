@@ -1,7 +1,7 @@
 {
   "metadata": {
     "source_workbook": "generated:inline from market_data_euro.json",
-    "description": "N8-favorable distributed-congestion alternative derived from market_data_IEEE_9Bus_congestion.json. Total hourly PV availability is preserved exactly but allocated 35% to RES_PV_N6 and 65% to RES_PV_N8. Demand, conventional generation, wind, PTDFs, line limits, and all other parameters are unchanged. The asymmetric split retains distributed PV-export congestion while keeping N8 as the dominant BESS location and is designed to reduce N6/N8 strategy switching.",
+    "description": "Three-synchronous-machine balanced-congestion IEEE-9 case. Conventional generators are located at N1, N2, and N3; G_IEEE2 is restored at 300 MW and 52.20 EUR/MWh. Total hourly PV availability retains the 35% N6 / 65% N8 split. The N6 export corridor L46/L69 is limited to 180 MW and the N8 corridor L98/L78 to 210 MW so both renewable nodes have material BESS congestion-relief value.",
     "slack_node": "N1"
   },
   "nodes": [
@@ -17,6 +17,7 @@
   ],
   "generators": [
     "G_IEEE1",
+    "G_IEEE2",
     "G_IEEE3",
     "RES_Wind_N1",
     "RES_PV_N6",
@@ -94,7 +95,9 @@
       "G_IEEE1",
       "RES_Wind_N1"
     ],
-    "N2": [],
+    "N2": [
+      "G_IEEE2"
+    ],
     "N3": [
       "G_IEEE3"
     ],
@@ -111,6 +114,7 @@
   },
   "generation_cost": {
     "G_IEEE1": 60.0,
+    "G_IEEE2": 52.2,
     "G_IEEE3": 67.15,
     "RES_Wind_N1": 0.0,
     "RES_PV_N6": 0.0,
@@ -236,6 +240,126 @@
       "generator": "G_IEEE1",
       "hour": 24,
       "capacity_mw": 250.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 1,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 2,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 3,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 4,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 5,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 6,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 7,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 8,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 9,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 10,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 11,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 12,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 13,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 14,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 15,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 16,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 17,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 18,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 19,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 20,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 21,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 22,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 23,
+      "capacity_mw": 300.0
+    },
+    {
+      "generator": "G_IEEE2",
+      "hour": 24,
+      "capacity_mw": 300.0
     },
     {
       "generator": "G_IEEE3",
@@ -1901,10 +2025,10 @@
     "L93": 400.0,
     "L57": 400.0,
     "L72": 400.0,
-    "L46": 200.0,
-    "L69": 200.0,
-    "L98": 200.0,
-    "L78": 200.0
+    "L46": 180.0,
+    "L69": 180.0,
+    "L98": 210.0,
+    "L78": 210.0
   },
   "ptdf": [
     {

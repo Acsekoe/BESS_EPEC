@@ -61,6 +61,7 @@ from single_investor_mpec import (
     DEFAULT_PRICE_BOUND_EUR_PER_MWH,
     DEFAULT_SOLVER_TOL,
     InvestorConfig,
+    QuadraticDemandCurve,
     default_quadratic_demand_curve,
     initialize_from_reference_dispatch,
     investment_headroom_shadow_price,
@@ -69,10 +70,21 @@ from single_investor_mpec import (
 )
 from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
+from tikhonov_kkt.mpec_strategic_operation_strong_duality import (
+    build_strategic_operation_tikhonov_mpec,
+    initialize_strategic_mpec_from_soft_market,
+)
 
 
 DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parent / "output" / "epec_strategic_operation"
 OFFER_CANONICAL_SLACK_MW = 1.0e-4
+
+
+def configured_demand_curve(cfg: EpecConfig) -> QuadraticDemandCurve:
+    return QuadraticDemandCurve(
+        alpha=cfg.quadratic_demand_alpha_eur_per_mwh,
+        beta=cfg.quadratic_demand_beta_eur_per_mwh_per_share,
+    )
 
 
 @dataclass
@@ -217,7 +229,12 @@ def proximal_coefficient_for_iteration(cfg: EpecConfig, iteration: int) -> float
     step = cfg.strategic_proximal_penalty_step_eur_per_mw2_day
     if step <= 0.0:
         return cfg.strategic_proximal_penalty_eur_per_mw2_day
-    block = max(0, (int(iteration) - 1) // cfg.strategic_proximal_penalty_step_iterations)
+    zero_iterations = cfg.strategic_proximal_penalty_initial_zero_iterations
+    if int(iteration) <= zero_iterations:
+        return 0.0
+    block = 1 + (
+        int(iteration) - zero_iterations - 1
+    ) // cfg.strategic_proximal_penalty_step_iterations
     return step * block
 
 
@@ -259,7 +276,15 @@ def solve_best_response(
     guess_energy = initial_guess_energy or previous_energy
 
     def attempt(shrink: float):
-        model = build_ieee9_strategic_operation_mpec(
+        builder = (
+            build_strategic_operation_tikhonov_mpec
+            if cfg.lower_level_optimality == "tikhonov-strong-duality"
+            else build_ieee9_strategic_operation_mpec
+        )
+        builder_kwargs = {}
+        if cfg.lower_level_optimality == "tikhonov-strong-duality":
+            builder_kwargs["dual_tikhonov_gamma"] = cfg.dual_tikhonov_gamma
+        model = builder(
             data,
             investor=investor,
             rival_power_mw_by_unit=rival_power,
@@ -287,6 +312,8 @@ def solve_best_response(
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
             system_price_settlement=cfg.system_price_settlement,
             solver_tol=cfg.solver_tol,
+            quad_demand=configured_demand_curve(cfg),
+            use_demand_curve=cfg.use_demand_curve,
             proximal_penalty_eur_per_mw2_day=(
                 cfg.strategic_proximal_penalty_eur_per_mw2_day
             ),
@@ -306,6 +333,7 @@ def solve_best_response(
             ),
             strategic_epsilon_penalty=cfg.strategic_epsilon_penalty,
             initialize_model=False,
+            **builder_kwargs,
         )
         for node in nodes:
             headroom = max(
@@ -321,9 +349,11 @@ def solve_best_response(
             model.X_power[node].set_value(power)
             model.X_energy[node].set_value(energy)
 
-        # Use the existing full-availability market clear as a broad primal/dual
-        # warm start, then restore the strategic offer strategy.
-        initialize_from_reference_dispatch(model, data, cfg.seed_ratio_hours)
+        # The ordinary formulation uses the full-availability clear as a broad
+        # warm start. The Tikhonov formulation is initialized below from the
+        # exact fixed-fleet, fixed-bid soft primal/dual pair instead.
+        if cfg.lower_level_optimality != "tikhonov-strong-duality":
+            initialize_from_reference_dispatch(model, data, cfg.seed_ratio_hours)
         for node in nodes:
             power = value(model.X_power[node])
             for time_ in times:
@@ -340,6 +370,14 @@ def solve_best_response(
                     model.p_offer_discharge[node, time_].set_value(
                         previous_discharge_price[node, time_]
                     )
+
+        if cfg.lower_level_optimality == "tikhonov-strong-duality":
+            initialize_strategic_mpec_from_soft_market(
+                model,
+                solver_tol=cfg.solver_tol,
+                max_cpu_time=cfg.max_cpu_time,
+                tee=False,
+            )
 
         start = time.perf_counter()
         try:
@@ -846,10 +884,14 @@ def run_epec(
             f"Gauss-{cfg.update_rule.capitalize()}."
         )
     elif initial_state is None:
-        seed = min(cfg.seed_power_mw, cfg.node_limit_mw / len(cfg.investors))
+        seed = min(
+            cfg.jacobi_initializer_snapshot_power_mw,
+            cfg.node_limit_mw / len(cfg.investors),
+        )
+        snapshot_ratio = cfg.jacobi_initializer_snapshot_ratio_hours
         state = StrategicEpecState(
             x_power={(i.investor_id, n): seed for i in cfg.investors for n in nodes},
-            x_energy={(i.investor_id, n): seed * cfg.seed_ratio_hours for i in cfg.investors for n in nodes},
+            x_energy={(i.investor_id, n): seed * snapshot_ratio for i in cfg.investors for n in nodes},
             offer_charge={(i.investor_id, n, t): seed for i in cfg.investors for n in nodes for t in times},
             offer_discharge={(i.investor_id, n, t): seed for i in cfg.investors for n in nodes for t in times},
             bid_price_charge={
@@ -863,6 +905,13 @@ def run_epec(
                 for i in cfg.investors
                 for n in nodes
                 for t in times
+            },
+            initialization_method="uniform_common_snapshot_direct",
+            initializer_summary={
+                "economic_power_mw_per_investor_node": seed,
+                "economic_duration_hours": snapshot_ratio,
+                "mpec_numerical_guess_power_mw_per_node": cfg.seed_power_mw,
+                "mpec_numerical_guess_duration_hours": cfg.seed_ratio_hours,
             },
         )
     else:
@@ -888,13 +937,44 @@ def run_epec(
         discharge_price_start = dict(state.offer_price_discharge)
         responses = []
 
-        if cfg.update_rule == "jacobi":
-            tasks = [
-                best_response_task(
-                    data, iteration_cfg, investor, state, nodes, times
+        def numerical_guesses(investor: InvestorConfig):
+            investor_id = investor.investor_id
+            guess_power = {
+                node: (
+                    state.x_power[investor_id, node]
+                    if state.x_power[investor_id, node]
+                    > cfg.capacity_cleanup_tol_mw_mwh
+                    else cfg.seed_power_mw
                 )
-                for investor in cfg.investors
-            ]
+                for node in nodes
+            }
+            guess_energy = {
+                node: (
+                    state.x_energy[investor_id, node]
+                    if state.x_energy[investor_id, node]
+                    > cfg.capacity_cleanup_tol_mw_mwh
+                    else cfg.seed_power_mw * cfg.seed_ratio_hours
+                )
+                for node in nodes
+            }
+            return guess_power, guess_energy
+
+        if cfg.update_rule == "jacobi":
+            tasks = []
+            for investor in cfg.investors:
+                guess_power, guess_energy = numerical_guesses(investor)
+                tasks.append(
+                    best_response_task(
+                        data,
+                        iteration_cfg,
+                        investor,
+                        state,
+                        nodes,
+                        times,
+                        initial_guess_power=guess_power,
+                        initial_guess_energy=guess_energy,
+                    )
+                )
             responses = solve_best_response_tasks(
                 tasks,
                 parallel_workers=cfg.strategic_parallel_workers,
@@ -902,8 +982,16 @@ def run_epec(
             )
         else:
             for investor in cfg.investors:
+                guess_power, guess_energy = numerical_guesses(investor)
                 task = best_response_task(
-                    data, iteration_cfg, investor, state, nodes, times
+                    data,
+                    iteration_cfg,
+                    investor,
+                    state,
+                    nodes,
+                    times,
+                    initial_guess_power=guess_power,
+                    initial_guess_energy=guess_energy,
                 )
                 response = solve_best_response_tasks(
                     [task], parallel_workers=1, tee=tee
@@ -1292,6 +1380,9 @@ def export_checkpoint(output_dir: Path, state: StrategicEpecState, cfg: EpecConf
         "proximal_penalty_step_iterations": (
             cfg.strategic_proximal_penalty_step_iterations
         ),
+        "proximal_penalty_initial_zero_iterations": (
+            cfg.strategic_proximal_penalty_initial_zero_iterations
+        ),
         "strategic_bid_prices": cfg.strategic_bid_prices,
         "strategic_bid_price_bound_eur_per_mwh": (
             cfg.strategic_bid_price_bound_eur_per_mwh
@@ -1385,7 +1476,6 @@ def load_checkpoint(path: Path, data, cfg: EpecConfig) -> StrategicEpecState:
 
 
 def export_final(output_dir, data, state, cfg, settlement, data_path, calibration) -> None:
-    quad = default_quadratic_demand_curve()
     export_epec_results(output_dir, data, state, cfg, settlement, data_path)
     export_checkpoint(output_dir, state, cfg)
     units = [investor.investor_id for investor in cfg.investors]
@@ -1478,6 +1568,9 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
             "proximal_penalty_step_iterations": (
                 cfg.strategic_proximal_penalty_step_iterations
             ),
+            "proximal_penalty_initial_zero_iterations": (
+                cfg.strategic_proximal_penalty_initial_zero_iterations
+            ),
             "final_proximal_coefficient_eur_per_mw2_day": (
                 proximal_coefficient_for_iteration(cfg, state.iteration)
             ),
@@ -1564,6 +1657,9 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
             "proximal_penalty_step_iterations": (
                 cfg.strategic_proximal_penalty_step_iterations
             ),
+            "proximal_penalty_initial_zero_iterations": (
+                cfg.strategic_proximal_penalty_initial_zero_iterations
+            ),
             "strategic_bid_prices": cfg.strategic_bid_prices,
             "strategic_bid_price_bound_eur_per_mwh": (
                 cfg.strategic_bid_price_bound_eur_per_mwh
@@ -1581,7 +1677,7 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
     run_config_path.write_text(json.dumps(run_config, indent=2), encoding="utf-8")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Strategic-operation EPEC diagonalization")
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
     parser.add_argument("--investor-set", choices=["portfolio4", "wacc"], default="portfolio4")
@@ -1669,6 +1765,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dual-bound-eur-per-mwh", type=float, default=DEFAULT_DUAL_BOUND_EUR_PER_MWH)
     parser.add_argument(
+        "--demand-model",
+        choices=["fixed", "quadratic"],
+        default="fixed",
+        help="Lower-level demand representation. The maintained base model uses fixed demand.",
+    )
+    parser.add_argument(
+        "--demand-curve-alpha-eur-per-mwh",
+        type=float,
+        default=default_quadratic_demand_curve().alpha,
+        help="Quadratic mode: marginal willingness to pay at zero curtailment.",
+    )
+    parser.add_argument(
+        "--demand-curve-beta-eur-per-mwh-per-share",
+        type=float,
+        default=default_quadratic_demand_curve().beta,
+        help="Quadratic mode: marginal-WTP increase over one unit of curtailed demand share.",
+    )
+    parser.add_argument(
         "--strategic-bid-prices",
         action="store_true",
         help=(
@@ -1699,6 +1813,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--dispatch-regularization", type=float, default=0.0)
+    parser.add_argument(
+        "--lower-level-optimality",
+        choices=["strong-duality", "tikhonov-strong-duality"],
+        default="strong-duality",
+        help="Embedded ISO optimality formulation.",
+    )
+    parser.add_argument(
+        "--dual-tikhonov-gamma",
+        type=float,
+        default=0.0,
+        help="Positive finite-gamma coefficient required by Tikhonov strong duality.",
+    )
     parser.add_argument(
         "--proximal-penalty-eur-per-mw2-day",
         type=float,
@@ -1735,20 +1861,26 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Number of iterations per staircase proximal-penalty block.",
     )
+    parser.add_argument(
+        "--proximal-penalty-zero-iters",
+        type=int,
+        default=5,
+        help="Initial iterations with zero staircase proximal penalty.",
+    )
     parser.add_argument("--capacity-cleanup-tol", type=float, default=DEFAULT_CAPACITY_CLEANUP_TOL_MW_MWH)
-    parser.add_argument("--conventional-capacity-adder-mw", type=float, default=20.0)
-    parser.add_argument("--peaker-node", type=str, default="N5")
-    parser.add_argument("--peaker-capacity-mw", type=float, default=200.0)
+    parser.add_argument("--conventional-capacity-adder-mw", type=float, default=0.0)
+    parser.add_argument("--peaker-node", type=str, default=None)
+    parser.add_argument("--peaker-capacity-mw", type=float, default=0.0)
     parser.add_argument("--peaker-cost-eur-per-mwh", type=float, default=95.0)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_ROOT / "seidel_scarcity95")
     parser.add_argument("--resume-from", type=Path, default=None)
     parser.add_argument("--tee", action="store_true")
     parser.add_argument("--no-export", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     if not 0.0 < args.damping <= 1.0:
         raise SystemExit("--damping must be in (0, 1].")
     if args.max_iters <= 0:
@@ -1771,6 +1903,8 @@ def main() -> int:
         raise SystemExit("--solver-tol must be positive.")
     if args.price_bound_eur_per_mwh <= 0.0 or args.dual_bound_eur_per_mwh <= 0.0:
         raise SystemExit("Price and dual bounds must be positive.")
+    if args.demand_curve_beta_eur_per_mwh_per_share <= 0.0:
+        raise SystemExit("--demand-curve-beta-eur-per-mwh-per-share must be positive.")
     effective_price_lower = (
         -args.price_bound_eur_per_mwh
         if args.price_lower_bound_eur_per_mwh is None
@@ -1793,6 +1927,22 @@ def main() -> int:
         raise SystemExit("Seed and initializer power must be non-negative.")
     if args.dispatch_regularization < 0.0 or args.capacity_cleanup_tol < 0.0:
         raise SystemExit("Regularization and cleanup tolerance must be non-negative.")
+    if args.dual_tikhonov_gamma < 0.0:
+        raise SystemExit("--dual-tikhonov-gamma must be non-negative.")
+    if (
+        args.lower_level_optimality == "tikhonov-strong-duality"
+        and args.dual_tikhonov_gamma <= 0.0
+    ):
+        raise SystemExit(
+            "Tikhonov strong duality requires --dual-tikhonov-gamma > 0."
+        )
+    if (
+        args.lower_level_optimality == "tikhonov-strong-duality"
+        and (args.demand_model != "fixed" or args.dispatch_regularization != 0.0)
+    ):
+        raise SystemExit(
+            "The strategic Tikhonov EPEC requires fixed demand and zero dispatch regularization."
+        )
     if args.proximal_penalty_eur_per_mw2_day < 0.0:
         raise SystemExit("--proximal-penalty-eur-per-mw2-day must be non-negative.")
     if args.proximal_penalty_step_eur_per_mw2_day < 0.0:
@@ -1804,6 +1954,8 @@ def main() -> int:
         raise SystemExit("Choose either a fixed or staircase proximal penalty, not both.")
     if args.proximal_penalty_step_iters <= 0:
         raise SystemExit("--proximal-penalty-step-iters must be positive.")
+    if args.proximal_penalty_zero_iters < 0:
+        raise SystemExit("--proximal-penalty-zero-iters must be non-negative.")
     if args.proximal_energy_scale_hours <= 0.0:
         raise SystemExit("--proximal-energy-scale-hours must be positive.")
     if args.proximal_price_scale_eur_per_mwh <= 0.0:
@@ -1844,7 +1996,13 @@ def main() -> int:
         price_lower_bound_eur_per_mwh=args.price_lower_bound_eur_per_mwh,
         price_upper_bound_eur_per_mwh=args.price_upper_bound_eur_per_mwh,
         dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
-        use_demand_curve=False,
+        lower_level_optimality=args.lower_level_optimality,
+        dual_tikhonov_gamma=args.dual_tikhonov_gamma,
+        use_demand_curve=args.demand_model == "quadratic",
+        quadratic_demand_alpha_eur_per_mwh=args.demand_curve_alpha_eur_per_mwh,
+        quadratic_demand_beta_eur_per_mwh_per_share=(
+            args.demand_curve_beta_eur_per_mwh_per_share
+        ),
         dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,
         solver_tol=args.solver_tol,
         capacity_cleanup_tol_mw_mwh=args.capacity_cleanup_tol,
@@ -1862,6 +2020,9 @@ def main() -> int:
             args.proximal_penalty_step_eur_per_mw2_day
         ),
         strategic_proximal_penalty_step_iterations=args.proximal_penalty_step_iters,
+        strategic_proximal_penalty_initial_zero_iterations=(
+            args.proximal_penalty_zero_iters
+        ),
         strategic_bid_prices=args.strategic_bid_prices,
         strategic_bid_price_bound_eur_per_mwh=args.bid_price_bound_eur_per_mwh,
         strategic_price_floor_eur_per_mwh=args.floor_price_eur_per_mwh,
@@ -1902,11 +2063,16 @@ def main() -> int:
         f"{cfg.strategic_tol_abs_price_eur_per_mwh:g} EUR/MWh) for "
         f"{cfg.strategic_consecutive_converged_sweeps} sweeps, "
         f"parallel_workers={cfg.strategic_parallel_workers}, "
+        f"lower_level_optimality={cfg.lower_level_optimality}, "
+        f"gamma={cfg.dual_tikhonov_gamma:.3e}, "
+        f"demand={args.demand_model}, "
         f"strategic_prices={'on' if cfg.strategic_bid_prices else 'off'}, "
         f"epsilon={cfg.strategic_epsilon_penalty:g}, "
         f"proximal_fixed={cfg.strategic_proximal_penalty_eur_per_mw2_day:g}, "
         f"proximal_step={cfg.strategic_proximal_penalty_step_eur_per_mw2_day:g} "
-        f"EUR/MW^2/day every {cfg.strategic_proximal_penalty_step_iterations} iterations, "
+        f"EUR/MW^2/day after {cfg.strategic_proximal_penalty_initial_zero_iterations} "
+        f"zero-penalty iterations, then every "
+        f"{cfg.strategic_proximal_penalty_step_iterations} iterations, "
         f"calibration={calibration}"
     )
     if cfg.resume_from:
@@ -1925,7 +2091,7 @@ def main() -> int:
         checkpoint_callback=checkpoint_callback,
         initial_state=initial_state,
     )
-    quad = default_quadratic_demand_curve()
+    quad = configured_demand_curve(cfg)
     settlement = compute_joint_settlement(data, quad, state, cfg)
     print_epec_summary(state, cfg, settlement)
     if not args.no_export:

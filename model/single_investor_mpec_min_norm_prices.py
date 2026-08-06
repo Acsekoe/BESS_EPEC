@@ -1,0 +1,385 @@
+"""MPEC with an ISO-owned minimum-norm LMP selection rule.
+
+The primary lower-level market remains the maintained convex dispatch problem:
+primal feasibility, primary dual feasibility, and exact primary strong duality
+select the cost-minimizing dispatch and the full set of valid market duals.
+
+The ISO then solves a secondary convex QP over that primary dual-optimal set:
+
+    minimize  0.5 * sum(n,t) lambda[n,t]**2.
+
+This module embeds the KKT conditions of that secondary problem. Consequently
+the strategic investor cannot trade economic profit against the price norm;
+minimum-norm selection belongs to the ISO and is enforced before the leader's
+objective is evaluated. Finite primary-dual bounds are included in the
+secondary QP because they are part of the maintained numerical model.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pyomo.environ as pyo
+from pyomo.core.expr.calculus.derivatives import Modes, differentiate
+
+from primal_market_clearing_model import MarketData, value
+from single_investor_mpec import build_single_investor_mpec
+from solver_utils import get_ipopt_solver
+
+
+MODEL_NAME = "Single Investor MPEC with ISO Minimum-Norm LMP Selection"
+
+
+PRIMARY_DUAL_COMPONENTS = (
+    "lam",
+    "lam_sys",
+    "nu_gen",
+    "mu_up",
+    "mu_dn",
+    "rho_ch",
+    "sig_dis",
+    "gam",
+    "del_soc",
+    "rho_per",
+    "xi_shed",
+)
+
+PRIMARY_DUAL_INEQUALITY_COMPONENTS = (
+    "gen_stationarity",
+    "shed_stationarity",
+    "charge_stationarity",
+    "discharge_stationarity",
+    "soc_stationarity",
+)
+
+
+def _constraint_slack(constraint: pyo.ConstraintData):
+    """Return the non-negative slack of a one-sided primary-dual constraint."""
+
+    if constraint.has_ub() and not constraint.has_lb():
+        return constraint.upper - constraint.body
+    if constraint.has_lb() and not constraint.has_ub():
+        return constraint.body - constraint.lower
+    raise ValueError(f"Expected one-sided inequality, received {constraint.name}.")
+
+
+def _constraint_residual(constraint: pyo.ConstraintData):
+    if not constraint.equality:
+        raise ValueError(f"Expected equality, received {constraint.name}.")
+    return constraint.body - constraint.lower
+
+
+def build_single_investor_min_norm_price_mpec(
+    data: MarketData,
+    **mpec_kwargs: Any,
+) -> pyo.ConcreteModel:
+    """Build the investor MPEC with exact or explicitly relaxed ISO dual selection."""
+
+    secondary_complementarity_epsilon = float(
+        mpec_kwargs.pop("secondary_complementarity_epsilon", 0.0)
+    )
+    if secondary_complementarity_epsilon < 0.0:
+        raise ValueError("secondary_complementarity_epsilon must be non-negative.")
+
+    if float(mpec_kwargs.get("lambda_l2_penalty_coefficient", 0.0)) != 0.0:
+        raise ValueError(
+            "Leader-side lambda regularization must be zero when ISO minimum-norm selection is enabled."
+        )
+
+    m = build_single_investor_mpec(data, **mpec_kwargs)
+    m.name = MODEL_NAME
+
+    primary_dual_variables = [
+        variable
+        for component_name in PRIMARY_DUAL_COMPONENTS
+        if (component := getattr(m, component_name, None)) is not None
+        for variable in component.values()
+    ]
+    primary_dual_inequalities = [
+        constraint
+        for component_name in PRIMARY_DUAL_INEQUALITY_COMPONENTS
+        if (component := getattr(m, component_name, None)) is not None
+        for constraint in component.values()
+        if constraint.active
+    ]
+    primary_dual_equalities = [
+        constraint
+        for constraint in m.netinjection_stationarity.values()
+        if constraint.active
+    ]
+
+    lower_bounds = [
+        (variable, float(variable.lb))
+        for variable in primary_dual_variables
+        if variable.lb is not None
+    ]
+    upper_bounds = [
+        (variable, float(variable.ub))
+        for variable in primary_dual_variables
+        if variable.ub is not None
+    ]
+
+    m.ISO_DUAL_INEQ = pyo.Set(
+        initialize=range(len(primary_dual_inequalities)), ordered=True
+    )
+    m.ISO_DUAL_EQ = pyo.Set(
+        initialize=range(len(primary_dual_equalities)), ordered=True
+    )
+    m.ISO_DUAL_LB = pyo.Set(initialize=range(len(lower_bounds)), ordered=True)
+    m.ISO_DUAL_UB = pyo.Set(initialize=range(len(upper_bounds)), ordered=True)
+    m.ISO_DUAL_VAR = pyo.Set(
+        initialize=range(len(primary_dual_variables)), ordered=True
+    )
+
+    # Secondary-QP KKT multipliers. Inequality and bound multipliers are
+    # non-negative; equality and primary-strong-duality multipliers are free.
+    m.iso_dual_feasibility_multiplier = pyo.Var(
+        m.ISO_DUAL_INEQ, domain=pyo.NonNegativeReals, initialize=0.0
+    )
+    m.iso_dual_equality_multiplier = pyo.Var(
+        m.ISO_DUAL_EQ, domain=pyo.Reals, initialize=0.0
+    )
+    m.iso_dual_lower_bound_multiplier = pyo.Var(
+        m.ISO_DUAL_LB, domain=pyo.NonNegativeReals, initialize=0.0
+    )
+    m.iso_dual_upper_bound_multiplier = pyo.Var(
+        m.ISO_DUAL_UB, domain=pyo.NonNegativeReals, initialize=0.0
+    )
+    m.iso_primary_strong_duality_multiplier = pyo.Var(
+        domain=pyo.Reals, initialize=0.0
+    )
+
+    inequality_slacks = [
+        _constraint_slack(constraint)
+        for constraint in primary_dual_inequalities
+    ]
+    equality_residuals = [
+        _constraint_residual(constraint)
+        for constraint in primary_dual_equalities
+    ]
+    primary_gap = m.primal_objective_expr - m.dual_objective_expr
+
+    min_norm_objective = 0.5 * sum(
+        m.lam[n, t] ** 2 for n in m.N for t in m.T
+    )
+    secondary_lagrangian = (
+        min_norm_objective
+        - sum(
+            m.iso_dual_feasibility_multiplier[index] * inequality_slacks[index]
+            for index in m.ISO_DUAL_INEQ
+        )
+        + sum(
+            m.iso_dual_equality_multiplier[index] * equality_residuals[index]
+            for index in m.ISO_DUAL_EQ
+        )
+        + m.iso_primary_strong_duality_multiplier * primary_gap
+        - sum(
+            m.iso_dual_lower_bound_multiplier[index]
+            * (lower_bounds[index][0] - lower_bounds[index][1])
+            for index in m.ISO_DUAL_LB
+        )
+        - sum(
+            m.iso_dual_upper_bound_multiplier[index]
+            * (upper_bounds[index][1] - upper_bounds[index][0])
+            for index in m.ISO_DUAL_UB
+        )
+    )
+
+    # Reverse-mode symbolic differentiation constructs all secondary-QP
+    # stationarity equations in one traversal of the Lagrangian expression.
+    stationarity_derivatives = differentiate(
+        secondary_lagrangian,
+        wrt_list=primary_dual_variables,
+        mode=Modes.reverse_symbolic,
+    )
+    m.iso_min_norm_stationarity = pyo.Constraint(
+        m.ISO_DUAL_VAR,
+        rule=lambda model, index: stationarity_derivatives[index] == 0.0,
+    )
+
+    # Aggregate complementary slackness is exact. Every term is non-negative
+    # from primary dual feasibility, primary-dual variable bounds, and the
+    # secondary multipliers, so a zero sum enforces each product individually.
+    secondary_complementarity = (
+        sum(
+            m.iso_dual_feasibility_multiplier[index] * inequality_slacks[index]
+            for index in m.ISO_DUAL_INEQ
+        )
+        + sum(
+            m.iso_dual_lower_bound_multiplier[index]
+            * (lower_bounds[index][0] - lower_bounds[index][1])
+            for index in m.ISO_DUAL_LB
+        )
+        + sum(
+            m.iso_dual_upper_bound_multiplier[index]
+            * (upper_bounds[index][1] - upper_bounds[index][0])
+            for index in m.ISO_DUAL_UB
+        )
+    )
+    m.iso_min_norm_complementarity_expr = pyo.Expression(
+        expr=secondary_complementarity
+    )
+    if secondary_complementarity_epsilon == 0.0:
+        m.iso_min_norm_complementarity = pyo.Constraint(
+            expr=m.iso_min_norm_complementarity_expr == 0.0
+        )
+    else:
+        # Scholtes-style relaxation of only the secondary ISO KKT
+        # complementarity condition. Primary market feasibility, primary
+        # strong duality, and secondary stationarity remain exact.
+        m.iso_min_norm_complementarity = pyo.Constraint(
+            expr=m.iso_min_norm_complementarity_expr
+            <= secondary_complementarity_epsilon
+        )
+    m.iso_min_norm_objective_expr = pyo.Expression(expr=min_norm_objective)
+
+    m._lower_level_optimality = "iso-min-norm-dual"
+    m._iso_min_norm_complementarity_epsilon = (
+        secondary_complementarity_epsilon
+    )
+    m._iso_primary_dual_variable_labels = tuple(
+        variable.name for variable in primary_dual_variables
+    )
+    m._iso_primary_dual_inequality_labels = tuple(
+        constraint.name for constraint in primary_dual_inequalities
+    )
+    m._iso_primary_dual_equality_labels = tuple(
+        constraint.name for constraint in primary_dual_equalities
+    )
+    m._iso_dual_lower_bound_labels = tuple(
+        variable.name for variable, _ in lower_bounds
+    )
+    m._iso_dual_upper_bound_labels = tuple(
+        variable.name for variable, _ in upper_bounds
+    )
+    return m
+
+
+def min_norm_price_diagnostics(model: pyo.ConcreteModel) -> dict[str, float | int]:
+    stationarity = [
+        abs(value(constraint.body))
+        for constraint in model.iso_min_norm_stationarity.values()
+    ]
+    return {
+        "primary_dual_variables": len(model.ISO_DUAL_VAR),
+        "primary_dual_inequalities": len(model.ISO_DUAL_INEQ),
+        "primary_dual_equalities": len(model.ISO_DUAL_EQ) + 1,
+        "secondary_lower_bound_conditions": len(model.ISO_DUAL_LB),
+        "secondary_upper_bound_conditions": len(model.ISO_DUAL_UB),
+        "lambda_l2_norm": 2.0 * value(model.iso_min_norm_objective_expr),
+        "secondary_complementarity_sum": value(
+            model.iso_min_norm_complementarity_expr
+        ),
+        "secondary_complementarity_epsilon": float(
+            model._iso_min_norm_complementarity_epsilon
+        ),
+        "maximum_secondary_stationarity_residual": max(
+            stationarity, default=0.0
+        ),
+    }
+
+
+def initialize_iso_min_norm_selection(
+    model: pyo.ConcreteModel,
+    *,
+    max_cpu_time: float = 60.0,
+    solver_tol: float = 1.0e-6,
+) -> str:
+    """Warm-start the nested KKT block from the fixed-capacity ISO dual QP.
+
+    All upper-level and primary-primal variables are fixed at their current
+    values in a clone. The secondary KKT equations are deactivated, leaving
+    the convex minimum-norm dual-selection QP itself. Its primary duals and
+    QP multipliers are copied back into the full MPEC.
+    """
+
+    qp = model.clone()
+    qp.objective.deactivate()
+    qp.iso_min_norm_stationarity.deactivate()
+    qp.iso_min_norm_complementarity.deactivate()
+
+    for component in qp.component_objects(pyo.Var, active=True):
+        if component.local_name in PRIMARY_DUAL_COMPONENTS:
+            continue
+        for variable in component.values():
+            variable.fix(value(variable))
+
+    qp.iso_min_norm_warm_start_objective = pyo.Objective(
+        expr=qp.iso_min_norm_objective_expr,
+        sense=pyo.minimize,
+    )
+    qp.ipopt_zL_out = pyo.Suffix(direction=pyo.Suffix.IMPORT)
+    qp.ipopt_zU_out = pyo.Suffix(direction=pyo.Suffix.IMPORT)
+    results = get_ipopt_solver(
+        {
+            "max_cpu_time": max_cpu_time,
+            "tol": solver_tol,
+            "acceptable_tol": solver_tol,
+        }
+    ).solve(qp, tee=False)
+    termination = str(results.solver.termination_condition)
+    if termination != "optimal":
+        model._iso_min_norm_warm_start_termination = termination
+        return termination
+
+    for component_name in PRIMARY_DUAL_COMPONENTS:
+        source = getattr(qp, component_name, None)
+        target = getattr(model, component_name, None)
+        if source is None or target is None:
+            continue
+        for index in source:
+            source_value = value(source[index])
+            if target[index].lb is not None:
+                source_value = max(float(target[index].lb), source_value)
+            if target[index].ub is not None:
+                source_value = min(float(target[index].ub), source_value)
+            target[index].set_value(source_value)
+
+    qp_inequalities = [
+        constraint
+        for component_name in PRIMARY_DUAL_INEQUALITY_COMPONENTS
+        if (component := getattr(qp, component_name, None)) is not None
+        for constraint in component.values()
+        if constraint.active
+    ]
+    for index, constraint in enumerate(qp_inequalities):
+        # Pyomo/Ipopt reports a non-positive dual for an upper inequality.
+        multiplier = max(0.0, -float(qp.dual.get(constraint, 0.0)))
+        model.iso_dual_feasibility_multiplier[index].set_value(multiplier)
+
+    qp_equalities = [
+        constraint
+        for constraint in qp.netinjection_stationarity.values()
+        if constraint.active
+    ]
+    for index, constraint in enumerate(qp_equalities):
+        model.iso_dual_equality_multiplier[index].set_value(
+            -float(qp.dual.get(constraint, 0.0))
+        )
+    model.iso_primary_strong_duality_multiplier.set_value(
+        -float(qp.dual.get(qp.strong_duality, 0.0))
+    )
+
+    qp_dual_variables = [
+        variable
+        for component_name in PRIMARY_DUAL_COMPONENTS
+        if (component := getattr(qp, component_name, None)) is not None
+        for variable in component.values()
+    ]
+    lower_index = 0
+    upper_index = 0
+    for variable in qp_dual_variables:
+        if variable.lb is not None:
+            model.iso_dual_lower_bound_multiplier[lower_index].set_value(
+                max(0.0, float(qp.ipopt_zL_out.get(variable, 0.0)))
+            )
+            lower_index += 1
+        if variable.ub is not None:
+            model.iso_dual_upper_bound_multiplier[upper_index].set_value(
+                max(0.0, -float(qp.ipopt_zU_out.get(variable, 0.0)))
+            )
+            upper_index += 1
+
+    model._iso_min_norm_warm_start_termination = termination
+    model._iso_min_norm_warm_start_diagnostics = min_norm_price_diagnostics(model)
+    return termination

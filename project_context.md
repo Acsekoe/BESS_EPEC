@@ -1,6 +1,6 @@
 # Project Context: Strategic BESS Investment in Nodal Spot Markets
 
-Last updated: 2026-07-29
+Last updated: 2026-08-03
 
 ## Current objective
 
@@ -36,6 +36,16 @@ designed to retain manageable evening prices, midday solar-export congestion at
 N8, and a 100 MW shared BESS connection limit per node. The older 5-bus euro
 system and earlier IEEE-9 calibrations remain in the repository as historical
 cases but are not the current thesis benchmark.
+
+The current candidate distributed-congestion calibration restores the three
+IEEE-9 synchronous machines at N1, N2, and N3. The restored N2 unit has 300 MW
+capacity and a 52.20 EUR/MWh marginal cost; new runs do not add the former
+artificial N5 peaker by default. The N6 export lines L46/L69 are limited to
+180 MW and the N8 export lines L98/L78 to 210 MW. With a 200 MW nodal BESS
+limit, a planner smoke test places 53.39 MW at N6 and 65.63 MW at N8, confirming two distinct renewable
+congestion-relief locations. This is a candidate calibration pending a
+converged EPEC rerun; older saved results retain their historical input and
+peaker calibration as documented in their run configurations.
 
 ## Models and solution methods
 
@@ -78,6 +88,85 @@ Capacity pairs at or below `1e-4` in both MW and MWh are normalized to exact
 zero between diagonalization updates so economically absent batteries remain
 sparse.
 
+An experimental alternative in `model/single_investor_mpec_relaxed_kkt.py`
+deactivates strong duality and imposes individual Scholtes-style relaxed KKT
+products `slack * dual <= epsilon_comp`. The capacity diagonalization driver
+selects it explicitly with `--lower-level-optimality relaxed-kkt`; it is not the
+maintained default. Each run records the maximum and summed complementarity
+products because a small per-pair epsilon can accumulate across thousands of
+conditions.
+
+The experimental formulation in `model/tikhonov_kkt/` is the exact finite-gamma
+strong-duality approach. It pairs the directly regularized dual with the matching primal objective
+`C(x) + sum(h^2)/(2*gamma)` and enforces primal feasibility, dual feasibility,
+`h + gamma*lambda = 0`, and strong duality without complementarity-product
+constraints or a Scholtes epsilon. At `gamma=1e-3`, the single-investor model
+solved optimally at 187.182153 MW / 547.213300 MWh and 18,819.57 EUR/day; an
+independent same-fleet soft-market audit matched prices within 0.019 EUR/MWh.
+This removes finite-epsilon price freedom but not the physical imbalance of a
+finite-gamma soft market. The superseded relaxed-KKT/Scholtes scripts are
+archived under `model/tikhonov_kkt/old/` and are not used by new runs.
+
+`model/tikhonov_kkt/jacobi_epec.py` embeds that exact strong-duality MPEC in an
+isolated four-investor driver. It implements explicit simultaneous
+Gauss--Jacobi sweeps:
+all best responses use one frozen capacity snapshot, successful proposals are
+damped together, and only then is the shared nodal limit projected. Top-level
+controls include parallel workers and an optional sequence of
+`(gamma, max sweeps)` continuation stages. The default damping is 0.25, chosen
+after a smoke test showed a sharp I1 best-response change between quarter- and
+half-applied first-sweep fleets.
+Convergence requires both damped iterate changes and raw undamped best-response
+residuals below tolerance, preventing a small damping factor from creating a
+false convergence declaration. Per-investor history records matched
+strong-duality gaps and original nodal/system balance residuals; final
+capacities are settled once in the exact unregularized market. This
+experimental driver does not make a finite-gamma market physically exact.
+
+`model/tikhonov_kkt/epec.py` is the unified finite-gamma entry point. Its
+`capacity` mode runs the capacity-only Jacobi EPEC, while
+`strategic-operation` mode adds hourly charge/discharge quantity offers and,
+by default, two-sided bid prices using the matched strategic soft-market MPEC.
+Both modes support independent Jacobi best responses with multiple worker
+processes; the maintained default is two workers. Both apply the same delayed
+upper-level proximal continuation: iterations 1-10 are unpenalized, followed
+by 1 EUR/MW^2/day increments every five iterations. Capacity mode measures
+MW/MWh movement; strategic-operation mode additionally measures changes in
+withheld quantities and normalized bid prices.
+Fresh Tikhonov strategic-operation runs now enter iteration 1 from zero
+economic MW/MWh and zero quantity offers at every node. The separate 10 MW/node
+four-hour MPEC numerical guess remains positive and does not enter the economic
+state. The older projected Jacobi initializer is available only through an
+explicit runner flag.
+
+The separate experimental builder
+`model/single_investor_mpec_min_norm_prices.py` retains exact primary strong
+duality and adds an ISO-owned secondary convex QP that minimizes
+`0.5 * sum(lambda[n,t]^2)` over the primary dual-optimal set. Its embedded KKT
+conditions are selected with `--lower-level-optimality iso-min-norm-dual`.
+Unlike a leader-objective lambda penalty, this makes the common price-selection
+rule part of the market design rather than an investor preference.
+The normal capacity EPEC now exposes this experimental rule explicitly through
+`--price-selection iso-min-norm`; the default remains the clean optimistic
+strong-duality baseline. Fresh Jacobi tests can also separate a zero economic
+fleet from the positive Ipopt numerical guess with
+`--economic-seed-power-mw 0`. On the distributed-congestion IEEE-9 case, one
+exact single-investor best response solved at 187.11 MW / 546.95 MWh with zero
+hard-balance residual, a 0.306 EUR/MWh maximum embedded-versus-joint LMP gap,
+and an 85.02 EUR/day profit gap. A sparse four-investor one-sweep smoke test
+solved all four minimum-norm MPECs at `tol=1e-4`; it remains a non-equilibrium
+diagnostic because the saved fleet applies 0.25 damping to simultaneous raw
+best responses.
+The optional `--iso-min-norm-complementarity-epsilon` relaxes only the
+nonnegative aggregate of the secondary ISO KKT complementarity products; zero
+remains the exact default, while primary hard-market feasibility, primary
+strong duality, and secondary stationarity stay exact. A `1e-3` three-sweep
+trial completed the first sweep but was aborted during the second after the
+active-rival best responses again approached the 300-second limits. Its
+iteration-1 checkpoint is a diagnostic, not an equilibrium. The relaxation
+also changed I3's raw first response from about 203.2 MW to 187.0 MW, indicating
+material local-solution sensitivity despite the small aggregate tolerance.
+
 ### Multi-investor EPEC
 
 `model/epec_diagonalization.py` couples investor MPECs through shared nodal
@@ -85,6 +174,32 @@ connection limits and market outcomes. Every active investor sees each rival as
 a separate lower-level battery with that rival's own nodal MW and MWh; rivals
 are not collapsed into one virtual storage unit. It supports Gauss-Jacobi and
 Gauss-Seidel updates with damping and feasibility projection.
+
+The normal command-line entry point is the clean baseline: fixed demand, exact
+hard nodal and system balances, exact lower-level strong duality, zero dispatch
+regularization, zero leader-side price penalty, and no Tikhonov gamma or demand-
+expansion block. Its output is labeled
+`clean-fixed-demand-exact-strong-duality`. Alternative lower-level price rules
+remain experimental and are invoked from their dedicated drivers; in
+particular, the finite-gamma and elastic-demand work stays under
+`model/tikhonov_kkt/` rather than defining the maintained outer EPEC.
+
+A 221-case exact fixed-demand post-hoc screen in
+`model/output/capacity_discontinuity_diagnostics_2026-08-05/` confirms that the
+capacity discontinuity is a coupled N6/N8 curtailment-elimination frontier, not
+an artifact of holding N6 fixed. Along the saved fleet's N6/N8 capacity ray,
+moving from 0.75 to 1.00 of the fleet eliminates about 121 MWh/day of remaining
+PV curtailment and changes the aggregate N8 average net margin from about
++88.95 to -17.71 EUR/MW/day. The joint grid shifts this frontier as N6 and N8
+move together but does not remove the jump. Base no-storage PV curtailment is
+about 584.6 MWh/day, 12.5% of PV availability. PV scaling moves the frontier
+sharply: 0.8x largely removes the opportunity, while 1.2x keeps curtailment and
+positive storage returns beyond 2.25 times the saved N6/N8 fleet. Therefore the
+problem is not simply excessive PV; the base PV/network calibration lies near
+a synchronized regime transition. Raising only the N8 corridor limits by 20%
+reduced the largest screened N8 margin step from about 106.7 to 30.2
+EUR/MW/day, but did not make the payoff continuous. These screens hold
+aggregate E/P ratios fixed and are diagnostics, not equilibrium results.
 
 `model/epec_jacobi_initializer.py` is the maintained initialization workflow.
 The same workflow is now called automatically at the start of every fresh
@@ -104,6 +219,17 @@ NLP multiplier is exported as that investor's local marginal value of another MW
 of access. These investor-specific shadow values are willingness-to-pay
 diagnostics, not a common market-clearing access price. The earlier projected
 common access-price iteration was removed after it failed to converge.
+
+Capacity-only Gauss--Jacobi sweeps can run independent investor best responses
+in separate worker processes. Parallel workers return lightweight price and
+access diagnostics rather than serializing full Pyomo models. Fixed rival
+node-hour storage blocks are omitted below a configurable power threshold
+(default 0.01 MW), while the small capacity continues to consume shared nodal
+headroom; 0.01/0.05/0.1 MW sensitivities should be checked before treating this
+numerical sparsification as immaterial. An MPEC that exhausts its CPU-time,
+iteration, or evaluation allowance is now left unchanged for that sweep rather
+than immediately repeating the same expensive solve. Other numerical failures
+retain one retry from a materially different 50% capacity start.
 
 The separate two-follower access-auction experiment is under `model/auction/`.
 Each leader chooses continuous nodal bid quantity, bid price, and energy
@@ -154,9 +280,10 @@ An optional proximal diagonalization penalty is available through
 `--proximal-penalty-eur-per-mw2-day`. It penalizes changes from the investor's
 previous MW/MWh capacity and withheld charge/discharge quantities; it does not
 penalize withholding itself, is off by default, and is excluded from the
-Jacobi initializer. A staircase continuation is also available: with a step of
-1 EUR/MW^2/day and five iterations per block, Seidel iterations 1-5 use zero,
-6-10 use one, 11-15 use two, and so forth. Resuming iteration 60 with a fixed
+Jacobi initializer. A staircase continuation is also available with an
+explicit configurable initial zero-penalty period. The unified Tikhonov
+strategic EPEC uses 1 EUR/MW^2/day steps by default: iterations 1-10 use zero,
+11-15 use one, 16-20 use two, and so forth. Resuming iteration 60 with a fixed
 coefficient of 1 EUR/MW^2/day
 produced a regularized fixed point in iteration 61 with realized penalties
 below 0.001 EUR/day per investor. An immediate unpenalized sweep moved again

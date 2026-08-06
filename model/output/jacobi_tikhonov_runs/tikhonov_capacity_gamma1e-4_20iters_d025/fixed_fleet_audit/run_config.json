@@ -1,0 +1,14 @@
+{
+  "experiment": "fixed-fleet gamma sensitivity",
+  "fleets": {
+    "final_gamma1e4": "C:\\EEG\\BESS_EPEC\\BESS_EPEC\\model\\output\\jacobi_tikhonov_runs\\tikhonov_capacity_gamma1e-4_20iters_d025"
+  },
+  "gammas": [
+    0.0001,
+    3e-05,
+    1e-05
+  ],
+  "hard_price_rule": "minimum lambda L2 norm on exact dual-optimal face",
+  "solver_tol": 1e-07,
+  "max_cpu_time_seconds_per_solve": 300.0
+}

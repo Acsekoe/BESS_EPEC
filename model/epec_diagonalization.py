@@ -1,4 +1,4 @@
-"""Multi-investor spot-market EPEC solved by diagonalization.
+"""Clean multi-investor spot-market EPEC solved by diagonalization.
 
 Each strategic BESS investor solves the single-investor MPEC while every rival
 is frozen as a separate non-strategic storage unit with its own nodal MW/MWh
@@ -12,6 +12,12 @@ By default a fresh Gauss-Seidel run first performs one common-snapshot Jacobi
 best-response sweep and proportionally projects only overloaded nodes. That
 feasible projected fleet is iteration 0 of the subsequent Seidel loop. Resumed
 runs continue directly from their checkpoint without repeating initialization.
+
+The command-line entry point is the maintained fixed-demand, zero-dispatch-
+regularization, exact strong-duality baseline. Alternative lower-level
+formulations are experiments with their own drivers; compatibility hooks stay
+available programmatically so those drivers do not need to duplicate the
+diagonalization algorithm.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ import json
 import sys
 import time
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -34,6 +41,8 @@ if _PRIMAL_DUAL_DIR.is_dir() and str(_PRIMAL_DUAL_DIR) not in sys.path:
 
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_mpec import (
+    DEFAULT_DEMAND_CURVE_ALPHA,
+    DEFAULT_DEMAND_CURVE_BETA,
     DEFAULT_DUAL_BOUND_EUR_PER_MWH,
     DEFAULT_INITIAL_POWER_MW,
     DEFAULT_INITIAL_RATIO_HOURS,
@@ -44,7 +53,6 @@ from single_investor_mpec import (
     InvestorConfig,
     QuadraticDemandCurve,
     build_single_investor_mpec,
-    default_quadratic_demand_curve,
     initialize_from_reference_dispatch,
     investment_headroom_shadow_price,
 )
@@ -124,6 +132,8 @@ DEFAULT_TOL_REL = 0.02
 DEFAULT_FLOOR_MW = 1.0
 DEFAULT_FLOOR_MWH = 2.0
 DEFAULT_CAPACITY_CLEANUP_TOL_MW_MWH = 1.0e-4
+DEFAULT_RIVAL_SPARSITY_TOL_MW = 0.01
+DEFAULT_COMPLEMENTARITY_EPSILON = 1.0e-3  # Experimental-driver compatibility.
 DEFAULT_OUTPUT_ROOT = Path(__file__).resolve().parent / "output" / "epec"
 
 
@@ -142,18 +152,31 @@ class EpecConfig:
     floor_mwh: float = DEFAULT_FLOOR_MWH
     seed_power_mw: float = DEFAULT_INITIAL_POWER_MW
     seed_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS
+    economic_seed_power_mw: float | None = None
     max_cpu_time: float = 500.0
     price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH
     price_lower_bound_eur_per_mwh: float | None = None
     price_upper_bound_eur_per_mwh: float | None = None
     dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH
+    lambda_l2_penalty_coefficient: float = 0.0
+    lower_level_optimality: str = "strong-duality"
+    complementarity_epsilon: float = DEFAULT_COMPLEMENTARITY_EPSILON
+    iso_min_norm_complementarity_epsilon: float = 0.0
+    complementarity_formulation: str = "scholtes"
+    complementarity_shift: float = 1.0e-8
+    dual_tikhonov_gamma: float = 0.0
     max_consecutive_failures: int = 3
     print_mpec_lambdas: bool = False
     system_price_settlement: bool = SYSTEM_PRICE_SETTLEMENT
     use_demand_curve: bool = False
+    quadratic_demand_alpha_eur_per_mwh: float = DEFAULT_DEMAND_CURVE_ALPHA
+    quadratic_demand_beta_eur_per_mwh_per_share: float = DEFAULT_DEMAND_CURVE_BETA
+    # Experimental-driver hook. The maintained outer EPEC always leaves this None.
+    demand_expansion: object | None = None
     dispatch_regularization_eur_per_mw2h: float = 0.0
     solver_tol: float = DEFAULT_SOLVER_TOL
     capacity_cleanup_tol_mw_mwh: float = DEFAULT_CAPACITY_CLEANUP_TOL_MW_MWH
+    rival_sparsity_tol_mw: float = DEFAULT_RIVAL_SPARSITY_TOL_MW
     automatic_jacobi_initializer: bool = True
     jacobi_initializer_snapshot_power_mw: float = 0.0
     jacobi_initializer_snapshot_ratio_hours: float = DEFAULT_INITIAL_RATIO_HOURS
@@ -162,6 +185,7 @@ class EpecConfig:
     strategic_proximal_price_scale_eur_per_mwh: float = 10.0
     strategic_proximal_penalty_step_eur_per_mw2_day: float = 0.0
     strategic_proximal_penalty_step_iterations: int = 5
+    strategic_proximal_penalty_initial_zero_iterations: int = 5
     strategic_bid_prices: bool = False
     strategic_bid_price_bound_eur_per_mwh: float = DEFAULT_PRICE_BOUND_EUR_PER_MWH
     strategic_price_floor_eur_per_mwh: float = 1.0
@@ -180,12 +204,22 @@ class BestResponse:
     investor_id: str
     termination: str
     solve_seconds: float
+    preparation_seconds: float
+    attempt_count: int
+    retry_status: str
     proposed_power: dict[str, float]  # node -> MW
     proposed_energy: dict[str, float]  # node -> MWh
     private_headroom_limit_mw: dict[str, float]
     optimistic_mpec_profit_eur_per_day: float
     access_shadow_price_eur_per_mw_day: dict[str, float]
     strong_duality_gap: float
+    max_complementarity_product: float
+    sum_complementarity_products: float
+    max_original_nodal_balance_residual_mw: float
+    total_absolute_original_nodal_balance_residual_mwh: float
+    max_hourly_system_balance_residual_mw: float
+    signed_primal_dual_gap_eur_per_day: float
+    selected_prices_eur_per_mwh: dict[tuple[str, int], float]
     model: pyo.ConcreteModel | None
 
     @property
@@ -204,6 +238,8 @@ class EpecState:
     trajectory: list[dict] = field(default_factory=list)  # one row per (iteration, investor, node)
     projection_events: list[dict] = field(default_factory=list)
     final_models: dict[str, pyo.ConcreteModel] = field(default_factory=dict)
+    final_selected_prices: dict[str, dict[tuple[str, int], float]] = field(default_factory=dict)
+    final_access_shadow_prices: dict[str, dict[str, float]] = field(default_factory=dict)
     initialization_method: str = "uniform_seed"
     initializer_summary: dict = field(default_factory=dict)
 
@@ -277,6 +313,47 @@ def separate_rival_capacities(
     return rival_power, rival_energy
 
 
+def add_capacity_proximal_penalty(
+    model: pyo.ConcreteModel,
+    *,
+    coefficient_eur_per_mw2_day: float,
+    energy_scale_hours: float,
+    reference_power_mw: dict[str, float],
+    reference_energy_mwh: dict[str, float],
+) -> None:
+    """Penalize a capacity best response's distance from its previous strategy."""
+
+    coefficient = float(coefficient_eur_per_mw2_day)
+    scale_hours = float(energy_scale_hours)
+    if coefficient < 0.0:
+        raise ValueError("The capacity proximal coefficient must be non-negative.")
+    if scale_hours <= 0.0:
+        raise ValueError("The capacity proximal energy scale must be positive.")
+    if set(reference_power_mw) != set(model.N) or set(reference_energy_mwh) != set(
+        model.N
+    ):
+        raise ValueError("Capacity proximal references must contain every node.")
+
+    distance = sum(
+        (model.X_power[node] - float(reference_power_mw[node])) ** 2
+        + (
+            (model.X_energy[node] - float(reference_energy_mwh[node]))
+            / scale_hours
+        )
+        ** 2
+        for node in model.N
+    )
+    model.capacity_proximal_distance_mw2_expr = pyo.Expression(expr=distance)
+    model.capacity_proximal_penalty_expr = pyo.Expression(
+        expr=0.5 * coefficient * model.capacity_proximal_distance_mw2_expr
+    )
+    model.objective.set_value(
+        model.objective.expr - model.capacity_proximal_penalty_expr
+    )
+    model._capacity_proximal_penalty_eur_per_mw2_day = coefficient
+    model._capacity_proximal_energy_scale_hours = scale_hours
+
+
 def solve_best_response(
     data: MarketData,
     quad: QuadraticDemandCurve,
@@ -297,29 +374,112 @@ def solve_best_response(
     if set(guess_power) != set(data.nodes) or set(guess_energy) != set(data.nodes):
         raise ValueError("Best-response initial-guess mappings must contain every market node.")
 
-    def attempt(shrink: float) -> tuple[pyo.ConcreteModel, str, float]:
-        model = build_single_investor_mpec(
-            data,
+    def attempt(shrink: float) -> tuple[pyo.ConcreteModel, str, float, float]:
+        attempt_start = time.perf_counter()
+        if cfg.lower_level_optimality == "tikhonov-strong-duality":
+            # Keep an economically empty Jacobi snapshot structurally identical
+            # to the verified standalone exact MPEC. Capacity cleanup makes
+            # these omitted units exactly zero, so this changes neither market
+            # feasibility nor private headroom.
+            represented_rival_ids = [
+                unit
+                for unit in rival_power
+                if any(
+                    rival_power[unit][node] > cfg.capacity_cleanup_tol_mw_mwh
+                    or rival_energy[unit][node] > cfg.capacity_cleanup_tol_mw_mwh
+                    for node in data.nodes
+                )
+            ]
+            model_rival_power = {
+                unit: rival_power[unit] for unit in represented_rival_ids
+            }
+            model_rival_energy = {
+                unit: rival_energy[unit] for unit in represented_rival_ids
+            }
+        else:
+            represented_rival_ids = list(rival_power)
+            model_rival_power = rival_power
+            model_rival_energy = rival_energy
+        build_kwargs = dict(
             quad_demand=quad,
             investor=investor,
-            rival_power_mw_by_unit=rival_power,
-            rival_energy_mwh_by_unit=rival_energy,
+            rival_power_mw_by_unit=model_rival_power,
+            rival_energy_mwh_by_unit=model_rival_energy,
             rival_degradation_eur_per_mwh_by_unit={
                 inv.investor_id: inv.degradation_eur_per_mwh
                 for inv in cfg.investors
-                if inv.investor_id != investor.investor_id
+                if inv.investor_id in represented_rival_ids
             },
             node_limit_mw=cfg.node_limit_mw,
             price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
             price_lower_bound_eur_per_mwh=cfg.price_lower_bound_eur_per_mwh,
             price_upper_bound_eur_per_mwh=cfg.price_upper_bound_eur_per_mwh,
             dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
+            sparse_rival_power_tol_mw=cfg.rival_sparsity_tol_mw,
+            lambda_l2_penalty_coefficient=cfg.lambda_l2_penalty_coefficient,
             initial_power_mw=cfg.seed_power_mw,
             initial_ratio_hours=cfg.seed_ratio_hours,
             system_price_settlement=cfg.system_price_settlement,
             use_demand_curve=cfg.use_demand_curve,
+            demand_expansion=cfg.demand_expansion,
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
             solver_tol=cfg.solver_tol,
+        )
+        if cfg.demand_expansion is not None and cfg.lower_level_optimality in (
+            "relaxed-kkt",
+            "iso-min-norm-dual",
+        ):
+            # Those builders add their own complementarity/min-norm blocks and
+            # have no conditions covering the expansion variable.
+            raise ValueError(
+                "demand_expansion is only implemented for the strong-duality "
+                f"lower levels, not {cfg.lower_level_optimality!r}."
+            )
+        if cfg.lower_level_optimality == "tikhonov-strong-duality":
+            from tikhonov_kkt.strong_duality_formulation import (
+                build_single_investor_tikhonov_strong_duality_mpec,
+            )
+
+            model = build_single_investor_tikhonov_strong_duality_mpec(
+                data,
+                dual_tikhonov_gamma=cfg.dual_tikhonov_gamma,
+                **build_kwargs,
+            )
+        elif cfg.lower_level_optimality == "relaxed-kkt":
+            from single_investor_mpec_relaxed_kkt import (
+                build_single_investor_relaxed_kkt_mpec,
+            )
+
+            model = build_single_investor_relaxed_kkt_mpec(
+                data,
+                complementarity_epsilon=cfg.complementarity_epsilon,
+                complementarity_formulation=cfg.complementarity_formulation,
+                complementarity_shift=cfg.complementarity_shift,
+                dual_tikhonov_gamma=cfg.dual_tikhonov_gamma,
+                **build_kwargs,
+            )
+        elif cfg.lower_level_optimality == "iso-min-norm-dual":
+            from single_investor_mpec_min_norm_prices import (
+                build_single_investor_min_norm_price_mpec,
+            )
+
+            model = build_single_investor_min_norm_price_mpec(
+                data,
+                secondary_complementarity_epsilon=(
+                    cfg.iso_min_norm_complementarity_epsilon
+                ),
+                **build_kwargs,
+            )
+        else:
+            model = build_single_investor_mpec(data, **build_kwargs)
+        add_capacity_proximal_penalty(
+            model,
+            coefficient_eur_per_mw2_day=(
+                cfg.strategic_proximal_penalty_eur_per_mw2_day
+            ),
+            energy_scale_hours=cfg.strategic_proximal_energy_scale_hours,
+            reference_power_mw=x_prev_power,
+            reference_energy_mwh=x_prev_energy,
         )
         for n in model.N:
             # Seed Ipopt inside the investor's private rival-headroom bound.
@@ -332,7 +492,30 @@ def solve_best_response(
             )
             model.X_power[n].set_value(power)
             model.X_energy[n].set_value(energy)
-        initialize_from_reference_dispatch(model, data, cfg.seed_ratio_hours)
+        if cfg.lower_level_optimality == "tikhonov-strong-duality":
+            from tikhonov_kkt.strong_duality_formulation import (
+                initialize_mpec_from_soft_market,
+            )
+
+            initialize_mpec_from_soft_market(
+                model,
+                solver_tol=cfg.solver_tol,
+                max_cpu_time=cfg.max_cpu_time,
+                tee=False,
+            )
+        else:
+            initialize_from_reference_dispatch(model, data, cfg.seed_ratio_hours)
+        if cfg.lower_level_optimality == "iso-min-norm-dual":
+            from single_investor_mpec_min_norm_prices import (
+                initialize_iso_min_norm_selection,
+            )
+
+            initialize_iso_min_norm_selection(
+                model,
+                max_cpu_time=min(60.0, cfg.max_cpu_time),
+                solver_tol=cfg.solver_tol,
+            )
+        preparation_seconds = time.perf_counter() - attempt_start
         start = time.perf_counter()
         try:
             results = get_ipopt_solver(
@@ -348,17 +531,39 @@ def solve_best_response(
             # "error" (e.g. restoration failure); treat it as a failed attempt.
             termination = f"solver_exception: {type(exc).__name__}"
         seconds = time.perf_counter() - start
-        return model, termination, seconds
+        return model, termination, seconds, preparation_seconds
 
-    model, termination, seconds = attempt(shrink=1.0)
-    if termination != "optimal":
-        model, termination, retry_seconds = attempt(shrink=0.9)
+    def retry_can_help(termination: str) -> bool:
+        normalized = termination.lower().replace("_", "").replace(" ", "")
+        exhausted_resource = (
+            "maxtimelimit",
+            "maxiterations",
+            "maxevaluations",
+            "resourceinterrupt",
+            "userinterrupt",
+        )
+        return not any(token in normalized for token in exhausted_resource)
+
+    model, termination, seconds, preparation_seconds = attempt(shrink=1.0)
+    attempt_count = 1
+    retry_status = "not_needed"
+    if termination != "optimal" and retry_can_help(termination):
+        first_termination = termination
+        retry_status = f"performed_after_{first_termination}"
+        model, termination, retry_seconds, retry_preparation_seconds = attempt(shrink=0.5)
         seconds += retry_seconds
+        preparation_seconds += retry_preparation_seconds
+        attempt_count = 2
+    elif termination != "optimal":
+        retry_status = f"skipped_after_{termination}"
     if termination != "optimal":
         return BestResponse(
             investor_id=investor.investor_id,
             termination=termination,
             solve_seconds=seconds,
+            preparation_seconds=preparation_seconds,
+            attempt_count=attempt_count,
+            retry_status=retry_status,
             proposed_power=dict(x_prev_power),
             proposed_energy=dict(x_prev_energy),
             private_headroom_limit_mw={
@@ -368,12 +573,42 @@ def solve_best_response(
             optimistic_mpec_profit_eur_per_day=float("nan"),
             access_shadow_price_eur_per_mw_day={n: float("nan") for n in data.nodes},
             strong_duality_gap=float("nan"),
+            max_complementarity_product=float("nan"),
+            sum_complementarity_products=float("nan"),
+            max_original_nodal_balance_residual_mw=float("nan"),
+            total_absolute_original_nodal_balance_residual_mwh=float("nan"),
+            max_hourly_system_balance_residual_mw=float("nan"),
+            signed_primal_dual_gap_eur_per_day=float("nan"),
+            selected_prices_eur_per_mwh={},
             model=None,
         )
+    complementarity = None
+    exact_tikhonov = None
+    if cfg.lower_level_optimality == "relaxed-kkt":
+        from single_investor_mpec_relaxed_kkt import relaxed_kkt_diagnostics
+
+        complementarity = relaxed_kkt_diagnostics(model)
+    elif cfg.lower_level_optimality == "tikhonov-strong-duality":
+        from tikhonov_kkt.strong_duality_formulation import (
+            strong_duality_diagnostics as tikhonov_strong_duality_diagnostics,
+        )
+
+        exact_tikhonov = tikhonov_strong_duality_diagnostics(model)
+    elif cfg.lower_level_optimality == "iso-min-norm-dual":
+        from single_investor_mpec_min_norm_prices import min_norm_price_diagnostics
+
+        min_norm = min_norm_price_diagnostics(model)
+        complementarity = {
+            "maximum_product": 0.0,
+            "sum_products": min_norm["secondary_complementarity_sum"],
+        }
     return BestResponse(
         investor_id=investor.investor_id,
         termination=termination,
         solve_seconds=seconds,
+        preparation_seconds=preparation_seconds,
+        attempt_count=attempt_count,
+        retry_status=retry_status,
         proposed_power={n: max(0.0, value(model.X_power[n])) for n in model.N},
         proposed_energy={n: max(0.0, value(model.X_energy[n])) for n in model.N},
         private_headroom_limit_mw={
@@ -385,8 +620,157 @@ def solve_best_response(
             n: investment_headroom_shadow_price(model, n) for n in model.N
         },
         strong_duality_gap=abs(value(model.primal_objective_expr) - value(model.dual_objective_expr)),
+        max_complementarity_product=(
+            float(complementarity["maximum_product"])
+            if complementarity is not None
+            else 0.0
+        ),
+        sum_complementarity_products=(
+            float(complementarity["sum_products"])
+            if complementarity is not None
+            else 0.0
+        ),
+        max_original_nodal_balance_residual_mw=(
+            float(complementarity["maximum_absolute_original_nodal_balance_residual_mw"])
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else (
+                float(exact_tikhonov["max_abs_original_nodal_balance_residual_mw"])
+                if exact_tikhonov is not None
+                else 0.0
+            )
+        ),
+        total_absolute_original_nodal_balance_residual_mwh=(
+            float(complementarity["total_absolute_original_nodal_balance_residual_mwh"])
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else (
+                float(exact_tikhonov["total_abs_original_nodal_balance_residual_mwh"])
+                if exact_tikhonov is not None
+                else 0.0
+            )
+        ),
+        max_hourly_system_balance_residual_mw=(
+            float(complementarity["maximum_absolute_hourly_system_balance_residual_mw"])
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else (
+                float(exact_tikhonov["max_abs_hourly_system_balance_residual_mw"])
+                if exact_tikhonov is not None
+                else 0.0
+            )
+        ),
+        signed_primal_dual_gap_eur_per_day=(
+            float(complementarity["primal_dual_objective_gap_eur_per_day"])
+            if cfg.lower_level_optimality == "relaxed-kkt"
+            else (
+                float(exact_tikhonov["matched_strong_duality_gap_eur_per_day"])
+                if exact_tikhonov is not None
+                else value(model.primal_objective_expr) - value(model.dual_objective_expr)
+            )
+        ),
+        selected_prices_eur_per_mwh={
+            (n, int(t)): value(model.lam_sys[t] if cfg.system_price_settlement else model.lam[n, t])
+            for n in model.N
+            for t in model.T
+        },
         model=model,
     )
+
+
+@dataclass(frozen=True)
+class BestResponseTask:
+    investor_id: str
+    arguments: tuple
+    initial_guess_power: dict[str, float] | None = None
+    initial_guess_energy: dict[str, float] | None = None
+
+
+def best_response_task(
+    data: MarketData,
+    quad: QuadraticDemandCurve,
+    cfg: EpecConfig,
+    investor: InvestorConfig,
+    state: EpecState,
+    nodes: list[str],
+    *,
+    initial_guess_power: dict[str, float] | None = None,
+    initial_guess_energy: dict[str, float] | None = None,
+) -> BestResponseTask:
+    investor_id = investor.investor_id
+    rival_power, rival_energy = separate_rival_capacities(
+        state, cfg, nodes, investor_id
+    )
+    return BestResponseTask(
+        investor_id=investor_id,
+        arguments=(
+            data,
+            quad,
+            cfg,
+            investor,
+            rival_power,
+            rival_energy,
+            {node: state.x_power[investor_id, node] for node in nodes},
+            {node: state.x_energy[investor_id, node] for node in nodes},
+        ),
+        initial_guess_power=initial_guess_power,
+        initial_guess_energy=initial_guess_energy,
+    )
+
+
+def _solve_best_response_task(
+    task: BestResponseTask, *, retain_model: bool, tee: bool
+) -> BestResponse:
+    response = solve_best_response(
+        *task.arguments,
+        initial_guess_power=task.initial_guess_power,
+        initial_guess_energy=task.initial_guess_energy,
+        tee=tee,
+    )
+    if not retain_model:
+        response.model = None
+    return response
+
+
+def solve_best_response_tasks(
+    tasks: list[BestResponseTask],
+    *,
+    parallel_workers: int,
+    tee: bool,
+    progress_callback: Callable[[BestResponse], None] | None = None,
+) -> list[BestResponse]:
+    """Solve independent tasks and preserve the configured investor order."""
+
+    if parallel_workers <= 1:
+        responses = []
+        for task in tasks:
+            response = _solve_best_response_task(task, retain_model=True, tee=tee)
+            responses.append(response)
+            if progress_callback is not None:
+                progress_callback(response)
+        return responses
+    if tee:
+        raise ValueError("Parallel best responses do not support --tee.")
+    with ProcessPoolExecutor(max_workers=parallel_workers) as executor:
+        futures = {
+            executor.submit(
+                _solve_best_response_task,
+                task,
+                retain_model=False,
+                tee=False,
+            ): task.investor_id
+            for task in tasks
+        }
+        responses_by_investor = {}
+        for future in as_completed(futures):
+            investor_id = futures[future]
+            try:
+                response = future.result()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Parallel best response failed for {investor_id}: {exc}"
+                ) from exc
+            responses_by_investor[investor_id] = response
+            if progress_callback is not None:
+                progress_callback(response)
+        return [responses_by_investor[task.investor_id] for task in tasks]
 
 
 def apply_damped_update(
@@ -492,34 +876,33 @@ def projected_jacobi_initial_state(
     guess_energy = {
         node: cfg.seed_power_mw * cfg.seed_ratio_hours for node in nodes
     }
-    responses: list[BestResponse] = []
     print(
         "Automatic Jacobi initializer: common snapshot "
         f"{snapshot_power:g} MW/node, numerical guess "
         f"{cfg.seed_power_mw:g} MW/node"
     )
-    for investor in cfg.investors:
-        rival_power, rival_energy = separate_rival_capacities(
-            snapshot, cfg, nodes, investor.investor_id
-        )
-        response = solve_best_response(
+    tasks = [
+        best_response_task(
             data,
             quad,
             cfg,
             investor,
-            rival_power,
-            rival_energy,
-            {node: snapshot.x_power[investor.investor_id, node] for node in nodes},
-            {node: snapshot.x_energy[investor.investor_id, node] for node in nodes},
+            snapshot,
+            nodes,
             initial_guess_power=guess_power,
             initial_guess_energy=guess_energy,
-            tee=tee,
         )
-        responses.append(response)
+        for investor in cfg.investors
+    ]
+    responses = solve_best_response_tasks(
+        tasks, parallel_workers=cfg.strategic_parallel_workers, tee=tee
+    )
+    for response in responses:
         print(
-            f"  {investor.investor_id}: {response.termination}, desired "
+            f"  {response.investor_id}: {response.termination}, desired "
             f"{sum(response.proposed_power.values()):.3f} MW / "
-            f"{sum(response.proposed_energy.values()):.3f} MWh"
+            f"{sum(response.proposed_energy.values()):.3f} MWh, "
+            f"attempts={response.attempt_count} ({response.retry_status})"
         )
     failed = [response.investor_id for response in responses if not response.ok]
     if failed:
@@ -560,12 +943,17 @@ def projected_jacobi_initial_state(
         response.investor_id: {
             "termination": response.termination,
             "solve_seconds": response.solve_seconds,
+            "preparation_seconds": response.preparation_seconds,
+            "attempt_count": response.attempt_count,
+            "retry_status": response.retry_status,
             "desired_power_mw": sum(response.proposed_power.values()),
             "desired_energy_mwh": sum(response.proposed_energy.values()),
             "optimistic_mpec_profit_eur_per_day": (
                 response.optimistic_mpec_profit_eur_per_day
             ),
             "strong_duality_gap": response.strong_duality_gap,
+            "max_complementarity_product": response.max_complementarity_product,
+            "sum_complementarity_products": response.sum_complementarity_products,
         }
         for response in responses
     }
@@ -642,10 +1030,26 @@ def run_epec(
             "from projected iteration-0 capacities."
         )
     elif initial_state is None:
-        seed = min(cfg.seed_power_mw, cfg.node_limit_mw / n_inv)
+        requested_seed = (
+            cfg.seed_power_mw
+            if cfg.economic_seed_power_mw is None
+            else cfg.economic_seed_power_mw
+        )
+        seed = min(requested_seed, cfg.node_limit_mw / n_inv)
         state = EpecState(
             x_power={(inv.investor_id, n): seed for inv in cfg.investors for n in nodes},
             x_energy={(inv.investor_id, n): seed * cfg.seed_ratio_hours for inv in cfg.investors for n in nodes},
+            initialization_method=(
+                "uniform_seed"
+                if cfg.economic_seed_power_mw is None
+                else "explicit_economic_seed"
+            ),
+            initializer_summary={
+                "economic_seed_power_mw_per_investor_node": seed,
+                "economic_seed_ratio_hours": cfg.seed_ratio_hours,
+                "numerical_guess_power_mw_per_node": cfg.seed_power_mw,
+                "numerical_guess_ratio_hours": cfg.seed_ratio_hours,
+            },
         )
     else:
         state = initial_state
@@ -661,28 +1065,48 @@ def run_epec(
 
         if cfg.update_rule == "jacobi":
             snapshot = EpecState(x_power=dict(state.x_power), x_energy=dict(state.x_energy))
-            for inv in cfg.investors:
-                rival_power, rival_energy = separate_rival_capacities(snapshot, cfg, nodes, inv.investor_id)
-                responses.append(
-                    solve_best_response(
-                        data, quad, cfg, inv, rival_power, rival_energy,
-                        {n: snapshot.x_power[inv.investor_id, n] for n in nodes},
-                        {n: snapshot.x_energy[inv.investor_id, n] for n in nodes},
-                        tee=tee,
-                    )
+            explicit_first_sweep_guess = (
+                iteration == 1
+                and state.initialization_method == "explicit_economic_seed"
+            )
+            numerical_guess_power = (
+                {node: cfg.seed_power_mw for node in nodes}
+                if explicit_first_sweep_guess
+                else None
+            )
+            numerical_guess_energy = (
+                {
+                    node: cfg.seed_power_mw * cfg.seed_ratio_hours
+                    for node in nodes
+                }
+                if explicit_first_sweep_guess
+                else None
+            )
+            tasks = [
+                best_response_task(
+                    data,
+                    quad,
+                    cfg,
+                    inv,
+                    snapshot,
+                    nodes,
+                    initial_guess_power=numerical_guess_power,
+                    initial_guess_energy=numerical_guess_energy,
                 )
+                for inv in cfg.investors
+            ]
+            responses = solve_best_response_tasks(
+                tasks, parallel_workers=cfg.strategic_parallel_workers, tee=tee
+            )
             for response in responses:
                 if response.ok:
                     apply_damped_update(state, cfg, nodes, response)
         elif cfg.update_rule == "seidel":
             for inv in cfg.investors:
-                rival_power, rival_energy = separate_rival_capacities(state, cfg, nodes, inv.investor_id)
-                response = solve_best_response(
-                    data, quad, cfg, inv, rival_power, rival_energy,
-                    {n: state.x_power[inv.investor_id, n] for n in nodes},
-                    {n: state.x_energy[inv.investor_id, n] for n in nodes},
-                    tee=tee,
-                )
+                task = best_response_task(data, quad, cfg, inv, state, nodes)
+                response = solve_best_response_tasks(
+                    [task], parallel_workers=1, tee=tee
+                )[0]
                 responses.append(response)
                 if response.ok:
                     apply_damped_update(state, cfg, nodes, response)
@@ -692,6 +1116,16 @@ def run_epec(
                 print_mpec_lambdas(iteration, response)
 
         project_joint_limit(state, cfg, nodes)
+
+        for response in responses:
+            if not response.ok:
+                continue
+            state.final_selected_prices[response.investor_id] = dict(
+                response.selected_prices_eur_per_mwh
+            )
+            state.final_access_shadow_prices[response.investor_id] = dict(
+                response.access_shadow_price_eur_per_mw_day
+            )
 
         all_ok = all(r.ok for r in responses)
         max_rel_power = 0.0
@@ -714,14 +1148,32 @@ def run_epec(
             state.history.append(
                 {
                     "iteration": iteration,
+                    "complementarity_epsilon": (
+                        cfg.iso_min_norm_complementarity_epsilon
+                        if cfg.lower_level_optimality == "iso-min-norm-dual"
+                        else (
+                            cfg.complementarity_epsilon
+                            if cfg.lower_level_optimality == "relaxed-kkt"
+                            else None
+                        )
+                    ),
                     "investor": inv_id,
                     "termination": response.termination,
                     "solve_seconds": response.solve_seconds,
+                    "preparation_seconds": response.preparation_seconds,
+                    "attempt_count": response.attempt_count,
+                    "retry_status": response.retry_status,
                     "optimistic_mpec_profit_eur_per_day": response.optimistic_mpec_profit_eur_per_day,
                     "max_access_shadow_price_eur_per_mw_day": max(
                         response.access_shadow_price_eur_per_mw_day.values()
                     ),
                     "strong_duality_gap": response.strong_duality_gap,
+                    "max_complementarity_product": response.max_complementarity_product,
+                    "sum_complementarity_products": response.sum_complementarity_products,
+                    "max_original_nodal_balance_residual_mw": response.max_original_nodal_balance_residual_mw,
+                    "total_absolute_original_nodal_balance_residual_mwh": response.total_absolute_original_nodal_balance_residual_mwh,
+                    "max_hourly_system_balance_residual_mw": response.max_hourly_system_balance_residual_mw,
+                    "signed_primal_dual_gap_eur_per_day": response.signed_primal_dual_gap_eur_per_day,
                     "total_power_mw": sum(state.x_power[inv_id, n] for n in nodes),
                     "total_energy_mwh": sum(state.x_energy[inv_id, n] for n in nodes),
                     "max_rel_delta_power": rel_power,
@@ -760,6 +1212,13 @@ def run_epec(
             f"iter {iteration:2d} [{cfg.update_rule}] max_rel dP={max_rel_power:.4f} dE={max_rel_energy:.4f}"
             f"  optimistic MPEC profit [EUR/day]: {optimistic}"
         )
+        retry_notes = [
+            f"{response.investor_id}={response.retry_status}"
+            for response in responses
+            if response.retry_status != "not_needed"
+        ]
+        if retry_notes:
+            print("  retry decisions: " + ", ".join(retry_notes))
 
         should_stop = False
         if any(count >= cfg.max_consecutive_failures for count in consecutive_failures.values()):
@@ -791,6 +1250,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Multi-investor BESS EPEC via diagonalization")
     parser.add_argument("--data", type=Path, default=EXPERIMENT_DATA_PATH)
     parser.add_argument("--update-rule", choices=["jacobi", "seidel"], default="seidel")
+    parser.add_argument(
+        "--parallel-workers",
+        type=int,
+        default=1,
+        help="Independent worker processes for Jacobi best responses.",
+    )
     parser.add_argument(
         "--investor-set",
         choices=["wacc", "portfolio4"],
@@ -829,6 +1294,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--floor-mwh", type=float, default=DEFAULT_FLOOR_MWH)
     parser.add_argument("--seed-power-mw", type=float, default=DEFAULT_INITIAL_POWER_MW)
     parser.add_argument("--seed-ratio-hours", type=float, default=DEFAULT_INITIAL_RATIO_HOURS)
+    parser.add_argument(
+        "--economic-seed-power-mw",
+        type=float,
+        default=None,
+        help=(
+            "Fresh Jacobi runs only: economic MW per investor-node at iteration 0. "
+            "The default keeps the legacy --seed-power-mw state; setting this to 0 "
+            "preserves a positive Ipopt guess while omitting zero-capacity rival blocks."
+        ),
+    )
     parser.add_argument(
         "--initializer-snapshot-power-mw",
         type=float,
@@ -873,16 +1348,14 @@ def parse_args() -> argparse.Namespace:
         help="Set a capacity pair to zero when both MW and MWh do not exceed this tolerance.",
     )
     parser.add_argument(
-        "--demand-model",
-        choices=["fixed", "quadratic"],
-        default="fixed",
-        help="Lower-level demand representation. The maintained base model uses fixed demand.",
-    )
-    parser.add_argument(
-        "--dispatch-regularization",
+        "--rival-sparsity-tol-mw",
         type=float,
-        default=0.0,
-        help="Optional lower-level quadratic tie-break coefficient in EUR/(MW^2 h).",
+        default=DEFAULT_RIVAL_SPARSITY_TOL_MW,
+        help=(
+            "Omit a fixed rival's full node-hour storage block when its nodal power "
+            "does not exceed this threshold; capacity still consumes shared headroom "
+            "(default: 0.01 MW)."
+        ),
     )
     parser.add_argument(
         "--solver-tol",
@@ -903,6 +1376,26 @@ def parse_args() -> argparse.Namespace:
         f"Default follows the SYSTEM_PRICE_SETTLEMENT toggle "
         f"({'system' if SYSTEM_PRICE_SETTLEMENT else 'nodal'}).",
     )
+    parser.add_argument(
+        "--price-selection",
+        choices=["optimistic", "iso-min-norm"],
+        default="optimistic",
+        help=(
+            "Lower-level nodal-price rule. 'optimistic' retains the clean exact "
+            "strong-duality baseline; 'iso-min-norm' keeps the same hard market "
+            "and embeds the ISO's secondary minimum-L2-norm LMP rule."
+        ),
+    )
+    parser.add_argument(
+        "--iso-min-norm-complementarity-epsilon",
+        type=float,
+        default=0.0,
+        help=(
+            "Scholtes-style tolerance on the aggregate secondary ISO KKT "
+            "complementarity products. Zero (default) keeps the exact minimum-norm "
+            "rule; for example 1e-3 enables the relaxed diagnostic."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--tag", type=str, default=None, help="Optional label appended to the output folder name.")
     parser.add_argument(
@@ -917,6 +1410,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.0,
         help="Optional MW added to every conventional generator in every hour.",
+    )
+    parser.add_argument(
+        "--pv-availability-scale",
+        type=float,
+        default=1.0,
+        help="Multiplier applied to every PV generator's hourly availability (default: 1.0).",
     )
     parser.add_argument(
         "--peaker-node",
@@ -937,8 +1436,12 @@ def main() -> int:
         raise SystemExit("--damping must be in (0, 1].")
     if args.max_iters <= 0:
         raise SystemExit("--max-iters must be positive.")
-    if args.dispatch_regularization < 0.0:
-        raise SystemExit("--dispatch-regularization must be non-negative.")
+    if args.parallel_workers <= 0:
+        raise SystemExit("--parallel-workers must be positive.")
+    if args.update_rule == "seidel" and args.parallel_workers != 1:
+        raise SystemExit("--parallel-workers greater than one requires --update-rule jacobi.")
+    if args.tee and args.parallel_workers > 1:
+        raise SystemExit("--tee is not supported with parallel best responses.")
     if args.solver_tol <= 0.0:
         raise SystemExit("--solver-tol must be positive.")
     if args.dual_bound_eur_per_mwh <= 0.0:
@@ -947,10 +1450,20 @@ def main() -> int:
         raise SystemExit("--price-bound-eur-per-mwh must be positive.")
     if args.capacity_cleanup_tol < 0.0:
         raise SystemExit("--capacity-cleanup-tol must be non-negative.")
+    if args.rival_sparsity_tol_mw < 0.0:
+        raise SystemExit("--rival-sparsity-tol-mw must be non-negative.")
+    if args.iso_min_norm_complementarity_epsilon < 0.0:
+        raise SystemExit(
+            "--iso-min-norm-complementarity-epsilon must be non-negative."
+        )
     if args.seed_power_mw < 0.0:
         raise SystemExit("--seed-power-mw must be non-negative.")
+    if args.economic_seed_power_mw is not None and args.economic_seed_power_mw < 0.0:
+        raise SystemExit("--economic-seed-power-mw must be non-negative.")
     if args.initializer_snapshot_power_mw < 0.0:
         raise SystemExit("--initializer-snapshot-power-mw must be non-negative.")
+    if args.pv_availability_scale < 0.0:
+        raise SystemExit("--pv-availability-scale must be non-negative.")
     base_data = load_market_data(args.data)
     # Keep the no-withholding driver independently runnable while allowing an
     # apples-to-apples comparison with the calibrated strategic experiment.
@@ -959,6 +1472,7 @@ def main() -> int:
     data, generator_calibration = apply_generator_calibration(
         base_data,
         conventional_capacity_adder_mw=args.conventional_capacity_adder_mw,
+        pv_availability_scale=args.pv_availability_scale,
         peaker_node=args.peaker_node,
         peaker_capacity_mw=args.peaker_capacity_mw,
         peaker_cost_eur_per_mwh=args.peaker_cost_eur_per_mwh,
@@ -977,6 +1491,21 @@ def main() -> int:
         system_price_settlement = SYSTEM_PRICE_SETTLEMENT
     else:
         system_price_settlement = args.settlement_price == "system"
+    if args.price_selection == "iso-min-norm" and system_price_settlement:
+        raise SystemExit("--price-selection iso-min-norm requires nodal settlement.")
+    if (
+        args.iso_min_norm_complementarity_epsilon > 0.0
+        and args.price_selection != "iso-min-norm"
+    ):
+        raise SystemExit(
+            "--iso-min-norm-complementarity-epsilon requires "
+            "--price-selection iso-min-norm."
+        )
+    lower_level_optimality = (
+        "iso-min-norm-dual"
+        if args.price_selection == "iso-min-norm"
+        else "strong-duality"
+    )
     cfg = EpecConfig(
         investors=investors,
         node_limit_mw=args.node_limit_mw,
@@ -988,15 +1517,30 @@ def main() -> int:
         floor_mwh=args.floor_mwh,
         seed_power_mw=args.seed_power_mw,
         seed_ratio_hours=args.seed_ratio_hours,
+        economic_seed_power_mw=args.economic_seed_power_mw,
         max_cpu_time=args.max_cpu_time,
         price_bound_eur_per_mwh=args.price_bound_eur_per_mwh,
         dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
+        lambda_l2_penalty_coefficient=0.0,
+        lower_level_optimality=lower_level_optimality,
+        complementarity_epsilon=DEFAULT_COMPLEMENTARITY_EPSILON,
+        iso_min_norm_complementarity_epsilon=(
+            args.iso_min_norm_complementarity_epsilon
+        ),
+        complementarity_formulation="scholtes",
+        complementarity_shift=1.0e-8,
+        dual_tikhonov_gamma=0.0,
         print_mpec_lambdas=args.print_mpec_lambdas,
         system_price_settlement=system_price_settlement,
-        use_demand_curve=args.demand_model == "quadratic",
-        dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,
+        use_demand_curve=False,
+        quadratic_demand_alpha_eur_per_mwh=DEFAULT_DEMAND_CURVE_ALPHA,
+        quadratic_demand_beta_eur_per_mwh_per_share=DEFAULT_DEMAND_CURVE_BETA,
+        demand_expansion=None,
+        dispatch_regularization_eur_per_mw2h=0.0,
         solver_tol=args.solver_tol,
         capacity_cleanup_tol_mw_mwh=args.capacity_cleanup_tol,
+        rival_sparsity_tol_mw=args.rival_sparsity_tol_mw,
+        strategic_parallel_workers=args.parallel_workers,
         automatic_jacobi_initializer=not args.skip_jacobi_initializer,
         jacobi_initializer_snapshot_power_mw=args.initializer_snapshot_power_mw,
         jacobi_initializer_snapshot_ratio_hours=args.initializer_snapshot_ratio_hours,
@@ -1012,17 +1556,29 @@ def main() -> int:
             starting_iteration=initial_state.iteration,
             resume_from=str(checkpoint_path),
         )
-    quad = default_quadratic_demand_curve()
+    quad = QuadraticDemandCurve(
+        alpha=cfg.quadratic_demand_alpha_eur_per_mwh,
+        beta=cfg.quadratic_demand_beta_eur_per_mwh_per_share,
+    )
     print(
         f"EPEC diagonalization: {len(investors)} investors "
         f"(WACC {', '.join(f'{i.wacc:.1%}' for i in investors)}), "
         f"solve_order={','.join(i.investor_id for i in investors)}, "
-        f"rule={cfg.update_rule}, damping={cfg.damping}, tol_rel={cfg.tol_rel}, "
+        f"rule={cfg.update_rule}, parallel_workers={cfg.strategic_parallel_workers}, "
+        f"damping={cfg.damping}, tol_rel={cfg.tol_rel}, "
         f"settlement price={'system (zonal)' if cfg.system_price_settlement else 'nodal (LMP)'}, "
-        f"demand={args.demand_model}, dispatch_regularization={cfg.dispatch_regularization_eur_per_mw2h:.3e}, "
-        f"solver_tol={cfg.solver_tol:.1e}, dual_selection=optimistic"
+        "baseline=fixed-demand/exact-strong-duality, "
+        f"price_selection={args.price_selection}, "
+        f"iso_min_norm_comp_eps={cfg.iso_min_norm_complementarity_epsilon:.1e}, "
+        f"dispatch_regularization={cfg.dispatch_regularization_eur_per_mw2h:.3e}, "
+        f"solver_tol={cfg.solver_tol:.1e}, "
+        f"rival_sparsity_tol={cfg.rival_sparsity_tol_mw:g} MW"
     )
-    if args.conventional_capacity_adder_mw > 0.0 or args.peaker_capacity_mw > 0.0:
+    if (
+        args.conventional_capacity_adder_mw > 0.0
+        or args.pv_availability_scale != 1.0
+        or args.peaker_capacity_mw > 0.0
+    ):
         print(f"Generator calibration: {generator_calibration}")
     for inv in investors:
         if inv.owned_generation_shares:
@@ -1030,13 +1586,13 @@ def main() -> int:
             print(f"  {inv.investor_id}: portfolio-backed, generation shares [{owned}]")
         else:
             print(f"  {inv.investor_id}: stand-alone merchant BESS")
-    if cfg.use_demand_curve:
+    print("Fixed demand: lower-level load-shedding and demand-expansion blocks are omitted.")
+    if args.update_rule == "jacobi" and args.economic_seed_power_mw is not None:
         print(
-            "Quadratic demand curve: "
-            f"marginal WTP = {quad.alpha:,.2f} + {quad.beta:,.2f} * curtailed_share EUR/MWh"
+            "Fresh Jacobi economic state: "
+            f"{args.economic_seed_power_mw:g} MW/investor-node; "
+            f"Ipopt numerical guess: {args.seed_power_mw:g} MW/node."
         )
-    else:
-        print("Fixed demand: lower-level load-shedding primal and dual blocks are omitted.")
     if cfg.resume_from is not None:
         print(
             f"Resuming from iteration {initial_state.iteration}; "

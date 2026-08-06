@@ -1,0 +1,68 @@
+{
+  "data_path": "C:\\EEG\\BESS_EPEC\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_distributed_congestion.json",
+  "fleet_path": "C:\\EEG\\BESS_EPEC\\BESS_EPEC\\model\\output\\jacobi_tikhonov_runs\\tikhonov_capacity_gamma1e-4_20iters_d025\\final_capacities.csv",
+  "output_is_post_hoc_equilibrium_diagnostic": true,
+  "base_aggregate_power_mw": {
+    "N1": 0.0,
+    "N2": 0.0,
+    "N3": 2.4260008174650465,
+    "N4": 0.0,
+    "N5": 0.0,
+    "N6": 66.49611331450633,
+    "N7": 0.0,
+    "N8": 87.77255720021806,
+    "N9": 30.495177855974607
+  },
+  "base_aggregate_energy_mwh": {
+    "N1": 0.0,
+    "N2": 0.0,
+    "N3": 7.7776944157371615,
+    "N4": 0.0,
+    "N5": 0.0,
+    "N6": 225.4611898388188,
+    "N7": 0.0,
+    "N8": 227.62366857200794,
+    "N9": 86.37036587559608
+  },
+  "joint_grid_values_mw": [
+    0.0,
+    25.0,
+    50.0,
+    75.0,
+    100.0,
+    125.0,
+    150.0,
+    175.0,
+    200.0
+  ],
+  "capacity_ray_scales": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    1.75,
+    2.0,
+    2.25
+  ],
+  "configurations": [
+    "base",
+    "pv_0p8",
+    "pv_0p9",
+    "pv_1p1",
+    "pv_1p2",
+    "corridors_0p8",
+    "corridors_0p9",
+    "corridors_1p1",
+    "corridors_1p2",
+    "n8_lines_0p9",
+    "n8_lines_1p1",
+    "n8_lines_1p2",
+    "n6_lines_0p9",
+    "n6_lines_1p1"
+  ],
+  "solves": 221,
+  "elapsed_seconds": 555.5549717000686
+}

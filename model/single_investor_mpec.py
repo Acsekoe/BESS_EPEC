@@ -66,6 +66,7 @@ DEFAULT_PRICE_BOUND_EUR_PER_MWH = 500.0
 DEFAULT_DUAL_BOUND_EUR_PER_MWH = 10_000.0
 SPARSE_RIVAL_CAPACITY_TOL = 1.0e-8
 SPARSE_GENERATION_CAPACITY_TOL = 1.0e-8
+DEMAND_EXPANSION_BAND_TOL_MW = 1.0e-8
 # Below this shed level a node-hour counts as "no curtailment": the demand
 # curve does not pin the price there and the QP solver dual is used instead.
 SHED_INTERIOR_TOL_MW = 1e-4
@@ -119,6 +120,52 @@ def default_quadratic_demand_curve() -> QuadraticDemandCurve:
     """Default smooth scarcity curve, independent of stepwise demand response."""
 
     return QuadraticDemandCurve(alpha=DEFAULT_DEMAND_CURVE_ALPHA, beta=DEFAULT_DEMAND_CURVE_BETA)
+
+
+@dataclass(frozen=True)
+class DemandExpansionCurve:
+    """Low-price half of the nodal demand curve.
+
+    ``QuadraticDemandCurve`` above models only curtailment, i.e. demand moving
+    *below* its reference under scarcity.  This is the mirror block: extra
+    consumption ``e`` at node ``n`` hour ``t``, bounded by
+    ``elasticity * D[n,t]``, with gross utility
+
+        U(e) = p_ref*e - 0.5*(p_ref/(elasticity*D))*e^2,
+
+    so marginal willingness to pay falls linearly from ``p_ref`` at ``e = 0``
+    to zero at the band edge.  That is an affine inverse demand with own-price
+    elasticity ``elasticity`` at the reference point ``(D, p_ref)``.
+
+    It exists because a nodal price behind a binding export line can only be
+    set by a local unit.  With free renewables and fixed load the only
+    admissible midday prices at a surplus node are zero (renewables curtailed)
+    and the storage indifference price, so the capacity payoff jumps.  A local
+    block willing to consume at intermediate prices removes that hole.
+    """
+
+    reference_price_eur_per_mwh: float
+    elasticity: float
+
+    def __post_init__(self) -> None:
+        if self.reference_price_eur_per_mwh <= 0.0:
+            raise ValueError("reference_price_eur_per_mwh must be positive.")
+        if self.elasticity <= 0.0:
+            raise ValueError("elasticity must be positive.")
+
+    def band_mw(self, demand_mw: float) -> float:
+        """Width of the expansion block, i.e. extra demand at a zero price."""
+
+        return self.elasticity * max(0.0, float(demand_mw))
+
+    def slope(self, demand_mw: float) -> float:
+        """Marginal-WTP decline per MW of expansion (EUR/MWh per MW)."""
+
+        band = self.band_mw(demand_mw)
+        return self.reference_price_eur_per_mwh / band if band > 0.0 else 0.0
+
+    def marginal_wtp(self, extra_mw: float, demand_mw: float) -> float:
+        return self.reference_price_eur_per_mwh - self.slope(demand_mw) * extra_mw
 
 
 def _storage_degradation_costs(
@@ -205,8 +252,15 @@ def build_fixed_demand_primal_model(
     *,
     storage_degradation_eur_per_mwh: Mapping[str, float] | None = None,
     dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
+    demand_expansion: DemandExpansionCurve | None = None,
 ) -> pyo.ConcreteModel:
-    """Standalone regularized lower-level QP with fixed demand and no shedding."""
+    """Standalone regularized lower-level QP without load shedding.
+
+    ``demand_expansion`` installs the same price-responsive block the MPEC
+    embeds. The joint settlement must use it whenever the best responses did,
+    or investors would be settled in a different market from the one they
+    optimized against.
+    """
 
     if dispatch_regularization_eur_per_mw2h < 0.0:
         raise ValueError("Dispatch regularization must be non-negative.")
@@ -214,6 +268,44 @@ def build_fixed_demand_primal_model(
     m = build_primal_market_clearing_model(data, include_load_shed=False)
     degradation = _storage_degradation_costs(data, storage_degradation_eur_per_mwh)
     reg = dispatch_regularization_eur_per_mw2h
+    expansion_band = {
+        (n, t): demand_expansion.band_mw(data.demand_el[n, t])
+        for n in m.N
+        for t in m.T
+        if demand_expansion is not None
+        and demand_expansion.band_mw(data.demand_el[n, t])
+        > DEMAND_EXPANSION_BAND_TOL_MW
+    }
+    if expansion_band:
+        m.EB = pyo.Set(dimen=2, initialize=sorted(expansion_band), ordered=True)
+        m.E_extra = pyo.Var(m.EB, domain=pyo.NonNegativeReals, initialize=0.0)
+        m.demand_expansion_bound = pyo.Constraint(
+            m.EB, rule=lambda mm, n, t: mm.E_extra[n, t] <= expansion_band[n, t]
+        )
+        # Rebuild the balance so the extra consumption is a nodal withdrawal.
+        original_balance = {
+            (n, t): m.nodal_balance[n, t].body - m.nodal_balance[n, t].lower
+            for n in m.N
+            for t in m.T
+        }
+        m.nodal_balance.deactivate()
+        m.nodal_balance_with_expansion = pyo.Constraint(
+            m.N,
+            m.T,
+            rule=lambda mm, n, t: original_balance[n, t]
+            - (mm.E_extra[n, t] if (n, t) in expansion_band else 0.0)
+            == 0.0,
+        )
+        expansion_utility = sum(
+            demand_expansion.reference_price_eur_per_mwh * m.E_extra[n, t]
+            - 0.5
+            * demand_expansion.slope(data.demand_el[n, t])
+            * m.E_extra[n, t] ** 2
+            for n, t in m.EB
+        )
+    else:
+        expansion_utility = 0.0
+    m.demand_expansion_utility_expr = pyo.Expression(expr=expansion_utility)
     generation_cost = sum(data.generation_cost[g] * m.P_gen[g, t] for g in m.G for t in m.T)
     storage_degradation_cost = sum(
         0.5 * degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
@@ -232,12 +324,19 @@ def build_fixed_demand_primal_model(
         + sum(m.SOC[i, n, tau] ** 2 for i in m.I for n in m.N for tau in m.T_SOC)
         + sum(m.NetInjection[n, t] ** 2 for n in m.N for t in m.T)
     )
-    m.objective.set_value(generation_cost + storage_degradation_cost + dispatch_regularization)
+    m.objective.set_value(
+        generation_cost
+        + storage_degradation_cost
+        + dispatch_regularization
+        - m.demand_expansion_utility_expr
+    )
     m.storage_degradation_objective_expr = pyo.Expression(expr=storage_degradation_cost)
     m.dispatch_regularization_expr = pyo.Expression(expr=dispatch_regularization)
     m._storage_degradation_eur_per_mwh = degradation
     m._dispatch_regularization_eur_per_mw2h = reg
     m._use_demand_curve = False
+    m._demand_expansion = demand_expansion
+    m._demand_expansion_band_mw = dict(expansion_band)
     return m
 
 
@@ -288,8 +387,11 @@ def reference_system_price(
     """
 
     raw_sys = {t: float(reference.dual[reference.system_balance[t]]) for t in reference.T}
+    con = reference.nodal_balance
+    if not con.active and hasattr(reference, "nodal_balance_with_expansion"):
+        con = reference.nodal_balance_with_expansion
     raw_nodal = {
-        (n, t): float(reference.dual[reference.nodal_balance[n, t]])
+        (n, t): float(reference.dual[con[n, t]])
         for n in reference.N
         for t in reference.T
     }
@@ -301,8 +403,12 @@ def reference_system_price(
 def fixed_demand_reference_lambda(reference: pyo.ConcreteModel) -> dict[tuple[str, int], float]:
     """Nodal prices from the fixed-demand reference LP solver duals."""
 
+    con = reference.nodal_balance
+    if not con.active and hasattr(reference, "nodal_balance_with_expansion"):
+        con = reference.nodal_balance_with_expansion
+
     duals = {
-        (n, t): float(reference.dual[reference.nodal_balance[n, t]])
+        (n, t): float(reference.dual[con[n, t]])
         for n in reference.N
         for t in reference.T
     }
@@ -315,10 +421,14 @@ def _solver_dual_cross_check(
 ) -> float | None:
     """Max |solver nodal dual - curve price|, tolerant of the solver dual-sign convention."""
 
+    con = reference.nodal_balance
+    if not con.active and hasattr(reference, "nodal_balance_with_expansion"):
+        con = reference.nodal_balance_with_expansion
+
     duals: dict[tuple[str, int], float] = {}
     for n in reference.N:
         for t in reference.T:
-            dual = reference.dual.get(reference.nodal_balance[n, t], None)
+            dual = reference.dual.get(con[n, t], None)
             if dual is None:
                 return None
             duals[(n, t)] = float(dual)
@@ -377,18 +487,35 @@ def single_storage_data(
 
 
 def fixed_storage_data_from_solution(model: pyo.ConcreteModel) -> MarketData:
-    """Return lower-level data with storage capacities fixed at the MPEC solution."""
+    """Return fixed storage data matching the MPEC's embedded sparse fleet."""
 
     data: MarketData = model._market_data
     investor_id = model._investor_id
     units = [investor_id]
     x_power = {(investor_id, node): max(0.0, value(model.X_power[node])) for node in data.nodes}
     x_energy = {(investor_id, node): max(0.0, value(model.X_energy[node])) for node in data.nodes}
-    for rival_id in model._rival_ids:
+    represented_pairs = {
+        (str(unit), str(node)) for unit, node in model.IN
+    }
+    represented_rivals = [
+        rival_id
+        for rival_id in model._rival_ids
+        if any((str(rival_id), str(node)) in represented_pairs for node in data.nodes)
+    ]
+    for rival_id in represented_rivals:
         units.append(rival_id)
         for node in data.nodes:
-            x_power[(rival_id, node)] = model._rival_power_mw_by_unit[rival_id][node]
-            x_energy[(rival_id, node)] = model._rival_energy_mwh_by_unit[rival_id][node]
+            represented = (str(rival_id), str(node)) in represented_pairs
+            x_power[(rival_id, node)] = (
+                model._rival_power_mw_by_unit[rival_id][node]
+                if represented
+                else 0.0
+            )
+            x_energy[(rival_id, node)] = (
+                model._rival_energy_mwh_by_unit[rival_id][node]
+                if represented
+                else 0.0
+            )
     return replace(data, storage_units=units, x_power=x_power, x_energy=x_energy)
 
 
@@ -414,10 +541,13 @@ def build_single_investor_mpec(
     price_lower_bound_eur_per_mwh: float | None = None,
     price_upper_bound_eur_per_mwh: float | None = None,
     dual_bound_eur_per_mwh: float = DEFAULT_DUAL_BOUND_EUR_PER_MWH,
+    sparse_rival_power_tol_mw: float = SPARSE_RIVAL_CAPACITY_TOL,
+    lambda_l2_penalty_coefficient: float = 0.0,
     existing_power_mw: float = 0.0,
     existing_ratio_hours: float = 2.0,
     quad_demand: QuadraticDemandCurve,
     use_demand_curve: bool = USE_DEMAND_CURVE,
+    demand_expansion: DemandExpansionCurve | None = None,
     investor: InvestorConfig | None = None,
     rival_id: str = EXISTING_ID,
     rival_power_mw: Mapping[str, float] | None = None,
@@ -442,6 +572,11 @@ def build_single_investor_mpec(
     multiplier is the investor-specific endogenous marginal value of one more
     MW of nodal access; it is not a common market-clearing access price.
 
+    Rival node-hour storage blocks at or below ``sparse_rival_power_tol_mw``
+    are omitted from market clearing, but their capacity still enters the
+    private headroom calculation. The maintained standalone default is nearly
+    exact; the EPEC driver can deliberately use a larger numerical cutoff.
+
     If ``use_demand_curve`` is false, demand is fixed and no load-shedding
     primal or dual variables are created. If true, the lower level uses one quadratic
     curtailment variable per node-hour, marginal WTP
@@ -464,6 +599,10 @@ def build_single_investor_mpec(
         raise ValueError("The lower electricity-price bound must be below the upper bound.")
     if dual_bound_eur_per_mwh <= 0.0:
         raise ValueError("dual_bound_eur_per_mwh must be positive.")
+    if sparse_rival_power_tol_mw < 0.0:
+        raise ValueError("sparse_rival_power_tol_mw must be non-negative.")
+    if lambda_l2_penalty_coefficient < 0.0:
+        raise ValueError("lambda_l2_penalty_coefficient must be non-negative.")
     if investor is not None and (wacc, ratio_min, ratio_max) != (DEFAULT_WACC, DEFAULT_RATIO_MIN, DEFAULT_RATIO_MAX):
         raise ValueError("Pass economic parameters through `investor`, not the legacy scalar kwargs.")
     inv = investor or InvestorConfig(wacc=wacc, ratio_min=ratio_min, ratio_max=ratio_max)
@@ -535,8 +674,7 @@ def build_single_investor_mpec(
         (unit, node)
         for unit in rival_ids
         for node in data.nodes
-        if normalized_rival_power[unit][node] > SPARSE_RIVAL_CAPACITY_TOL
-        or normalized_rival_energy[unit][node] > SPARSE_RIVAL_CAPACITY_TOL
+        if normalized_rival_power[unit][node] > sparse_rival_power_tol_mw
     )
     storage_units_at_node = {
         node: [unit for unit, pair_node in storage_pairs if pair_node == node]
@@ -612,10 +750,35 @@ def build_single_investor_mpec(
             m.X_power[node].fix(fixed_power)
             m.X_energy[node].fix(init_ratio * fixed_power)
 
+    # Price-responsive demand-expansion block, active only where the node has
+    # reference demand to expand from.
+    expansion_band = (
+        {
+            (n, t): demand_expansion.band_mw(data.demand_el[n, t])
+            for n in m.N
+            for t in m.T
+            if demand_expansion.band_mw(data.demand_el[n, t]) > DEMAND_EXPANSION_BAND_TOL_MW
+        }
+        if demand_expansion is not None
+        else {}
+    )
+    expansion_slope = (
+        {
+            key: demand_expansion.slope(data.demand_el[key[0], key[1]])
+            for key in expansion_band
+        }
+        if demand_expansion is not None
+        else {}
+    )
+    use_demand_expansion = bool(expansion_band)
+
     # Lower-level primal variables.
     m.P_gen = pyo.Var(m.GT, domain=pyo.NonNegativeReals, initialize=0.0)
     if use_demand_curve:
         m.P_shed = pyo.Var(m.N, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    if use_demand_expansion:
+        m.EB = pyo.Set(dimen=2, initialize=sorted(expansion_band), ordered=True)
+        m.E_extra = pyo.Var(m.EB, domain=pyo.NonNegativeReals, initialize=0.0)
     m.P_charge = pyo.Var(m.IN, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
     m.P_discharge = pyo.Var(m.IN, m.T, domain=pyo.NonNegativeReals, initialize=0.0)
     m.SOC = pyo.Var(m.IN, m.T_SOC, domain=pyo.NonNegativeReals, initialize=0.0)
@@ -644,6 +807,8 @@ def build_single_investor_mpec(
     m.rho_per = pyo.Var(m.IN, bounds=(-dual_bound, dual_bound), initialize=0.0)
     if use_demand_curve:
         m.xi_shed = pyo.Var(m.N, m.T, bounds=(-dual_bound, 0.0), initialize=0.0)
+    if use_demand_expansion:
+        m.xi_extra = pyo.Var(m.EB, bounds=(-dual_bound, 0.0), initialize=0.0)
 
     # Primal feasibility.
     def nodal_balance_rule(model: pyo.ConcreteModel, node: str, time: int) -> pyo.Expression:
@@ -656,6 +821,7 @@ def build_single_investor_mpec(
             + storage_net
             + (model.P_shed[node, time] if use_demand_curve else 0.0)
             - data.demand_el[node, time]
+            - (model.E_extra[node, time] if (node, time) in expansion_band else 0.0)
             == model.NetInjection[node, time]
         )
 
@@ -710,6 +876,11 @@ def build_single_investor_mpec(
             m.T,
             rule=lambda model, n, t: model.P_shed[n, t] <= data.demand_el[n, t],
         )
+    if use_demand_expansion:
+        m.demand_expansion_bound = pyo.Constraint(
+            m.EB,
+            rule=lambda model, n, t: model.E_extra[n, t] <= expansion_band[n, t],
+        )
 
     # Dual feasibility.
     m.gen_stationarity = pyo.Constraint(
@@ -728,6 +899,18 @@ def build_single_investor_mpec(
                 quad_demand.quad_coefficient(data.demand_el[n, t]) + dispatch_reg
             )
             * model.P_shed[n, t],
+        )
+    if use_demand_expansion:
+        # QP stationarity for E_extra. It enters the nodal balance with a
+        # negative sign and its marginal cost is -(p_ref - slope*extra), so
+        # where the block is interior this pins lam to the marginal WTP.
+        # No dispatch regularizer is applied here, and none is added to the
+        # primal objective either, which keeps strong duality exact.
+        m.demand_expansion_stationarity = pyo.Constraint(
+            m.EB,
+            rule=lambda model, n, t: -model.lam[n, t] + model.xi_extra[n, t]
+            <= -demand_expansion.reference_price_eur_per_mwh
+            + expansion_slope[n, t] * model.E_extra[n, t],
         )
     m.charge_stationarity = pyo.Constraint(
         m.IN,
@@ -789,6 +972,27 @@ def build_single_investor_mpec(
         demand_quad_cost_expr = 0.0
         demand_dual_expr = sum(data.demand_el[n, t] * m.lam[n, t] for n in m.N for t in m.T)
 
+    # Expansion block, same Wolfe pattern: the bound multiplier enters the dual
+    # objective against the band, and the primal quadratic is subtracted once.
+    if use_demand_expansion:
+        expansion_quad_cost_expr = sum(
+            0.5 * expansion_slope[n, t] * m.E_extra[n, t] ** 2 for n, t in m.EB
+        )
+        expansion_cost_expr = (
+            -sum(
+                demand_expansion.reference_price_eur_per_mwh * m.E_extra[n, t]
+                for n, t in m.EB
+            )
+            + expansion_quad_cost_expr
+        )
+        expansion_dual_expr = sum(
+            expansion_band[n, t] * m.xi_extra[n, t] for n, t in m.EB
+        )
+    else:
+        expansion_quad_cost_expr = 0.0
+        expansion_cost_expr = 0.0
+        expansion_dual_expr = 0.0
+
     storage_degradation_cost_expr = sum(
         0.5 * storage_degradation[i] * (m.P_charge[i, n, t] + m.P_discharge[i, n, t])
         for i, n in m.IN
@@ -809,7 +1013,11 @@ def build_single_investor_mpec(
             else 0.0
         )
     )
-    quad_dual_correction_expr = -demand_quad_cost_expr - dispatch_regularization_expr
+    quad_dual_correction_expr = (
+        -demand_quad_cost_expr
+        - expansion_quad_cost_expr
+        - dispatch_regularization_expr
+    )
 
     m.lower_level_storage_degradation_expr = pyo.Expression(expr=storage_degradation_cost_expr)
     m.dispatch_regularization_expr = pyo.Expression(expr=dispatch_regularization_expr)
@@ -818,10 +1026,12 @@ def build_single_investor_mpec(
         expr=sum(data.generation_cost[g] * m.P_gen[g, t] for g, t in m.GT)
         + storage_degradation_cost_expr
         + shed_cost_expr
+        + expansion_cost_expr
         + dispatch_regularization_expr
     )
     m.dual_objective_expr = pyo.Expression(
         expr=demand_dual_expr
+        + expansion_dual_expr
         + quad_dual_correction_expr
         + sum(data.generation_capacity[g, t] * m.nu_gen[g, t] for g, t in m.GT)
         + sum(data.line_limit[l] * (m.mu_up[l, t] - m.mu_dn[l, t]) for l in m.L for t in m.T)
@@ -885,11 +1095,21 @@ def build_single_investor_mpec(
         - m.degradation_cost_expr
         - m.capex_daily_expr
     )
-    # Clean EPEC baseline: the MPEC selects the dual/primal optimum that
-    # maximizes investor profit. Any optimistic-price effect is diagnosed ex
-    # post by comparing these embedded prices to the standalone reference
-    # settlement, not regularized inside the objective.
-    m.objective = pyo.Objective(expr=m.investor_profit_expr, sense=pyo.maximize)
+    m.lambda_l2_norm_expr = pyo.Expression(
+        expr=sum(m.lam[n, t] ** 2 for n in m.N for t in m.T)
+    )
+    m.lambda_l2_penalty_expr = pyo.Expression(
+        expr=lambda_l2_penalty_coefficient * m.lambda_l2_norm_expr
+    )
+    # At zero penalty this is the maintained optimistic MPEC. A positive
+    # coefficient is an explicit leader-side price-selection sensitivity.
+    m.penalized_investor_objective_expr = pyo.Expression(
+        expr=m.investor_profit_expr - m.lambda_l2_penalty_expr
+    )
+    m.objective = pyo.Objective(
+        expr=m.penalized_investor_objective_expr,
+        sense=pyo.maximize,
+    )
 
     m._market_data = data
     m._investor_id = inv.investor_id
@@ -907,7 +1127,7 @@ def build_single_investor_mpec(
     m._rival_power_mw_by_unit = normalized_rival_power
     m._rival_energy_mwh_by_unit = normalized_rival_energy
     m._storage_pairs = tuple(storage_pairs)
-    m._sparse_rival_capacity_tol = SPARSE_RIVAL_CAPACITY_TOL
+    m._sparse_rival_capacity_tol = sparse_rival_power_tol_mw
     m._generation_pairs = tuple(generation_pairs)
     m._sparse_generation_capacity_tol = SPARSE_GENERATION_CAPACITY_TOL
     m._storage_degradation_eur_per_mwh = storage_degradation
@@ -915,10 +1135,14 @@ def build_single_investor_mpec(
     m._dispatch_regularization_eur_per_mw2h = dispatch_reg
     m._quad_demand = quad_demand
     m._use_demand_curve = use_demand_curve
+    m._demand_expansion = demand_expansion
+    m._use_demand_expansion = use_demand_expansion
+    m._demand_expansion_band_mw = dict(expansion_band)
     m._price_bound_eur_per_mwh = price_bound
     m._price_lower_bound_eur_per_mwh = price_lower_bound
     m._price_upper_bound_eur_per_mwh = price_upper_bound
     m._dual_bound_eur_per_mwh = dual_bound
+    m._lambda_l2_penalty_coefficient = float(lambda_l2_penalty_coefficient)
     m._solver_tol = solver_tol
     return m
 
@@ -1140,6 +1364,12 @@ def parse_args() -> argparse.Namespace:
         help="Absolute finite bound for non-price lower-level duals (default: 10000).",
     )
     parser.add_argument(
+        "--lambda-l2-penalty",
+        type=float,
+        default=0.0,
+        help="Leader-objective coefficient on the sum of squared embedded nodal prices.",
+    )
+    parser.add_argument(
         "--dispatch-regularization",
         type=float,
         default=DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
@@ -1163,6 +1393,8 @@ def main() -> int:
         raise SystemExit("--dispatch-regularization must be non-negative.")
     if args.solver_tol <= 0.0:
         raise SystemExit("--solver-tol must be positive.")
+    if args.lambda_l2_penalty < 0.0:
+        raise SystemExit("--lambda-l2-penalty must be non-negative.")
     data = load_market_data(args.data)
     output_dir = args.output_dir if args.output_dir is not None else DEFAULT_OUTPUT_DIR
 
@@ -1192,6 +1424,7 @@ def main() -> int:
         fixed_power_mw=args.fixed_power_mw,
         price_bound_eur_per_mwh=args.price_bound_eur_per_mwh,
         dual_bound_eur_per_mwh=args.dual_bound_eur_per_mwh,
+        lambda_l2_penalty_coefficient=args.lambda_l2_penalty,
         existing_power_mw=args.existing_power_mw,
         existing_ratio_hours=args.existing_ratio_hours,
         dispatch_regularization_eur_per_mw2h=args.dispatch_regularization,

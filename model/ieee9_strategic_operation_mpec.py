@@ -31,6 +31,7 @@ from single_investor_mpec import (
     DEFAULT_PRICE_BOUND_EUR_PER_MWH,
     DEFAULT_SOLVER_TOL,
     InvestorConfig,
+    QuadraticDemandCurve,
     build_fixed_demand_primal_model,
     build_single_investor_mpec,
     compute_reference_settlement,
@@ -59,6 +60,7 @@ def apply_generator_calibration(
     data,
     *,
     conventional_capacity_adder_mw: float = 0.0,
+    pv_availability_scale: float = 1.0,
     peaker_node: str | None = None,
     peaker_capacity_mw: float = 0.0,
     peaker_cost_eur_per_mwh: float = 95.0,
@@ -72,6 +74,8 @@ def apply_generator_calibration(
 
     if conventional_capacity_adder_mw < 0.0:
         raise ValueError("Conventional capacity adder must be non-negative.")
+    if pv_availability_scale < 0.0:
+        raise ValueError("PV availability scale must be non-negative.")
     if peaker_capacity_mw < 0.0 or peaker_cost_eur_per_mwh < 0.0:
         raise ValueError("Peaker capacity and marginal cost must be non-negative.")
     if peaker_capacity_mw > 0.0 and peaker_node not in data.nodes:
@@ -82,6 +86,10 @@ def apply_generator_calibration(
     for generator in conventional:
         for time in data.times:
             generation_capacity[generator, time] += conventional_capacity_adder_mw
+    pv_generators = [g for g in data.generators if "PV" in str(g).upper()]
+    for generator in pv_generators:
+        for time in data.times:
+            generation_capacity[generator, time] *= pv_availability_scale
 
     generators = list(data.generators)
     generators_at_node = {
@@ -110,6 +118,8 @@ def apply_generator_calibration(
     config = {
         "conventional_generators": conventional,
         "conventional_capacity_adder_mw_each": conventional_capacity_adder_mw,
+        "pv_generators": pv_generators,
+        "pv_availability_scale": pv_availability_scale,
         "peaker_id": peaker_id,
         "peaker_node": peaker_node if peaker_id is not None else None,
         "peaker_capacity_mw": peaker_capacity_mw if peaker_id is not None else 0.0,
@@ -671,6 +681,8 @@ def build_ieee9_strategic_operation_mpec(
     dispatch_regularization_eur_per_mw2h: float = DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
     system_price_settlement: bool = False,
     solver_tol: float = DEFAULT_SOLVER_TOL,
+    quad_demand: QuadraticDemandCurve | None = None,
+    use_demand_curve: bool = False,
     proximal_penalty_eur_per_mw2_day: float = 0.0,
     proximal_energy_scale_hours: float = DEFAULT_INITIAL_RATIO_HOURS,
     proximal_price_scale_eur_per_mwh: float = 10.0,
@@ -700,8 +712,8 @@ def build_ieee9_strategic_operation_mpec(
         price_lower_bound_eur_per_mwh=price_lower_bound_eur_per_mwh,
         price_upper_bound_eur_per_mwh=price_upper_bound_eur_per_mwh,
         dual_bound_eur_per_mwh=dual_bound_eur_per_mwh,
-        quad_demand=default_quadratic_demand_curve(),
-        use_demand_curve=False,
+        quad_demand=quad_demand or default_quadratic_demand_curve(),
+        use_demand_curve=use_demand_curve,
         investor=investor or InvestorConfig(),
         rival_power_mw_by_unit=rival_power_mw_by_unit,
         rival_energy_mwh_by_unit=rival_energy_mwh_by_unit,

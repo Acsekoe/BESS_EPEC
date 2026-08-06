@@ -145,6 +145,10 @@ def export_solution(
         "solver_tol": model._solver_tol,
         "price_bound_eur_per_mwh": model._price_bound_eur_per_mwh,
         "dual_bound_eur_per_mwh": model._dual_bound_eur_per_mwh,
+        "lambda_l2_penalty_coefficient": model._lambda_l2_penalty_coefficient,
+        "lambda_l2_norm": value(model.lambda_l2_norm_expr),
+        "lambda_l2_penalty_eur_per_day": value(model.lambda_l2_penalty_expr),
+        "penalized_objective_eur_per_day": value(model.penalized_investor_objective_expr),
         "max_abs_price_dual": max_price_value,
         "max_abs_price_dual_name": max_price_name,
         "max_abs_price_dual_fraction_of_bound": (
@@ -167,6 +171,19 @@ def export_solution(
         "quadratic_demand_beta_eur_per_mwh_per_share": quad.beta if use_demand_curve else None,
         "quadratic_demand_source": "fixed_default" if use_demand_curve else None,
     }
+    lower_level_optimality = getattr(model, "_lower_level_optimality", "strong-duality")
+    if lower_level_optimality == "relaxed-kkt":
+        from single_investor_mpec_relaxed_kkt import relaxed_kkt_diagnostics
+
+        summary["lower_level_optimality"] = "relaxed-kkt"
+        summary["relaxed_kkt_complementarity"] = relaxed_kkt_diagnostics(model)
+    elif lower_level_optimality == "iso-min-norm-dual":
+        from single_investor_mpec_min_norm_prices import min_norm_price_diagnostics
+
+        summary["lower_level_optimality"] = "iso-min-norm-dual"
+        summary["iso_min_norm_price_selection"] = min_norm_price_diagnostics(model)
+    else:
+        summary["lower_level_optimality"] = "strong-duality"
 
     if reference_settlement is not None:
         summary.update(

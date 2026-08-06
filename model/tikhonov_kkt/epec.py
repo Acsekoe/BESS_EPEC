@@ -45,6 +45,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--node-limit-mw", type=float, default=200.0)
     parser.add_argument("--max-cpu-time", type=float, default=300.0)
     parser.add_argument("--solver-tol", type=float, default=1.0e-6)
+    parser.add_argument(
+        "--demand-elasticity",
+        type=float,
+        default=0.0,
+        help=(
+            "Capacity mode demand elasticity. Zero reproduces the maintained "
+            "fixed-demand case."
+        ),
+    )
+    parser.add_argument(
+        "--dispatch-regularization",
+        type=float,
+        default=0.0,
+        help="Quadratic lower-level dispatch regularization in EUR/(MW^2 h).",
+    )
     parser.add_argument("--price-bound-eur-per-mwh", type=float, default=500.0)
     parser.add_argument("--dual-bound-eur-per-mwh", type=float, default=10_000.0)
     parser.add_argument(
@@ -115,6 +130,15 @@ def _validate(args: argparse.Namespace) -> None:
         raise SystemExit("--max-iters must be positive.")
     if args.parallel_workers <= 0:
         raise SystemExit("--parallel-workers must be positive.")
+    if args.demand_elasticity < 0.0:
+        raise SystemExit("--demand-elasticity must be non-negative.")
+    if args.dispatch_regularization < 0.0:
+        raise SystemExit("--dispatch-regularization must be non-negative.")
+    if args.mode == "strategic-operation" and args.dispatch_regularization != 0.0:
+        raise SystemExit(
+            "Tikhonov strategic-operation mode currently requires zero "
+            "dispatch regularization."
+        )
     if not 0.0 < args.damping <= 1.0:
         raise SystemExit("--damping must be in (0, 1].")
     if args.tee and args.parallel_workers > 1:
@@ -147,6 +171,10 @@ def _run_capacity(args: argparse.Namespace) -> int:
     capacity_driver.PRICE_BOUND_EUR_PER_MWH = args.price_bound_eur_per_mwh
     capacity_driver.OTHER_DUAL_BOUND = args.dual_bound_eur_per_mwh
     capacity_driver.SOLVER_TOL = args.solver_tol
+    capacity_driver.DEMAND_ELASTICITY = args.demand_elasticity
+    capacity_driver.DISPATCH_REGULARIZATION_EUR_PER_MW2H = (
+        args.dispatch_regularization
+    )
     capacity_driver.MAX_CPU_TIME_SECONDS_PER_INVESTOR = args.max_cpu_time
     capacity_driver.PARALLEL_WORKERS = args.parallel_workers
     capacity_driver.TEE = args.tee
@@ -193,6 +221,8 @@ def _run_strategic_operation(args: argparse.Namespace) -> int:
         str(args.max_cpu_time),
         "--solver-tol",
         str(args.solver_tol),
+        "--dispatch-regularization",
+        str(args.dispatch_regularization),
         "--price-bound-eur-per-mwh",
         str(args.price_bound_eur_per_mwh),
         "--dual-bound-eur-per-mwh",

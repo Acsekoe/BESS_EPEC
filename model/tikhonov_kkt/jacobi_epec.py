@@ -11,6 +11,7 @@ after the capacity loop as a separate economic and physical audit.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -295,6 +296,8 @@ def run_jacobi_stage(
         max_rel_energy = 0.0
         max_undamped_rel_power = 0.0
         max_undamped_rel_energy = 0.0
+        max_abs_capacity = 0.0
+        max_undamped_capacity = 0.0
         for response in responses:
             investor_id = response.investor_id
             failures[investor_id] = 0 if response.ok else failures[investor_id] + 1
@@ -346,6 +349,46 @@ def run_jacobi_stage(
                 abs(response.proposed_energy[node] - old_energy[investor_id, node])
                 for node in nodes
             )
+            abs_capacity = math.sqrt(
+                sum(
+                    (
+                        state.x_power[investor_id, node]
+                        - old_power[investor_id, node]
+                    )
+                    ** 2
+                    + (
+                        (
+                            state.x_energy[investor_id, node]
+                            - old_energy[investor_id, node]
+                        )
+                        / cfg.strategic_proximal_energy_scale_hours
+                    )
+                    ** 2
+                    for node in nodes
+                )
+            )
+            undamped_capacity = math.sqrt(
+                sum(
+                    (
+                        response.proposed_power[node]
+                        - old_power[investor_id, node]
+                    )
+                    ** 2
+                    + (
+                        (
+                            response.proposed_energy[node]
+                            - old_energy[investor_id, node]
+                        )
+                        / cfg.strategic_proximal_energy_scale_hours
+                    )
+                    ** 2
+                    for node in nodes
+                )
+            )
+            max_abs_capacity = max(max_abs_capacity, abs_capacity)
+            max_undamped_capacity = max(
+                max_undamped_capacity, undamped_capacity
+            )
 
             state.history.append(
                 {
@@ -375,10 +418,14 @@ def run_jacobi_stage(
                     "total_energy_mwh": sum(state.x_energy[investor_id, node] for node in nodes),
                     "max_rel_delta_power": rel_power,
                     "max_rel_delta_energy": rel_energy,
+                    "abs_capacity_step_mw_equivalent": abs_capacity,
                     "max_undamped_delta_power_mw": undamped_power,
                     "max_undamped_delta_energy_mwh": undamped_energy,
                     "max_undamped_rel_delta_power": undamped_rel_power,
                     "max_undamped_rel_delta_energy": undamped_rel_energy,
+                    "undamped_capacity_residual_mw_equivalent": (
+                        undamped_capacity
+                    ),
                 }
             )
             for node in nodes:
@@ -425,6 +472,8 @@ def run_jacobi_stage(
             f"damped max_rel dP={max_rel_power:.4f}, dE={max_rel_energy:.4f}; "
             f"raw BR residual dP={max_undamped_rel_power:.4f}, "
             f"dE={max_undamped_rel_energy:.4f}, "
+            f"absolute={max_abs_capacity:.4f} applied/"
+            f"{max_undamped_capacity:.4f} raw MW-eq, "
             f"max system imbalance={max_balance:.6f} MW; "
             f"capacity convergence requires all_optimal={all_ok} and "
             f"both damped and raw dP,dE < {cfg.tol_rel:.4f}",

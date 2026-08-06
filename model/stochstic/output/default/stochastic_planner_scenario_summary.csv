@@ -1,0 +1,4 @@
+scenario,probability,generation_cost_eur_per_day,degradation_cost_eur_per_day,renewable_curtailment_mwh,lambda_min_eur_per_mwh,lambda_max_eur_per_mwh,max_hourly_nodal_spread_eur_per_mwh,positive_corridor_dual_hours,max_corridor_dual_abs
+low,0.25,429472.6038400566,1352.5198185600111,0.0,38.49504,60.0,21.504959999999997,7,24.42203317073169
+base,0.5,396403.45134212705,4588.377367680015,0.0,38.49504,60.0,21.504959999999997,8,24.42203317073169
+high,0.25,363669.6328646927,8225.883619200018,0.0,7.536506032494035,60.0,52.33450901084845,11,55.20334390510659

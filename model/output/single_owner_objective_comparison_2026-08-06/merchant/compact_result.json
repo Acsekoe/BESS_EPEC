@@ -1,0 +1,43 @@
+{
+  "profile": "merchant",
+  "investor_id": "I1",
+  "interpretation": "centralized single-owner private-objective MPEC, not a social planner",
+  "data_path": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_distributed_congestion.json",
+  "node_limit_mw": 200.0,
+  "wacc": 0.08,
+  "owned_generation_shares": {},
+  "termination": "optimal",
+  "solve_seconds": 2.2233126999926753,
+  "total_power_mw": 187.18218560166474,
+  "total_energy_mwh": 547.1950001022731,
+  "power_mw_by_node": {
+    "N1": 2.0307648776152746e-06,
+    "N2": 2.0505855273384613e-06,
+    "N3": 66.02066960558179,
+    "N4": 2.031840769633975e-06,
+    "N5": 2.0386598008883325e-06,
+    "N6": 48.08067149557449,
+    "N7": 2.050533358173825e-06,
+    "N8": 56.68226525670795,
+    "N9": 16.398569041416184
+  },
+  "energy_mwh_by_node": {
+    "N1": 6.027326880887271e-06,
+    "N2": 6.1127787489910986e-06,
+    "N3": 183.94413841126308,
+    "N4": 6.029813117659142e-06,
+    "N5": 6.055874244308329e-06,
+    "N6": 169.20835855693466,
+    "N7": 6.112668702548651e-06,
+    "N8": 132.64638636765636,
+    "N9": 61.39608642795729
+  },
+  "optimistic_objective_profit_eur_per_day": 18818.92275496847,
+  "storage_spot_revenue_eur_per_day": 30730.469322603927,
+  "owned_generation_rent_eur_per_day": 0.0,
+  "degradation_cost_eur_per_day": 8225.884394431794,
+  "capex_daily_eur_per_day": 3685.662173203665,
+  "strong_duality_gap_eur_per_day": 7.507746340706944e-05,
+  "reference_price_max_abs_diff_eur_per_mwh": 21.78477661175912,
+  "reference_storage_profit_eur_per_day": 7673.837663910566
+}

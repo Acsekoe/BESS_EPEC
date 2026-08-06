@@ -18,8 +18,9 @@ candidate that requires an unpenalized best-response check.
 
 An optional direct epsilon-times-square penalty pins strategic bid prices
 toward zero without directly penalizing capacity, energy, or quantity offers.
-Convergence uses absolute capacity, withholding, and price norms for three
-consecutive sweeps; the old maximum-relative changes remain diagnostics only.
+Convergence requires both applied and raw best-response capacity, withholding,
+and canonical active-price norms for three consecutive sweeps; the old
+maximum-relative changes remain diagnostics only.
 """
 
 from __future__ import annotations
@@ -916,6 +917,12 @@ def run_epec(
         )
     else:
         state = initial_state
+        # A resumed run is a new convergence audit, potentially under changed
+        # damping or proximal controls. Preserve the economic strategy and
+        # history, but require the continuation to earn its status afresh.
+        state.converged = False
+        state.stop_reason = "resumed; convergence not yet assessed"
+        state.consecutive_converged_sweeps = 0
 
     clean_and_bound_state(state, cfg, nodes, times, data.eta)
     consecutive_failures = {investor.investor_id: 0 for investor in cfg.investors}
@@ -1014,8 +1021,16 @@ def run_epec(
         max_abs_capacity = 0.0
         max_abs_offer = 0.0
         max_abs_price = 0.0
+        max_undamped_capacity = 0.0
+        max_undamped_offer = 0.0
+        max_undamped_price = 0.0
         for response in responses:
             investor_id = response.investor_id
+            investor_cfg = next(
+                investor
+                for investor in cfg.investors
+                if investor.investor_id == investor_id
+            )
             consecutive_failures[investor_id] = 0 if response.ok else consecutive_failures[investor_id] + 1
             rel_power = max(
                 relative_delta(state.x_power[investor_id, node], power_start[investor_id, node], cfg.floor_mw)
@@ -1172,16 +1187,44 @@ def run_epec(
                 )
                 / (2.0 * len(times))
             )
-            undamped_price = (
-                math.sqrt(
+            if cfg.strategic_bid_prices:
+                canonical_response_prices = {}
+                for node in nodes:
+                    for time_ in times:
+                        charge_price = _effective_bid_price(
+                            response.proposed_bid_price_charge[node, time_],
+                            response.proposed_offer_charge[node, time_],
+                            -0.5 * investor_cfg.degradation_eur_per_mwh,
+                            cfg.strategic_bid_price_bound_eur_per_mwh,
+                        )
+                        discharge_price = _effective_bid_price(
+                            response.proposed_offer_price_discharge[node, time_],
+                            response.proposed_offer_discharge[node, time_],
+                            0.5 * investor_cfg.degradation_eur_per_mwh,
+                            cfg.strategic_bid_price_bound_eur_per_mwh,
+                        )
+                        charge_price = min(
+                            charge_price,
+                            (data.eta**2)
+                            * cfg.strategic_bid_price_bound_eur_per_mwh,
+                        )
+                        discharge_price = max(
+                            discharge_price,
+                            charge_price / (data.eta**2),
+                        )
+                        canonical_response_prices[node, time_] = (
+                            charge_price,
+                            discharge_price,
+                        )
+                undamped_price = math.sqrt(
                     sum(
                         (
-                            response.proposed_bid_price_charge[node, time_]
+                            canonical_response_prices[node, time_][0]
                             - charge_price_start[investor_id, node, time_]
                         )
                         ** 2
                         + (
-                            response.proposed_offer_price_discharge[node, time_]
+                            canonical_response_prices[node, time_][1]
                             - discharge_price_start[investor_id, node, time_]
                         )
                         ** 2
@@ -1190,9 +1233,8 @@ def run_epec(
                     )
                     / (2.0 * len(times))
                 )
-                if cfg.strategic_bid_prices
-                else 0.0
-            )
+            else:
+                undamped_price = 0.0
             max_rel_power = max(max_rel_power, rel_power)
             max_rel_energy = max(max_rel_energy, rel_energy)
             max_rel_offer = max(max_rel_offer, rel_offer)
@@ -1200,6 +1242,11 @@ def run_epec(
             max_abs_capacity = max(max_abs_capacity, abs_capacity)
             max_abs_offer = max(max_abs_offer, abs_offer)
             max_abs_price = max(max_abs_price, abs_price)
+            max_undamped_capacity = max(
+                max_undamped_capacity, undamped_capacity
+            )
+            max_undamped_offer = max(max_undamped_offer, undamped_offer)
+            max_undamped_price = max(max_undamped_price, undamped_price)
             state.history.append(
                 {
                     "iteration": iteration,
@@ -1287,6 +1334,9 @@ def run_epec(
             and max_abs_capacity < cfg.strategic_tol_abs_capacity_mw
             and max_abs_offer < cfg.strategic_tol_abs_offer_mw
             and max_abs_price < cfg.strategic_tol_abs_price_eur_per_mwh
+            and max_undamped_capacity < cfg.strategic_tol_abs_capacity_mw
+            and max_undamped_offer < cfg.strategic_tol_abs_offer_mw
+            and max_undamped_price < cfg.strategic_tol_abs_price_eur_per_mwh
         )
         state.consecutive_converged_sweeps = (
             state.consecutive_converged_sweeps + 1 if sweep_converged else 0
@@ -1299,6 +1349,9 @@ def run_epec(
             f"dStrategy={max_abs_capacity:.4f} MW-eq "
             f"dOffer={max_abs_offer:.4f} MW "
             f"dPrice={max_abs_price:.4f} EUR/MWh; "
+            f"raw=({max_undamped_capacity:.4f} MW-eq, "
+            f"{max_undamped_offer:.4f} MW, "
+            f"{max_undamped_price:.4f} EUR/MWh); "
             f"streak={state.consecutive_converged_sweeps}/"
             f"{cfg.strategic_consecutive_converged_sweeps}; "
             f"max_rel dP={max_rel_power:.4f} dE={max_rel_energy:.4f} "
@@ -1410,11 +1463,21 @@ def export_checkpoint(output_dir: Path, state: StrategicEpecState, cfg: EpecConf
     (output_dir / "checkpoint.json").write_text(json.dumps(checkpoint, indent=2), encoding="utf-8")
 
 
-def load_checkpoint(path: Path, data, cfg: EpecConfig) -> StrategicEpecState:
+def load_checkpoint(
+    path: Path,
+    data,
+    cfg: EpecConfig,
+    *,
+    allow_update_rule_change: bool = False,
+) -> StrategicEpecState:
     checkpoint_path = path / "checkpoint.json" if path.is_dir() else path
     raw = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     checkpoint_update_rule = raw.get("update_rule")
-    if checkpoint_update_rule is not None and checkpoint_update_rule != cfg.update_rule:
+    if (
+        checkpoint_update_rule is not None
+        and checkpoint_update_rule != cfg.update_rule
+        and not allow_update_rule_change
+    ):
         raise ValueError(
             "checkpoint update rule does not match this run: "
             f"{checkpoint_update_rule!r} != {cfg.update_rule!r}"
@@ -1602,7 +1665,10 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
                 "direct squared charging buy-bid and discharging sell-offer prices; "
                 "no direct capacity, energy, or quantity-offer term"
             ),
-            "convergence_metric": "absolute strategy norms; relative maxima are diagnostics",
+            "convergence_metric": (
+                "applied and raw absolute strategy norms; inactive bid prices "
+                "are canonicalized; relative maxima are diagnostics"
+            ),
             "tol_abs_capacity_mw_equivalent": cfg.strategic_tol_abs_capacity_mw,
             "tol_abs_offer_mw": cfg.strategic_tol_abs_offer_mw,
             "tol_abs_price_eur_per_mwh": cfg.strategic_tol_abs_price_eur_per_mwh,
@@ -1665,7 +1731,10 @@ def export_final(output_dir, data, state, cfg, settlement, data_path, calibratio
                 cfg.strategic_bid_price_bound_eur_per_mwh
             ),
             "strategic_epsilon_penalty": cfg.strategic_epsilon_penalty,
-            "convergence_metric": "absolute strategy norms",
+            "convergence_metric": (
+                "applied and raw absolute strategy norms with canonical "
+                "inactive bid prices"
+            ),
             "tol_abs_capacity_mw_equivalent": cfg.strategic_tol_abs_capacity_mw,
             "tol_abs_offer_mw": cfg.strategic_tol_abs_offer_mw,
             "tol_abs_price_eur_per_mwh": cfg.strategic_tol_abs_price_eur_per_mwh,
@@ -1874,6 +1943,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--peaker-cost-eur-per-mwh", type=float, default=95.0)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_ROOT / "seidel_scarcity95")
     parser.add_argument("--resume-from", type=Path, default=None)
+    parser.add_argument(
+        "--allow-resume-update-rule-change",
+        action="store_true",
+        help=(
+            "Allow a checkpoint strategy to seed a different Jacobi/Seidel "
+            "update rule. Intended only for explicit algorithm diagnostics."
+        ),
+    )
     parser.add_argument("--tee", action="store_true")
     parser.add_argument("--no-export", action="store_true")
     return parser.parse_args(argv)
@@ -2045,7 +2122,12 @@ def main(argv: list[str] | None = None) -> int:
             else args.resume_from
         )
         try:
-            initial_state = load_checkpoint(checkpoint_path, data, cfg)
+            initial_state = load_checkpoint(
+                checkpoint_path,
+                data,
+                cfg,
+                allow_update_rule_change=args.allow_resume_update_rule_change,
+            )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise SystemExit(f"Cannot resume strategic EPEC run: {exc}") from exc
         cfg = replace(

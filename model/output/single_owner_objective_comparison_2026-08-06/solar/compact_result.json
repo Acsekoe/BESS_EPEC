@@ -1,0 +1,47 @@
+{
+  "profile": "solar",
+  "investor_id": "I4",
+  "interpretation": "centralized single-owner private-objective MPEC, not a social planner",
+  "data_path": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\model\\data\\processed\\market_data_IEEE_9Bus_distributed_congestion.json",
+  "node_limit_mw": 200.0,
+  "wacc": 0.08,
+  "owned_generation_shares": {
+    "RES_Wind_N1": 0.19999999999999996,
+    "RES_PV_N6": 0.8,
+    "RES_PV_N8": 0.8
+  },
+  "termination": "optimal",
+  "solve_seconds": 1.865332200017292,
+  "total_power_mw": 187.1823398056358,
+  "total_energy_mwh": 547.1953487224174,
+  "power_mw_by_node": {
+    "N1": 3.214242391343109e-05,
+    "N2": 3.3694393773635037e-05,
+    "N3": 89.94063572848948,
+    "N4": 3.207255497266134e-05,
+    "N5": 3.2006856784512686e-05,
+    "N6": 44.070261282597365,
+    "N7": 3.3688195659524356e-05,
+    "N8": 49.91867630659506,
+    "N9": 3.252602883528772
+  },
+  "energy_mwh_by_node": {
+    "N1": 6.736234791089626e-05,
+    "N2": 7.044219173633442e-05,
+    "N3": 288.1834796312436,
+    "N4": 6.717789591118612e-05,
+    "N5": 6.707221181206997e-05,
+    "N6": 150.05448661255832,
+    "N7": 7.042964804206978e-05,
+    "N8": 100.34322657807313,
+    "N9": 8.613813416246943
+  },
+  "optimistic_objective_profit_eur_per_day": 183790.45899990416,
+  "storage_spot_revenue_eur_per_day": 8463.424306878822,
+  "owned_generation_rent_eur_per_day": 187238.58306581722,
+  "degradation_cost_eur_per_day": 8225.88377765659,
+  "capex_daily_eur_per_day": 3685.664595135283,
+  "strong_duality_gap_eur_per_day": 0.0015248331474140286,
+  "reference_price_max_abs_diff_eur_per_mwh": 7.065135849232217,
+  "reference_storage_profit_eur_per_day": -457.3134060171351
+}

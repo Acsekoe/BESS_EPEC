@@ -1,0 +1,42 @@
+{
+  "model": "capacity-only stochastic single-investor optimistic MPEC",
+  "termination": "optimal",
+  "scenarios": [
+    {
+      "name": "low",
+      "probability": 0.25,
+      "pv_scale": 0.8,
+      "wind_scale": 0.85
+    },
+    {
+      "name": "base",
+      "probability": 0.5,
+      "pv_scale": 0.9,
+      "wind_scale": 0.925
+    },
+    {
+      "name": "high",
+      "probability": 0.25,
+      "pv_scale": 1.0,
+      "wind_scale": 1.0
+    }
+  ],
+  "node_limit_mw": 200.0,
+  "wacc": 0.08,
+  "price_bound_eur_per_mwh": 500.0,
+  "dual_bound_eur_per_mwh": 10000.0,
+  "solver_tol": 0.0001,
+  "initial_capacity_source": "uniform numerical seed",
+  "initial_total_power_mw": 90.0,
+  "initial_total_energy_mwh": 180.0,
+  "total_power_mw": 52.51805825313811,
+  "total_energy_mwh": 187.2231995895528,
+  "capex_eur_per_day": 1236.7188071913863,
+  "optimistic_expected_operating_profit_eur_per_day": 6182.027731933661,
+  "optimistic_expected_profit_eur_per_day": 4945.308924742275,
+  "reference_expected_operating_profit_eur_per_day": 5249.780101343398,
+  "reference_expected_profit_eur_per_day": 4013.061294152012,
+  "max_strong_duality_gap_eur_per_day": 0.00012739980593323708,
+  "max_nodal_balance_residual_mw": 1.1026089700234158e-13,
+  "max_system_balance_residual_mw": 1.556651694104679e-13
+}

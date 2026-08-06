@@ -1,6 +1,6 @@
 # Project Context: Strategic BESS Investment in Nodal Spot Markets
 
-Last updated: 2026-08-03
+Last updated: 2026-08-06
 
 ## Current objective
 
@@ -61,6 +61,21 @@ efficiency benchmark. Quadratic load curtailment and dispatch regularization are
 explicit robustness options. Ownership, market transfers, and generator rents
 do not enter its objective.
 
+An isolated renewable-uncertainty experiment is under `model/stochstic/`; the
+directory name follows the requested experimental path. It leaves the active
+deterministic models and data unchanged. The downward-shifted illustrative
+low/base/high scenarios have probabilities 0.25/0.50/0.25, PV scales
+0.8/0.9/1.0, and wind scales 0.85/0.925/1.0, making the current deterministic
+profile the high case. The LLP is cleared independently by scenario, while the
+stochastic planner chooses one shared BESS fleet and has perfect-information
+daily dispatch recourse. This is not a sequential forecast-error, balancing, or
+reserve model, and the scenario probabilities are not empirically calibrated.
+At a 200 MW nodal limit, the scenario-specific planners install 52.52, 120.40,
+and 187.18 MW; the shared planner installs 187.18 MW / 547.19 MWh and eliminates
+expected curtailment. Its expected cost is 404,861.74 EUR/day, 9,441.99 EUR/day
+below the no-storage expectation and 1,532.38 EUR/day above the scenario-specific
+perfect-information lower bound.
+
 ### Single-investor MPEC
 
 `model/single_investor_mpec.py` lets one strategic investor choose nodal BESS MW
@@ -70,6 +85,22 @@ problem these primal-dual optimality conditions characterize a lower-level
 optimum without adding explicit complementarity equations. The investor earns storage
 spot revenue and, if portfolio-backed, its share of existing generator rent, net
 of degradation and CAPEX.
+
+`model/stochstic/stochastic_mpec.py` is an isolated capacity-only stochastic
+single-merchant experiment. One MW/MWh fleet is shared across the three
+renewable scenarios, each of which embeds its own fixed-demand primal/dual market
+and exact strong-duality equality; expected spot profit is weighted by scenario
+probability and CAPEX is paid once. The best tested local candidate, reproduced
+from both 5 and 10 MW/node starts, installs 52.518 MW / 187.223 MWh and earns
+4,945.31 EUR/day under optimistic embedded prices versus 4,013.06 EUR/day in
+independent same-fleet HiGHS re-clears. Its maximum strong-duality gap is
+1.27e-4 EUR/day and maximum balance residual 1.56e-13 MW. The maximum
+embedded-versus-reference LMP difference is 29.91 EUR/MWh, and operations also
+differ across degenerate lower-level optima. A planner-fleet start converged to
+an inferior local candidate at 119.66 MW / 424.77 MWh and 4,173.49 EUR/day, so
+Ipopt optimal termination must not be interpreted as a global stochastic MPEC
+solution. Single-scenario checks reproduce the low/base/high deterministic
+capacities of 52.52/120.40/187.18 MW.
 
 The maintained base configuration uses fixed demand, the same storage-
 degradation cost in the embedded and reference markets, and zero artificial
@@ -327,6 +358,45 @@ epsilon-times-square selector on charging buy-bid and discharging sell-offer
 prices only. It contains no direct MW, MWh, or quantity-offer term; those
 strategies remain governed by profit and the optional proximal continuation.
 Without the flag, the earlier quantity-only formulation is preserved.
+
+### 2026-08-06 Tikhonov equilibrium-recovery result
+
+The four 100-sweep/56-sweep Tikhonov runs were audited with corrected
+fixed-demand resume commands. The capacity-only runs identify a very stable
+aggregate candidate near 187.26 MW / 547.57 MWh, but not a unique nodal fixed
+point. One fully undamped, unpenalized sweep from either iteration-100 capacity
+checkpoint changed total fleet capacity by less than 0.005 MW and 0.02 MWh;
+each investor's total changed by only about 0.077 MW and 0.36 MWh. Nevertheless,
+the raw nodal MW/MWh-equivalent movements were 1.48--8.60 MW-equivalent because
+Ipopt selected different points on the flat siting face. N3 and N9 joint LMPs
+are identical to about 3.5e-12 EUR/MWh in every hour. A fixed-rho=18 proximal
+audit has only 0.0843 MW-equivalent raw movement, although its relative
+criterion remains just above tolerance at small nodes. This supports an
+aggregate/set-valued equilibrium interpretation, not a formally converged
+nodal pure-strategy equilibrium.
+
+The strategic-operation candidate that had been declared converged at
+iteration 56 fails an immediate unpenalized test: with damping one, merchants
+I1 and I2 both exit to zero in the first sweep and capacity, offers, and prices
+continue moving. Undamped Jacobi from the unpenalized iteration-100 state also
+diverges, and undamped Seidel removes the simultaneous overshoot but does not
+stabilize full two-sided bids. Fixing bid prices to truthful degradation
+isolates the remaining behavior: quantity offers become nearly fixed and
+investor totals stabilize at I3=27.203 MW and I4=160.134 MW (187.336 MW /
+547.932 MWh overall), while nodal allocation continues to move. A direct
+price selector of 1e-4 reduces raw price movement substantially but does not
+stabilize capacities or offers. No full price-and-quantity pure-strategy
+equilibrium was recovered.
+
+During this audit, the unified Tikhonov capacity runner was corrected so its
+default is explicitly fixed demand rather than the legacy driver's hidden
+0.20 elasticity. The capacity history now records absolute applied and raw
+MW-equivalent residuals. Strategic checkpoint continuations reset convergence
+status, an explicit opt-in permits Jacobi/Seidel checkpoint sensitivity tests,
+and strategic convergence now requires both applied and raw best-response
+residuals. Economically inactive bid prices are canonicalized before their raw
+residual is measured. The detailed run inventory and interpretation are in
+`workflow/summary_2026-08-06_11-05.md`.
 
 The main four-investor specification is:
 

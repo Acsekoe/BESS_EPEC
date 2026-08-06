@@ -1,0 +1,4 @@
+scenario,probability,pv_scale,wind_scale,operating_cost_eur_per_day,renewable_curtailment_mwh,lambda_min_eur_per_mwh,lambda_max_eur_per_mwh,max_hourly_nodal_spread_eur_per_mwh,positive_corridor_dual_hours
+low,0.25,0.8,0.85,434984.0799135366,96.12300000000076,-0.0,67.15,60.0,7
+base,0.5,0.9,0.925,413821.4897023171,326.09400000000113,-0.0,67.15,60.0,8
+high,0.25,1.0,1.0,394587.85188079276,584.6100000000013,-0.0,67.15,60.0,11

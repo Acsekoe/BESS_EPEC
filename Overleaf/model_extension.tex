@@ -5,131 +5,57 @@
 \usepackage[english]{babel}
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{amsmath,amssymb}
-\usepackage{array,longtable}
 \usepackage{textcomp}
-\usepackage{mathptmx}
 \usepackage[hidelinks]{hyperref}
 
 \setlength{\mathindent}{0pt}
 \allowdisplaybreaks
 
-\title{Unregularized Capacity-Investment BESS EPEC\\
-with ISO Minimum-Norm Price Selection}
-\author{Author}
-\date{\today}
+\title{Clean Capacity-Only BESS EPEC}
+\author{}
+\date{}
 
 \begin{document}
-
 \maketitle
 
-\section{Scope and solution concept}
+\section{Scope}
 
 The model is a deterministic capacity-investment EPEC for battery energy
-storage systems (BESSs) in a nodal spot market. Each investor chooses nodal
-power and energy capacity while anticipating both physical market clearing and
-the electricity-price rule. Rival capacities are fixed during an investor's
-best response and are updated by diagonalization outside the mathematical
-program.
+storage systems (BESSs) in a nodal electricity market. Investor $i$ chooses
+only nodal power and energy capacity. For fixed capacities, the independent
+system operator (ISO) clears generation and BESS operation at minimum physical
+dispatch cost.
 
-For fixed capacities, the independent system operator (ISO) first minimizes
-physical dispatch cost. If this primary market problem admits more than one
-valid dual-price vector, the ISO applies a common secondary rule and selects
-the valid locational marginal price (LMP) vector with minimum Euclidean norm.
-This produces the following hierarchy:
-\begin{enumerate}
-\item investor $i$ maximizes its daily profit;
-\item the primary ISO minimizes physical dispatch cost;
-\item over the primary dual-optimal set, the secondary ISO minimizes
-      \(\frac12\sum_{n,t}\lambda_{n,t}^{2}\).
-\end{enumerate}
-The primary ISO problem is represented by primal feasibility, dual feasibility,
-and strong duality. The convex secondary problem is represented by its KKT
-conditions. The result is one single-level nonconvex MPEC for each investor.
-
-The formulation below contains no quadratic dispatch tie-break, leader-side
-price penalty, proximal penalty, relaxed complementarity product, or other
-objective regularizer. The minimum-norm objective is a declared ISO price rule,
-not an investor penalty and not a perturbation of physical dispatch cost.
+This clean formulation uses fixed demand, exact nodal and system balances, and
+exact lower-level strong duality. It contains no strategic bid variables, load
+shedding, dispatch regularization, leader-side price penalty, proximal term,
+Tikhonov term, minimum-norm price selector, or relaxed complementarity
+condition. Rival capacities are fixed within each best response and updated by
+diagonalization outside the mathematical program.
 
 \section{Notation}
 
-\subsection{Sets and indices}
+Investors, nodes, hours, generators, and lines are indexed by
+$i,j\in\mathcal I$, $n\in\mathcal N$, $t\in\mathcal T$, $g\in\mathcal G$,
+and $l\in\mathcal L$. The set $\mathcal G_n$ contains the generators at node
+$n$, and $\mathcal T_0=\{0,\ldots,T\}$ indexes state of charge.
 
-\begin{center}
-\begin{tabular}{p{0.24\textwidth}p{0.66\textwidth}}
-\hline
-\textbf{Symbol} & \textbf{Description} \\
-\hline
-\(i,j\in\mathcal I\) & Strategic BESS investors; $i$ is the active investor and $j$ indexes every BESS. \\
-\(n\in\mathcal N\) & Network nodes. \\
-\(t\in\mathcal T=\{1,\ldots,T\}\) & Hourly dispatch periods. \\
-\(\tau\in\mathcal T_0=\{0,\ldots,T\}\) & State-of-charge periods, including both daily boundaries. \\
-\(g\in\mathcal G\), \(g\in\mathcal G_n\) & Generators and generators located at node $n$. \\
-\(l\in\mathcal L\) & Transmission lines. \\
-\hline
-\end{tabular}
-\end{center}
+The principal parameters are fixed demand $D_{n,t}$, generation cost $C_g$,
+available generation $\overline P_{g,t}$, PTDF $H_{l,n}$, line limit
+$\overline F_l$, one-way BESS efficiency $\eta$, nodal connection limit
+$\overline X_n$, duration limits $r^{\min},r^{\max}$, degradation cost $d_j$,
+investment costs $c_i^P,c_i^E$, WACC $w_i$, lifetime $L_i$, and investor $i$'s
+ownership share $s_{i,g}$ of generator $g$.
 
-\subsection{Parameters}
-
-\begingroup
-\renewcommand{\arraystretch}{1.12}
-\begin{longtable}{@{}p{0.24\textwidth}p{0.58\textwidth}p{0.13\textwidth}@{}}
-\hline
-\textbf{Symbol} & \textbf{Description} & \textbf{Unit} \\
-\hline
-\endfirsthead
-\hline
-\textbf{Symbol} & \textbf{Description} & \textbf{Unit} \\
-\hline
-\endhead
-\hline
-\endfoot
-\(D_{n,t}\) & Fixed electricity demand. & MW \\
-\(C_g\) & Marginal generation cost. & \texteuro{}/MWh \\
-\(\overline P_{g,t}\) & Available generation capacity. & MW \\
-\(H_{l,n}\) & PTDF of line $l$ with respect to node $n$. & -- \\
-\(\overline F_l\) & Symmetric transmission limit. & MW \\
-\(\eta\) & One-way BESS charging and discharging efficiency. & -- \\
-\(\overline X_n\) & Shared nodal BESS connection limit. & MW \\
-\(r^{\min},r^{\max}\) & Minimum and maximum energy-to-power ratios. & h \\
-\(d_j\) & Physical degradation cost per MWh of total BESS throughput. & \texteuro{}/MWh \\
-\(c_i^P,c_i^E\) & BESS power and energy investment costs. & \texteuro{}/MW, \texteuro{}/MWh \\
-\(w_i,L_i\) & Investor-specific WACC and economic lifetime. & --, years \\
-\(s_{i,g}\) & Share of generator $g$'s spot rent owned by investor $i$. & -- \\
-\(\underline u_m,\overline u_m\) & Bounds of primary dual variable $u_m$, including its natural sign domain and any declared price domain. & varies \\
-\end{longtable}
-\endgroup
-
-\subsection{Decision variables}
-
-Investor $i$'s upper-level variables are
-\begin{equation}
-x_i=\left\{X^P_{i,n},X^E_{i,n}\right\}_{n\in\mathcal N},
-\end{equation}
-where $X^P_{i,n}$ and $X^E_{i,n}$ are installed BESS power and energy
-capacity. The primary ISO variables are
-\begin{equation}
-y=\left(P,p^{ch},p^{dis},e,z\right),
-\end{equation}
-where $P_{g,t}$ is generation, $p^{ch}_{j,n,t}$ and
-$p^{dis}_{j,n,t}$ are cleared BESS charging and discharging power,
-$e_{j,n,\tau}$ is stored energy, and $z_{n,t}$ is nodal net injection.
-
-The primary dual variables are collected in
-\begin{equation}\label{eq:primary-dual-vector}
-u=\left(\lambda,\lambda^{sys},\nu,\mu^{up},\mu^{dn},
-\rho,\sigma,\gamma,\delta,\rho^{per}\right).
-\end{equation}
-The LMP is $\lambda_{n,t}$, while $\lambda_t^{sys}$ is the system-balance
-multiplier. The remaining dual variables are defined with their constraints
-below.
+Investor $i$ chooses $X^P_{i,n}$ and $X^E_{i,n}$. The ISO chooses generation
+$P_{g,t}$, charging $p^{ch}_{j,n,t}$, discharging $p^{dis}_{j,n,t}$, stored
+energy $e_{j,n,\tau}$, and net injection $z_{n,t}$. The nodal-balance dual
+$\lambda_{n,t}$ is the locational marginal price (LMP).
 
 \section{Investor problem}
 
-For fixed rival capacities $X_{-i}$, investor $i$'s feasible investment set
-is
-\begin{subequations}\label{eq:investment-feasibility}
+Given rival capacities $X_{-i}$, investor $i$ satisfies
+\begin{subequations}\label{eq:investment}
 \begin{align}
 0\le X^P_{i,n}
 &\le \overline X_n-\sum_{j\ne i}X^P_{j,n},
@@ -139,38 +65,39 @@ r^{\min}X^P_{i,n}\le X^E_{i,n}
 &&\forall n.\label{eq:duration}
 \end{align}
 \end{subequations}
-The capital-recovery factor and daily investment cost are
+Its capital-recovery factor and daily investment cost are
 \begin{align}
-CRF_i&=\frac{w_i(1+w_i)^{L_i}}{(1+w_i)^{L_i}-1},\label{eq:crf}\\
+CRF_i&=\frac{w_i(1+w_i)^{L_i}}{(1+w_i)^{L_i}-1},\\
 K_i&=\frac{CRF_i}{365.25}\sum_n
-\left(c_i^P X^P_{i,n}+c_i^E X^E_{i,n}\right).\label{eq:daily-capex}
+\left(c_i^P X^P_{i,n}+c_i^E X^E_{i,n}\right).
 \end{align}
-Daily investor profit is
+
+Daily profit is
 \begin{subequations}\label{eq:profit}
 \begin{align}
-\Pi_i={}&R_i^{BESS}+R_i^{gen}-C_i^{deg}-K_i,\label{eq:profit-total}\\
+\Pi_i={}&R_i^{BESS}+R_i^{gen}-C_i^{deg}-K_i,\\
 R_i^{BESS}={}&\sum_{n,t}\lambda_{n,t}
-\left(p^{dis}_{i,n,t}-p^{ch}_{i,n,t}\right),\label{eq:bess-revenue}\\
+\left(p^{dis}_{i,n,t}-p^{ch}_{i,n,t}\right),\\
 R_i^{gen}={}&\sum_{g,t}s_{i,g}
-\left(\lambda_{n(g),t}-C_g\right)P_{g,t},\label{eq:generator-rent}\\
+\left(\lambda_{n(g),t}-C_g\right)P_{g,t},\\
 C_i^{deg}={}&\frac{d_i}{2}\sum_{n,t}
-\left(p^{ch}_{i,n,t}+p^{dis}_{i,n,t}\right).\label{eq:private-degradation}
+\left(p^{ch}_{i,n,t}+p^{dis}_{i,n,t}\right).
 \end{align}
 \end{subequations}
-Stand-alone merchant investors have $s_{i,g}=0$. Portfolio investors
-internalize the spot rents of their owned generation shares.
+For a stand-alone merchant, $s_{i,g}=0$. A portfolio investor also internalizes
+the spot rent of its owned generation shares.
 
-\section{Primary ISO: cost-minimizing dispatch}
+\section{Clean lower-level market}
 
-For fixed capacities $X=(X_i,X_{-i})$, the ISO solves the linear program
-\begin{equation}\label{eq:primary-iso}
-\min_y\quad
-Z^P(y)=\sum_{g,t}C_gP_{g,t}
+For fixed capacities $X=(X_i,X_{-i})$, the ISO solves
+\begin{equation}\label{eq:llp-objective}
+\min\quad Z^P=
+\sum_{g,t}C_gP_{g,t}
 +\frac12\sum_{j,n,t}d_j
 \left(p^{ch}_{j,n,t}+p^{dis}_{j,n,t}\right)
 \end{equation}
 subject to
-\begin{subequations}\label{eq:primary-primal}
+\begin{subequations}\label{eq:llp-primal}
 \begin{align}
 z_{n,t}
 &=\sum_{g\in\mathcal G_n}P_{g,t}
@@ -179,355 +106,132 @@ z_{n,t}
 \sum_nz_{n,t}&=0,
 &&\forall t,\label{eq:system-balance}\\
 0\le P_{g,t}&\le\overline P_{g,t},
-&&\forall g,t,\label{eq:generation-capacity}\\
+&&\forall g,t,\\
 -\overline F_l\le\sum_nH_{l,n}z_{n,t}&\le\overline F_l,
-&&\forall l,t,\label{eq:transmission-capacity}\\
+&&\forall l,t,\\
 0\le p^{ch}_{j,n,t}&\le X^P_{j,n},
-&&\forall j,n,t,\label{eq:charge-capacity}\\
+&&\forall j,n,t,\\
 0\le p^{dis}_{j,n,t}&\le X^P_{j,n},
-&&\forall j,n,t,\label{eq:discharge-capacity}\\
+&&\forall j,n,t,\\
 e_{j,n,t}&=e_{j,n,t-1}+\eta p^{ch}_{j,n,t}
 -\eta^{-1}p^{dis}_{j,n,t},
-&&\forall j,n,t,\label{eq:soc-transition}\\
+&&\forall j,n,t,\\
 0\le e_{j,n,\tau}&\le X^E_{j,n},
-&&\forall j,n,\tau,\label{eq:soc-capacity}\\
+&&\forall j,n,\tau,\\
 e_{j,n,0}&=e_{j,n,T},
-&&\forall j,n.\label{eq:soc-periodicity}
+&&\forall j,n.
 \end{align}
 \end{subequations}
-There is no fixed initial state of charge; only daily periodicity is imposed.
+The daily cycle is periodic; no fixed initial state of charge is imposed.
 
-\section{Primary ISO optimality conditions}
+\section{Exact lower-level optimality}
 
-\subsection{Dual variables and sign convention}
-
-The formulation uses the following primary multipliers:
-\begin{center}
-\begin{tabular}{p{0.25\textwidth}p{0.46\textwidth}p{0.18\textwidth}}
-\hline
-\textbf{Dual} & \textbf{Associated condition} & \textbf{Domain} \\
-\hline
-\(\lambda_{n,t}\) & Nodal balance \eqref{eq:nodal-balance} & free \\
-\(\lambda_t^{sys}\) & System balance \eqref{eq:system-balance} & free \\
-\(\nu_{g,t}\) & Generation upper bound & $\nu_{g,t}\le0$ \\
-\(\mu^{up}_{l,t}\) & Upper line bound & $\mu^{up}_{l,t}\le0$ \\
-\(\mu^{dn}_{l,t}\) & Lower line bound & $\mu^{dn}_{l,t}\ge0$ \\
-\(\rho_{j,n,t}\) & Charging upper bound & $\rho_{j,n,t}\le0$ \\
-\(\sigma_{j,n,t}\) & Discharging upper bound & $\sigma_{j,n,t}\le0$ \\
-\(\gamma_{j,n,t}\) & SOC transition & free \\
-\(\delta_{j,n,\tau}\) & SOC upper bound & $\delta_{j,n,\tau}\le0$ \\
-\(\rho^{per}_{j,n}\) & SOC periodicity & free \\
-\hline
-\end{tabular}
-\end{center}
-
-\subsection{Dual feasibility}
-
-Because $P,p^{ch},p^{dis},e$ are nonnegative, their stationarity conditions
-are inequalities. Because $z$ is free, its stationarity condition is an
-equality:
-\begin{subequations}\label{eq:primary-dual-feasibility}
+The lower-level linear program is embedded through primal feasibility, dual
+feasibility, and strong duality. Let $\lambda_{n,t}$ and $\lambda_t^{sys}$ be
+the free multipliers of \eqref{eq:nodal-balance} and
+\eqref{eq:system-balance}. Let
+\begin{equation}
+\nu_{g,t},\mu^{up}_{l,t},\rho_{j,n,t},\sigma_{j,n,t},
+\delta_{j,n,\tau}\le0,
+\qquad
+\mu^{dn}_{l,t}\ge0,
+\end{equation}
+and let $\gamma_{j,n,t}$ and $\rho^{per}_{j,n}$ be free. Dual feasibility is
+\begin{subequations}\label{eq:llp-dual}
 \begin{align}
-\lambda_{n(g),t}+\nu_{g,t}
-&\le C_g,
-&&\forall g,t,\label{eq:dual-generation}\\
+\lambda_{n(g),t}+\nu_{g,t}&\le C_g,
+&&\forall g,t,\\
 -\lambda_{n,t}+\rho_{j,n,t}-\eta\gamma_{j,n,t}
-&\le \frac{d_j}{2},
-&&\forall j,n,t,\label{eq:dual-charge}\\
+&\le\frac{d_j}{2},
+&&\forall j,n,t,\\
 \lambda_{n,t}+\sigma_{j,n,t}+\eta^{-1}\gamma_{j,n,t}
-&\le \frac{d_j}{2},
-&&\forall j,n,t,\label{eq:dual-discharge}\\
+&\le\frac{d_j}{2},
+&&\forall j,n,t,\\
 -\lambda_{n,t}+\lambda_t^{sys}
-+\sum_lH_{l,n}\left(\mu^{up}_{l,t}+\mu^{dn}_{l,t}\right)
-&=0,
-&&\forall n,t.\label{eq:dual-injection}
++\sum_lH_{l,n}\left(\mu^{up}_{l,t}+\mu^{dn}_{l,t}\right)&=0,
+&&\forall n,t.
 \end{align}
 \end{subequations}
-Define the SOC reduced-cost expression
+For stored energy, define
 \begin{align}
 A^E_{j,n,\tau}:={}&\delta_{j,n,\tau}
 +\mathbf 1_{\{\tau\in\mathcal T\}}\gamma_{j,n,\tau}
--\mathbf 1_{\{\tau+1\in\mathcal T\}}\gamma_{j,n,\tau+1}
-\notag\\
+-\mathbf 1_{\{\tau+1\in\mathcal T\}}\gamma_{j,n,\tau+1}\notag\\
 &+\mathbf 1_{\{\tau=0\}}\rho^{per}_{j,n}
--\mathbf 1_{\{\tau=T\}}\rho^{per}_{j,n}.
-\label{eq:soc-reduced-cost}
+-\mathbf 1_{\{\tau=T\}}\rho^{per}_{j,n},
 \end{align}
-SOC dual feasibility is
-\begin{equation}\label{eq:dual-soc}
+with
+\begin{equation}
 A^E_{j,n,\tau}\le0,
 \qquad\forall j,n,\tau.
 \end{equation}
 
-For use in the secondary price-selection problem, define the nonnegative
-slacks
-\begin{subequations}\label{eq:dual-slacks}
+The dual objective is
 \begin{align}
-s^G_{g,t}&:=C_g-\lambda_{n(g),t}-\nu_{g,t},\label{eq:slack-generation}\\
-s^{ch}_{j,n,t}&:=\frac{d_j}{2}+\lambda_{n,t}
--\rho_{j,n,t}+\eta\gamma_{j,n,t},\label{eq:slack-charge}\\
-s^{dis}_{j,n,t}&:=\frac{d_j}{2}-\lambda_{n,t}
--\sigma_{j,n,t}-\eta^{-1}\gamma_{j,n,t},\label{eq:slack-discharge}\\
-s^E_{j,n,\tau}&:=-A^E_{j,n,\tau}.\label{eq:slack-soc}
-\end{align}
-\end{subequations}
-Thus $s^G,s^{ch},s^{dis},s^E\ge0$. Define also the equality residual
-\begin{equation}\label{eq:dual-equality-residual}
-r^z_{n,t}:=-\lambda_{n,t}+\lambda_t^{sys}
-+\sum_lH_{l,n}\left(\mu^{up}_{l,t}+\mu^{dn}_{l,t}\right)=0.
-\end{equation}
-
-\subsection{Strong duality}
-
-The primary dual objective is
-\begin{align}
-Z^D(u;X)={}&
+Z^D={}&
 \sum_{n,t}D_{n,t}\lambda_{n,t}
 +\sum_{g,t}\overline P_{g,t}\nu_{g,t}
 +\sum_{l,t}\overline F_l
-\left(\mu^{up}_{l,t}-\mu^{dn}_{l,t}\right)
-\notag\\
+\left(\mu^{up}_{l,t}-\mu^{dn}_{l,t}\right)\notag\\
 &+\sum_{j,n,t}X^P_{j,n}
 \left(\rho_{j,n,t}+\sigma_{j,n,t}\right)
 +\sum_{j,n,\tau}X^E_{j,n}\delta_{j,n,\tau}.
-\label{eq:primary-dual-objective}
 \end{align}
-Define the primary primal--dual gap
-\begin{equation}\label{eq:primary-gap}
-q(y,u;X):=Z^P(y)-Z^D(u;X).
+The exact lower-level optimality condition is
+\begin{equation}\label{eq:strong-duality}
+Z^P=Z^D.
 \end{equation}
-Primary primal feasibility, primary dual feasibility, and
-\begin{equation}\label{eq:primary-strong-duality}
-q(y,u;X)=0
-\end{equation}
-are necessary and sufficient for an optimum of the primary ISO linear program.
-No explicit primary complementarity products are needed.
+Together with \eqref{eq:llp-primal} and \eqref{eq:llp-dual},
+\eqref{eq:strong-duality} is necessary and sufficient for an optimal solution
+of the clean lower-level LP. Explicit complementarity products are unnecessary.
 
-\section{Secondary ISO: minimum-norm LMP selection}
+\section{Capacity-only EPEC}
 
-For a primary-optimal dispatch $y$ and fixed capacities $X$, define the
-primary dual-optimal face by the dual slacks, equality residuals, strong
-duality, and declared dual-variable domains. The secondary ISO solves
-\begin{subequations}\label{eq:secondary-iso}
-\begin{align}
-\min_u\quad &\frac12\sum_{n,t}\lambda_{n,t}^2,
-\label{eq:secondary-objective}\\
-\text{s.t.}\quad
-&s^G,s^{ch},s^{dis},s^E\ge0,\label{eq:secondary-dual-ineq}\\
-&r^z=0,\qquad q=0,\label{eq:secondary-equalities}\\
-&\underline u_m\le u_m\le\overline u_m,
-&&\forall m.\label{eq:secondary-bounds}
-\end{align}
-\end{subequations}
-The bounds in \eqref{eq:secondary-bounds} include the natural sign domains of
-the primary multipliers. Finite electricity-price domains may also be declared
-as part of the market specification. They are constraints, not objective
-regularizers. If a theoretical dual variable is unbounded on one side, the
-corresponding bound and its KKT multiplier below are omitted.
-
-The feasible set of \eqref{eq:secondary-iso} is convex and its objective is
-strictly convex in $\lambda$. Consequently, the selected LMP vector is unique,
-although non-price primary multipliers can remain nonunique.
-
-\section{KKT system of the secondary ISO}
-
-Associate nonnegative multipliers
-\begin{equation}
-\alpha^G,\alpha^{ch},\alpha^{dis},\alpha^E\ge0
-\end{equation}
-with the four groups of nonnegative dual-feasibility slacks. Associate free
-multipliers $\beta_{n,t}$ and $\theta$ with $r^z_{n,t}=0$ and $q=0$,
-respectively. Finally, associate nonnegative multipliers
-\(\xi_m^-\) and \(\xi_m^+\) with the lower and upper bounds of $u_m$.
-
-The secondary Lagrangian is
-\begin{align}
-\mathcal L^{MN}={}&
-\frac12\sum_{n,t}\lambda_{n,t}^2
--\sum_{g,t}\alpha^G_{g,t}s^G_{g,t}
--\sum_{j,n,t}\alpha^{ch}_{j,n,t}s^{ch}_{j,n,t}
-\notag\\
-&-\sum_{j,n,t}\alpha^{dis}_{j,n,t}s^{dis}_{j,n,t}
--\sum_{j,n,\tau}\alpha^E_{j,n,\tau}s^E_{j,n,\tau}
-+\sum_{n,t}\beta_{n,t}r^z_{n,t}
-+\theta q
-\notag\\
-&-\sum_m\xi_m^-(u_m-\underline u_m)
--\sum_m\xi_m^+(\overline u_m-u_m).
-\label{eq:secondary-lagrangian}
-\end{align}
-
-\subsection{Secondary stationarity}
-
-Stationarity with respect to every component of the primary dual vector
-\eqref{eq:primary-dual-vector} gives
-\begin{subequations}\label{eq:secondary-stationarity}
-\begin{align}
-0={}&\lambda_{n,t}
-+\sum_{g\in\mathcal G_n}\alpha^G_{g,t}
--\sum_j\alpha^{ch}_{j,n,t}
-+\sum_j\alpha^{dis}_{j,n,t}
--\beta_{n,t}-\theta D_{n,t}
--\xi^-_{\lambda_{n,t}}+\xi^+_{\lambda_{n,t}},
-&&\forall n,t,\label{eq:mn-stat-lambda}\\
-0={}&\sum_n\beta_{n,t}
--\xi^-_{\lambda_t^{sys}}+\xi^+_{\lambda_t^{sys}},
-&&\forall t,\label{eq:mn-stat-system-lambda}\\
-0={}&\alpha^G_{g,t}-\theta\overline P_{g,t}
--\xi^-_{\nu_{g,t}}+\xi^+_{\nu_{g,t}},
-&&\forall g,t,\label{eq:mn-stat-nu}\\
-0={}&\sum_nH_{l,n}\beta_{n,t}-\theta\overline F_l
--\xi^-_{\mu^{up}_{l,t}}+\xi^+_{\mu^{up}_{l,t}},
-&&\forall l,t,\label{eq:mn-stat-mu-up}\\
-0={}&\sum_nH_{l,n}\beta_{n,t}+\theta\overline F_l
--\xi^-_{\mu^{dn}_{l,t}}+\xi^+_{\mu^{dn}_{l,t}},
-&&\forall l,t,\label{eq:mn-stat-mu-dn}\\
-0={}&\alpha^{ch}_{j,n,t}-\theta X^P_{j,n}
--\xi^-_{\rho_{j,n,t}}+\xi^+_{\rho_{j,n,t}},
-&&\forall j,n,t,\label{eq:mn-stat-rho}\\
-0={}&\alpha^{dis}_{j,n,t}-\theta X^P_{j,n}
--\xi^-_{\sigma_{j,n,t}}+\xi^+_{\sigma_{j,n,t}},
-&&\forall j,n,t,\label{eq:mn-stat-sigma}\\
-0={}&-\eta\alpha^{ch}_{j,n,t}
-+\eta^{-1}\alpha^{dis}_{j,n,t}
-+\alpha^E_{j,n,t}-\alpha^E_{j,n,t-1}
--\xi^-_{\gamma_{j,n,t}}+\xi^+_{\gamma_{j,n,t}},
-&&\forall j,n,t,\label{eq:mn-stat-gamma}\\
-0={}&\alpha^E_{j,n,\tau}-\theta X^E_{j,n}
--\xi^-_{\delta_{j,n,\tau}}+\xi^+_{\delta_{j,n,\tau}},
-&&\forall j,n,\tau,\label{eq:mn-stat-delta}\\
-0={}&\alpha^E_{j,n,0}-\alpha^E_{j,n,T}
--\xi^-_{\rho^{per}_{j,n}}+\xi^+_{\rho^{per}_{j,n}},
-&&\forall j,n.\label{eq:mn-stat-periodicity}
-\end{align}
-\end{subequations}
-
-\subsection{Secondary primal feasibility, dual feasibility, and complementarity}
-
-The remaining KKT conditions are
-\begin{subequations}\label{eq:secondary-kkt-rest}
-\begin{align}
-&s^G,s^{ch},s^{dis},s^E\ge0,
-\qquad r^z=0,
-\qquad q=0,
-\qquad \underline u\le u\le\overline u,
-\label{eq:mn-primal-feasibility}\\
-&\alpha^G,\alpha^{ch},\alpha^{dis},\alpha^E,\xi^-,\xi^+\ge0,
-\qquad \beta,\theta\text{ free},
-\label{eq:mn-dual-feasibility}\\
-&\alpha^G_{g,t}s^G_{g,t}=0,
-&&\forall g,t,\label{eq:mn-comp-generation}\\
-&\alpha^{ch}_{j,n,t}s^{ch}_{j,n,t}=0,
-\qquad
-\alpha^{dis}_{j,n,t}s^{dis}_{j,n,t}=0,
-&&\forall j,n,t,\label{eq:mn-comp-storage-power}\\
-&\alpha^E_{j,n,\tau}s^E_{j,n,\tau}=0,
-&&\forall j,n,\tau,\label{eq:mn-comp-soc}\\
-&\xi^-_m(u_m-\underline u_m)=0,
-\qquad
-\xi^+_m(\overline u_m-u_m)=0,
-&&\forall m.\label{eq:mn-comp-bounds}
-\end{align}
-\end{subequations}
-In the implementation, the nonnegative products in
-\eqref{eq:mn-comp-generation}--\eqref{eq:mn-comp-bounds} are summed and their
-sum is constrained to zero. This aggregate equality is mathematically
-equivalent to imposing every product separately.
-
-\section{Complete single-level investor MPEC}
-
-Let
-\begin{equation}
-v=\left(\alpha^G,\alpha^{ch},\alpha^{dis},\alpha^E,
-\beta,\theta,\xi^-,\xi^+\right)
-\end{equation}
-collect the secondary KKT multipliers. Investor $i$'s complete best-response
-MPEC is
-\begin{equation}\label{eq:complete-mpec}
+Investor $i$'s best response is the single-level MPEC
+\begin{equation}\label{eq:best-response}
 \boxed{
 \begin{aligned}
-\max_{X_i^P,X_i^E,y,u,v}\quad &\Pi_i\\
+\max_{X_i^P,X_i^E,\,y,\,u}\quad &\Pi_i\\
 \text{s.t.}\quad
-&\eqref{eq:investment-feasibility},\\
-&\eqref{eq:primary-primal},\\
-&\eqref{eq:dual-slacks},\ \eqref{eq:dual-equality-residual},\\
-  \eqref{eq:primary-strong-duality},\\
-  \underline u\le u\le\overline u,\\
-&\eqref{eq:secondary-stationarity},\\
-&\eqref{eq:secondary-kkt-rest},
+&\eqref{eq:investment},\quad
+\eqref{eq:llp-primal},\quad
+\eqref{eq:llp-dual},\quad
+\eqref{eq:strong-duality},
 \end{aligned}}
-\qquad\text{given }X_{-i}.
+\qquad\text{given }X_{-i},
 \end{equation}
-The primary primal variables $y$, primary dual variables $u$, and secondary
-KKT multipliers $v$ are endogenous inside the investor problem. Products of
-investment variables and primary duals in \eqref{eq:primary-dual-objective},
-LMP settlement in \eqref{eq:profit}, and the secondary complementarity
-conditions make \eqref{eq:complete-mpec} nonconvex even though both ISO
-problems are convex when the upper-level capacities and primary dispatch are
-fixed.
+where $y$ collects the lower-level primal variables and $u$ its dual variables.
+Products between capacities and dual variables, together with LMP settlement in
+\eqref{eq:profit}, make the best-response problem nonconvex.
 
-Crucially, the investor does not minimize the price norm and cannot trade a
-larger norm against higher profit. Equations
-\eqref{eq:secondary-stationarity}--\eqref{eq:secondary-kkt-rest} require the
-ISO's minimum-norm problem to be optimal before $\Pi_i$ is evaluated. The
-investor can change prices economically by changing capacity, but it cannot
-select a personally favourable LMP vector from a fixed primary dual-optimal
-face.
-
-\section{EPEC equilibrium and diagonalization}
-
-A generalized Nash equilibrium is a jointly feasible capacity profile
-$X^*$ satisfying
-\begin{equation}\label{eq:epec-fixed-point}
-X_i^*\in BR_i(X_{-i}^*)
-:=\arg\max\left\{\Pi_i:
-\eqref{eq:complete-mpec}\text{ holds for }X_{-i}=X_{-i}^*\right\},
+A capacity profile $X^*$ is an EPEC equilibrium if
+\begin{equation}\label{eq:epec}
+X_i^*\in BR_i(X_{-i}^*),
 \qquad\forall i\in\mathcal I.
 \end{equation}
-The implementation searches for this fixed point by Gauss--Jacobi or
-Gauss--Seidel diagonalization. Under Jacobi updating, every investor solves
-against one common frozen rival snapshot:
-\begin{equation}\label{eq:jacobi-update}
+The implementation searches for this fixed point with Gauss--Jacobi or
+Gauss--Seidel diagonalization. With Jacobi damping $0<\omega\le1$,
+\begin{equation}
 X_i^{k+1}=(1-\omega)X_i^k+\omega\widehat X_i^k,
 \qquad
-\widehat X_i^k\in BR_i(X_{-i}^k),
-\qquad 0<\omega\le1.
+\widehat X_i^k\in BR_i(X_{-i}^k).
 \end{equation}
-Damping $\omega$ belongs to the numerical fixed-point algorithm and does not
-alter the best-response objective or the equilibrium definition
-\eqref{eq:epec-fixed-point}. A run is an EPEC result only if every investor
-best response is solved successfully and the undamped fixed-point residuals
-converge.
+Damping changes only the numerical fixed-point iteration. Formal convergence
+must be assessed using the undamped best-response residuals.
 
-After convergence, all final capacities are fixed and the ISO is independently
-re-cleared using the same primary dispatch and minimum-norm price rule. At a
-valid fixed point, the embedded LMP vector in every investor MPEC must agree,
-up to solver tolerance, with this common joint-settlement LMP vector.
+Because a fixed-capacity LP can admit multiple dual-optimal LMP vectors, this
+clean strong-duality formulation uses an optimistic convention: the embedded
+dual vector may be selected in the investor's favour. No secondary price rule
+is imposed. After a run, final capacities are independently re-cleared to report
+common physical dispatch and reference-market prices; disagreement between
+embedded and reference LMPs must be disclosed.
 
-\section{Implementation correspondence}
+\section{Implementation}
 
-The maintained implementation uses the following correspondence:
-\begin{center}
-\begin{tabular}{p{0.41\textwidth}p{0.48\textwidth}}
-\hline
-\textbf{Mathematical block} & \textbf{Implementation} \\
-\hline
-Investor objective and primary ISO primal--dual system &
-\texttt{single\_investor\_mpec.py} \\
-Secondary ISO objective and KKT system &
-\texttt{single\_investor\_mpec\_min\_norm\_prices.py} \\
-Multi-investor fixed-point iteration &
-\texttt{epec\_diagonalization.py} \\
-Common final ISO re-clear and settlement &
-\texttt{epec\_results.py} \\
-\hline
-\end{tabular}
-\end{center}
-
-The unregularized formulation in this document sets artificial dispatch
-regularization and every leader-side or complementarity relaxation coefficient
-to zero. Finite price and dual domains used for numerical safety remain
-explicit constraints when enabled; they are not objective penalties and must
-be reported if they bind.
+\begin{itemize}
+\item \texttt{single\_investor\_mpec.py}: clean best-response MPEC;
+\item \texttt{epec\_diagonalization.py}: multi-investor fixed-point iteration;
+\item \texttt{epec\_results.py}: final common market re-clear and settlement.
+\end{itemize}
 
 \end{document}

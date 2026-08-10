@@ -171,19 +171,7 @@ def export_solution(
         "quadratic_demand_beta_eur_per_mwh_per_share": quad.beta if use_demand_curve else None,
         "quadratic_demand_source": "fixed_default" if use_demand_curve else None,
     }
-    lower_level_optimality = getattr(model, "_lower_level_optimality", "strong-duality")
-    if lower_level_optimality == "relaxed-kkt":
-        from single_investor_mpec_relaxed_kkt import relaxed_kkt_diagnostics
-
-        summary["lower_level_optimality"] = "relaxed-kkt"
-        summary["relaxed_kkt_complementarity"] = relaxed_kkt_diagnostics(model)
-    elif lower_level_optimality == "iso-min-norm-dual":
-        from single_investor_mpec_min_norm_prices import min_norm_price_diagnostics
-
-        summary["lower_level_optimality"] = "iso-min-norm-dual"
-        summary["iso_min_norm_price_selection"] = min_norm_price_diagnostics(model)
-    else:
-        summary["lower_level_optimality"] = "strong-duality"
+    summary["lower_level_optimality"] = "strong-duality"
 
     if reference_settlement is not None:
         summary.update(

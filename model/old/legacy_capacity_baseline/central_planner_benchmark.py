@@ -28,15 +28,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import pyomo.environ as pyo
-
-_MODEL_DIR = Path(__file__).resolve().parent
-_PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
-if _PRIMAL_DUAL_DIR.is_dir() and str(_PRIMAL_DUAL_DIR) not in sys.path:
-    sys.path.append(str(_PRIMAL_DUAL_DIR))
 
 from primal_market_clearing_model import MarketData, load_market_data, value
 from single_investor_mpec import (
@@ -59,12 +53,7 @@ from single_investor_mpec import (
 from single_investor_mpec_results import _write_csv
 from solver_utils import get_ipopt_solver
 
-EXPERIMENT_DATA_PATH = (
-    Path(__file__).resolve().parent
-    / "data"
-    / "processed"
-    / "market_data_IEEE_9Bus_congestion.json"
-)
+EXPERIMENT_DATA_PATH = Path(__file__).resolve().parent / "input" / "market_data.json"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "central_planner"
 
 
@@ -324,12 +313,11 @@ def export(output_dir: Path, model: pyo.ConcreteModel, summary: dict, data_path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Central-planner BESS siting/sizing benchmark")
+    parser.set_defaults(demand_model="fixed", dispatch_regularization=0.0)
     parser.add_argument("--data", type=Path, default=EXPERIMENT_DATA_PATH)
     parser.add_argument("--wacc", type=float, default=DEFAULT_WACC, help="Single social discount rate.")
     parser.add_argument("--node-limit-mw", type=float, default=DEFAULT_NODE_LIMIT_MW)
     parser.add_argument("--max-cpu-time", type=float, default=120.0)
-    parser.add_argument("--demand-model", choices=["fixed", "quadratic"], default="fixed")
-    parser.add_argument("--dispatch-regularization", type=float, default=0.0)
     parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--tag", type=str, default=None, help="Optional label appended to the output folder name.")

@@ -23,7 +23,6 @@ from single_investor_mpec import (
     build_quadratic_primal_model,
     capital_recovery_factor,
     fixed_demand_reference_lambda,
-    initialize_from_reference_dispatch,
     investment_headroom_shadow_price,
     quadratic_reference_lambda,
     reference_system_price,
@@ -125,46 +124,6 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
             dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
             demand_expansion=getattr(cfg, "demand_expansion", None),
         )
-    # The strategic-operation EPEC carries hourly quantity offers as part of
-    # each investor's strategy. The maintained capacity-only EPEC has no such
-    # fields and therefore retains its original full-availability settlement.
-    if hasattr(state, "offer_charge") and hasattr(state, "offer_discharge"):
-        reference.strategic_charge_offer_bound = pyo.Constraint(
-            reference.I,
-            reference.N,
-            reference.T,
-            rule=lambda model, i, n, t: model.P_charge[i, n, t]
-            <= max(0.0, state.offer_charge[i, n, int(t)]),
-        )
-        reference.strategic_discharge_offer_bound = pyo.Constraint(
-            reference.I,
-            reference.N,
-            reference.T,
-            rule=lambda model, i, n, t: model.P_discharge[i, n, t]
-            <= max(0.0, state.offer_discharge[i, n, int(t)]),
-        )
-    if (
-        getattr(cfg, "strategic_bid_prices", False)
-        and hasattr(state, "bid_price_charge")
-        and hasattr(state, "offer_price_discharge")
-    ):
-        from ieee9_strategic_operation_mpec import apply_fixed_two_sided_bids_to_primal
-
-        apply_fixed_two_sided_bids_to_primal(
-            reference,
-            bid_price_charge_eur_per_mwh={
-                (i, n, int(t)): state.bid_price_charge[i, n, int(t)]
-                for i in reference.I
-                for n in reference.N
-                for t in reference.T
-            },
-            offer_price_discharge_eur_per_mwh={
-                (i, n, int(t)): state.offer_price_discharge[i, n, int(t)]
-                for i in reference.I
-                for n in reference.N
-                for t in reference.T
-            },
-        )
     results = get_ipopt_solver(
         {
             "max_cpu_time": cfg.max_cpu_time,
@@ -176,79 +135,12 @@ def compute_joint_settlement(data: MarketData, quad: QuadraticDemandCurve, state
     if termination != "optimal":
         raise RuntimeError(f"Joint settlement QP did not solve optimally (termination={termination}).")
 
-    if cfg.lower_level_optimality == "iso-min-norm-dual":
-        from single_investor_mpec_min_norm_prices import (
-            build_single_investor_min_norm_price_mpec,
-            initialize_iso_min_norm_selection,
-        )
-
-        if cfg.system_price_settlement:
-            raise RuntimeError(
-                "ISO minimum-norm selection is currently defined for nodal LMP settlement only."
-            )
-        active = cfg.investors[0]
-        active_id = active.investor_id
-        min_norm_model = build_single_investor_min_norm_price_mpec(
-            data,
-            quad_demand=quad,
-            investor=active,
-            rival_power_mw_by_unit={
-                i: {n: max(0.0, state.x_power[i, n]) for n in nodes}
-                for i in units
-                if i != active_id
-            },
-            rival_energy_mwh_by_unit={
-                i: {n: max(0.0, state.x_energy[i, n]) for n in nodes}
-                for i in units
-                if i != active_id
-            },
-            rival_degradation_eur_per_mwh_by_unit={
-                inv.investor_id: inv.degradation_eur_per_mwh
-                for inv in cfg.investors
-                if inv.investor_id != active_id
-            },
-            node_limit_mw=cfg.node_limit_mw,
-            price_bound_eur_per_mwh=cfg.price_bound_eur_per_mwh,
-            price_lower_bound_eur_per_mwh=cfg.price_lower_bound_eur_per_mwh,
-            price_upper_bound_eur_per_mwh=cfg.price_upper_bound_eur_per_mwh,
-            dual_bound_eur_per_mwh=cfg.dual_bound_eur_per_mwh,
-            lambda_l2_penalty_coefficient=0.0,
-            initial_power_mw=cfg.seed_power_mw,
-            initial_ratio_hours=cfg.seed_ratio_hours,
-            system_price_settlement=False,
-            use_demand_curve=cfg.use_demand_curve,
-            dispatch_regularization_eur_per_mw2h=cfg.dispatch_regularization_eur_per_mw2h,
-            solver_tol=cfg.solver_tol,
-        )
-        for n in nodes:
-            min_norm_model.X_power[n].set_value(max(0.0, state.x_power[active_id, n]))
-            min_norm_model.X_energy[n].set_value(max(0.0, state.x_energy[active_id, n]))
-        initialize_from_reference_dispatch(
-            min_norm_model, data, cfg.seed_ratio_hours
-        )
-        min_norm_termination = initialize_iso_min_norm_selection(
-            min_norm_model,
-            max_cpu_time=min(60.0, cfg.max_cpu_time),
-            solver_tol=cfg.solver_tol,
-        )
-        if min_norm_termination != "optimal":
-            raise RuntimeError(
-                "Joint-settlement ISO minimum-norm QP did not solve optimally "
-                f"(termination={min_norm_termination})."
-            )
-        lam = {
-            (n, int(t)): value(min_norm_model.lam[n, t])
-            for n in min_norm_model.N
-            for t in min_norm_model.T
-        }
-        dual_cross_check = None
-    else:
-        lam = (
-            quadratic_reference_lambda(reference, quad)
-            if cfg.use_demand_curve
-            else fixed_demand_reference_lambda(reference)
-        )
-        dual_cross_check = _solver_dual_cross_check(reference, lam)
+    lam = (
+        quadratic_reference_lambda(reference, quad)
+        if cfg.use_demand_curve
+        else fixed_demand_reference_lambda(reference)
+    )
+    dual_cross_check = _solver_dual_cross_check(reference, lam)
 
     # Settlement price: nodal LMP by default, or the uniform per-hour system
     # price (broadcast to every node) when the run uses zonal settlement, so

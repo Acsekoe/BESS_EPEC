@@ -19,7 +19,7 @@ import pyomo.environ as pyo
 
 
 MODEL_NAME = "Primal Spot Market Clearing Model"
-DEFAULT_DATA_PATH = Path(__file__).resolve().parent / "data" / "processed" / "market_data.json"
+DEFAULT_DATA_PATH = Path(__file__).resolve().parent / "input" / "market_data.json"
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ def _tuple_map(records: Sequence[Mapping[str, Any]], key_fields: Sequence[str], 
 
 
 def load_market_data(path: Path = DEFAULT_DATA_PATH) -> MarketData:
-    """Load processed benchmark data produced by prepare_data.py."""
+    """Load the canonical deterministic benchmark input."""
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     generation_capacity = _tuple_map(raw["generation_capacity"], ["generator", "hour"], "capacity_mw")

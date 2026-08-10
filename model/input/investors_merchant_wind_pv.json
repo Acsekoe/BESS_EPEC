@@ -1,0 +1,43 @@
+{
+  "description": "Three-player economic sensitivity: one merchant, one sole wind owner, and one sole PV owner.",
+  "investors": [
+    {
+      "investor_id": "Merchant",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {}
+    },
+    {
+      "investor_id": "WindOwner",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 1.0
+      }
+    },
+    {
+      "investor_id": "PVOwner",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {
+        "RES_PV_N6": 1.0,
+        "RES_PV_N8": 1.0
+      }
+    }
+  ]
+}

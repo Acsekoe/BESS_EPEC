@@ -1,26 +1,19 @@
-"""Single-investor MPEC with optional quadratic demand and strong duality.
+"""Capacity-only single-investor MPEC with primal-dual strong duality.
 
 This proof model represents one strategic BESS investor in the deterministic
 spot market. The lower-level market clearing is embedded through primal
-feasibility, dual feasibility, and a strong-duality equality. By default demand
-is fixed: no load shedding, no VOLL scarcity valve, and no demand-response curve.
-The quadratic demand curve can be re-enabled for feasibility experiments.
+feasibility, dual feasibility, and a strong-duality equality. The maintained
+baseline uses fixed demand and contains no strategic operating bids.
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pyomo.environ as pyo
-
-_MODEL_DIR = Path(__file__).resolve().parent
-_PRIMAL_DUAL_DIR = _MODEL_DIR / "Primal and dual problems"
-if _PRIMAL_DUAL_DIR.is_dir() and str(_PRIMAL_DUAL_DIR) not in sys.path:
-    sys.path.append(str(_PRIMAL_DUAL_DIR))
 
 from primal_market_clearing_model import (
     MarketData,
@@ -35,14 +28,9 @@ from solver_utils import get_ipopt_solver
 MODEL_NAME = "Single Investor Primal-Dual MPEC"
 INVESTOR_ID = "I1"
 EXISTING_ID = "E0"
-# Maintained IEEE-9 thesis input. Historical and sensitivity datasets remain
-# available through the explicit --data option.
-EXPERIMENT_DATA_PATH = (
-    Path(__file__).resolve().parent
-    / "data"
-    / "processed"
-    / "market_data_IEEE_9Bus_congestion.json"
-)
+# One canonical IEEE-9 input is active. Historical inputs are archived under
+# model/old/data/.
+EXPERIMENT_DATA_PATH = Path(__file__).resolve().parent / "input" / "market_data.json"
 DEFAULT_WACC = 0.08
 DEFAULT_LIFETIME_YEARS = 15
 DEFAULT_NODE_LIMIT_MW = 100.0
@@ -1333,6 +1321,11 @@ def compute_reference_settlement(model: pyo.ConcreteModel) -> dict[str, object]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=MODEL_NAME)
+    parser.set_defaults(
+        lambda_l2_penalty=0.0,
+        dispatch_regularization=0.0,
+        demand_model="fixed",
+    )
     parser.add_argument("--data", type=Path, default=EXPERIMENT_DATA_PATH)
     parser.add_argument("--tee", action="store_true", help="Show Ipopt output.")
     parser.add_argument("--initial-power-mw", type=float, default=DEFAULT_INITIAL_POWER_MW)
@@ -1362,24 +1355,6 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_DUAL_BOUND_EUR_PER_MWH,
         help="Absolute finite bound for non-price lower-level duals (default: 10000).",
-    )
-    parser.add_argument(
-        "--lambda-l2-penalty",
-        type=float,
-        default=0.0,
-        help="Leader-objective coefficient on the sum of squared embedded nodal prices.",
-    )
-    parser.add_argument(
-        "--dispatch-regularization",
-        type=float,
-        default=DEFAULT_DISPATCH_REGULARIZATION_EUR_PER_MW2H,
-        help="Neutral lower-level quadratic tie-break coefficient in EUR/(MW^2 h).",
-    )
-    parser.add_argument(
-        "--demand-model",
-        choices=["fixed", "quadratic"],
-        default="fixed",
-        help="Lower-level demand representation. The maintained base model uses fixed demand.",
     )
     parser.add_argument("--solver-tol", type=float, default=DEFAULT_SOLVER_TOL)
     parser.add_argument("--output-dir", type=Path, default=None)

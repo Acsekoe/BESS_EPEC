@@ -1,5 +1,5 @@
 {
-    "workbench.colorTheme": "Default Dark Modern",
+    "workbench.colorTheme": "Dark Modern",
     "python.defaultInterpreterPath": "C:\\Users\\Alexander\\venvs\\SolarGeoRisk_EPEC\\Scripts\\python.exe",
     "python.terminal.activateEnvironment": true,
     "terminal.integrated.env.windows": {

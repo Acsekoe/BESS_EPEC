@@ -1,0 +1,46 @@
+{
+  "description": "Original four-player population without the 12% WACC merchant I2.",
+  "investors": [
+    {
+      "investor_id": "I1",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {}
+    },
+    {
+      "investor_id": "I3",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 0.8,
+        "RES_PV_N6": 0.2,
+        "RES_PV_N8": 0.2
+      }
+    },
+    {
+      "investor_id": "I4",
+      "wacc": 0.08,
+      "lifetime_years": 15,
+      "cost_power_eur_per_mw": 6600.0,
+      "cost_energy_eur_per_mwh": 18800.0,
+      "degradation_eur_per_mwh": 15.0,
+      "ratio_min": 2.0,
+      "ratio_max": 8.0,
+      "owned_generation_shares": {
+        "RES_Wind_N1": 0.2,
+        "RES_PV_N6": 0.8,
+        "RES_PV_N8": 0.8
+      }
+    }
+  ]
+}

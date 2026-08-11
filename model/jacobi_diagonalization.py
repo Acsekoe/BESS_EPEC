@@ -22,7 +22,7 @@ class JacobiConfig:
     formulation: str = "strong-duality"
     node_limit_mw: float = 100.0
     max_sweeps: int = 60
-    damping: float = 0.7
+    damping: float = 0.25
     tolerance_mw: float = 0.5
     tolerance_mwh: float = 1.0
     consecutive_sweeps: int = 2
@@ -38,6 +38,8 @@ class JacobiConfig:
     sparse_capacity_tol: float = 1e-8
     warm_start_lower_level: bool = True
     bid_price_bound: float = 500.0
+    initial_bid_charge_eur_per_mwh: float = 0.0
+    initial_offer_discharge_eur_per_mwh: float = 0.0
     tolerance_bid_eur_per_mwh: float = 0.5
 
 
@@ -135,6 +137,11 @@ def _validate(config: JacobiConfig) -> None:
         raise ValueError("Price and dual bounds must be positive.")
     if config.bid_price_bound <= 0.0 or config.tolerance_bid_eur_per_mwh < 0.0:
         raise ValueError("The strategic bid bound must be positive and tolerance non-negative.")
+    if max(
+        abs(config.initial_bid_charge_eur_per_mwh),
+        abs(config.initial_offer_discharge_eur_per_mwh),
+    ) > config.bid_price_bound:
+        raise ValueError("Initial strategic prices must lie within the bid-price bound.")
     if config.formulation == "kkt-bigm" and config.big_m_dual < config.price_bound:
         raise ValueError("The KKT dual Big-M must be at least the price bound.")
     ids = [investor.investor_id for investor in config.investors]
@@ -159,20 +166,21 @@ def _initial_state(data: MarketData, config: JacobiConfig) -> JacobiResult:
         for n in data.nodes
     }
     if config.formulation == "strategic-operation":
-        bid_charge = {
-            (investor.investor_id, n, int(t)): -min(
-                config.bid_price_bound,
-                0.5 * investor.degradation_eur_per_mwh,
+        if (
+            config.initial_offer_discharge_eur_per_mwh
+            < config.initial_bid_charge_eur_per_mwh / (data.eta**2)
+        ):
+            raise ValueError(
+                "Initial strategic prices permit a negative-cost same-hour storage loop."
             )
+        bid_charge = {
+            (investor.investor_id, n, int(t)): config.initial_bid_charge_eur_per_mwh
             for investor in config.investors
             for n in data.nodes
             for t in data.times
         }
         offer_discharge = {
-            (investor.investor_id, n, int(t)): min(
-                config.bid_price_bound,
-                0.5 * investor.degradation_eur_per_mwh,
-            )
+            (investor.investor_id, n, int(t)): config.initial_offer_discharge_eur_per_mwh
             for investor in config.investors
             for n in data.nodes
             for t in data.times

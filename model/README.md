@@ -45,8 +45,9 @@ The `--formulation` selector exposes three maintained MPECs:
 
 In `strategic-operation`, a charging bid is the maximum willingness to pay and
 enters the ISO objective with a negative sign; a discharge offer enters with a
-positive sign. Both are bounded by `--bid-price-bound`. Truthful initialization
-is `-d/2` for charging and `+d/2` for discharging. The restriction
+positive sign. Both are bounded by `--bid-price-bound`. Both initialize at zero
+by default and can be changed with `--initial-bid-charge` and
+`--initial-offer-discharge`. The restriction
 `offer_discharge >= bid_charge / eta^2` excludes negative-cost same-hour
 charge/discharge loops.
 
@@ -60,6 +61,7 @@ residual to satisfy `--bid-tolerance`.
 Use `python model/run_model.py --help` for every numerical flag. The default
 baseline has no proximal regularizer; `--proximal-penalty` enables an optional
 L1 capacity best-response regularizer compatible with all three formulations.
+The default Jacobi damping factor is `0.25`.
 
 `--parallel-workers 4` solves the four best responses concurrently in separate
 processes. All four still use the same frozen capacity snapshot, so this changes
@@ -79,3 +81,5 @@ market-clearing or MPEC equations. The supplied
 `input/investors_merchant_wind_pv.json` sensitivity has three 8% WACC investors:
 one merchant, one 100% wind owner, and one 100% PV owner. Use
 `--parallel-workers 3` so their three best responses solve concurrently.
+`input/investors_original_without_i2.json` instead retains the original I1,
+I3, and I4 definitions and removes only the 12% WACC merchant I2.

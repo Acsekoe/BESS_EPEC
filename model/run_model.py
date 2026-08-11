@@ -343,6 +343,8 @@ def _resume_signature(config: JacobiConfig, data_sha256: str) -> dict[str, objec
         signature.update(
             {
                 "bid_price_bound": config.bid_price_bound,
+                "initial_bid_charge_eur_per_mwh": config.initial_bid_charge_eur_per_mwh,
+                "initial_offer_discharge_eur_per_mwh": config.initial_offer_discharge_eur_per_mwh,
                 "tolerance_bid_eur_per_mwh": config.tolerance_bid_eur_per_mwh,
                 "strategic_quantity_withholding": False,
             }
@@ -686,7 +688,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--node-limit-mw", type=float, default=100.0)
     parser.add_argument("--max-sweeps", type=int, default=60)
-    parser.add_argument("--damping", type=float, default=0.7)
+    parser.add_argument("--damping", type=float, default=0.25)
     parser.add_argument("--tolerance-mw", type=float, default=0.5)
     parser.add_argument("--tolerance-mwh", type=float, default=1.0)
     parser.add_argument("--consecutive-sweeps", type=int, default=2)
@@ -714,6 +716,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=500.0,
         help="Absolute EUR/MWh bound for strategic charging bids and discharge offers.",
+    )
+    parser.add_argument(
+        "--initial-bid-charge",
+        type=float,
+        default=0.0,
+        help="Initial charging bid in EUR/MWh for every investor, node, and hour.",
+    )
+    parser.add_argument(
+        "--initial-offer-discharge",
+        type=float,
+        default=0.0,
+        help="Initial discharge offer in EUR/MWh for every investor, node, and hour.",
     )
     parser.add_argument(
         "--bid-tolerance",
@@ -781,6 +795,8 @@ def main() -> int:
         sparse_capacity_tol=args.sparse_capacity_tolerance,
         warm_start_lower_level=not args.no_warm_start,
         bid_price_bound=args.bid_price_bound,
+        initial_bid_charge_eur_per_mwh=args.initial_bid_charge,
+        initial_offer_discharge_eur_per_mwh=args.initial_offer_discharge,
         tolerance_bid_eur_per_mwh=args.bid_tolerance,
     )
     initial_state = None

@@ -17,14 +17,18 @@ and system balances. All investors choose nodal BESS power and energy capacity
 under a shared nodal MW connection limit. The strategic-operation formulation
 additionally lets them choose hourly charging bids and discharge offers.
 
-Three single-investor formulations are maintained:
+Four single-investor formulations are maintained:
 
 1. `model/mpec_strong_duality.py`: primal feasibility, dual feasibility, and
    strong duality, solved as a nonconvex NLP.
-2. `model/mpec_kkt_bigm.py`: explicit KKT complementarity with binaries and a
+2. `model/mpec_relaxed_kkt.py`: primal feasibility, dual feasibility, and
+   stationarity with every nonnegative KKT complementarity product bounded by
+   a selectable Scholtes epsilon (default `1e-3`), solved as a smooth NLP with
+   Ipopt. Product violations and the primal-dual gap are exported for audit.
+3. `model/mpec_kkt_bigm.py`: explicit KKT complementarity with binaries and a
    user-set dual Big-M, solved as a MILP. Continuous capacity is retained; the
    investor revenue and portfolio rent are linearised exactly.
-3. `model/mpec_strategic_operation.py`: the strong-duality MPEC extended with
+4. `model/mpec_strategic_operation.py`: the strong-duality MPEC extended with
    hourly charging buy-bids and discharging sell-offers. Charging and
    discharging remain bounded by the full installed MW, so investors cannot
    withhold quantity. Submitted prices replace degradation in the ISO
@@ -44,6 +48,10 @@ for sequential execution.
 Format-v2 capacity checkpoints and format-v3 strategic checkpoints retain the
 complete Jacobi state and can be resumed with `--resume-from`; the runner
 rejects changed game settings or input data.
+An explicit `--allow-proximal-penalty-change` restart may change only the L1
+proximal coefficient and resets the convergence streak, supporting staged
+zero-penalty then positive-penalty runs without weakening other compatibility
+checks.
 
 The four investors are I1 (merchant, 8% WACC), I2 (merchant, 12% WACC), I3
 (wind-heavy renewable portfolio, 8%), and I4 (solar-heavy portfolio, 8%). The
@@ -59,7 +67,7 @@ the market-clearing or MPEC equations. The maintained three-player sensitivity
 ## Explicitly inactive work
 
 The previous monolithic MPEC/Jacobi implementation, central-planner and export
-helpers, Tikhonov and relaxed-KKT variants, strategic quantity withholding, auctions,
+helpers, Tikhonov and superseded relaxed-KKT variants, strategic quantity withholding, auctions,
 stochastic models, diagnostics, historical inputs, and previous outputs are
 archived under `model/old/`. They are reference material, not maintained code.
 

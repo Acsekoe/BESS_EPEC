@@ -164,16 +164,23 @@ def _strong_duality_solver(args: argparse.Namespace):
     solver = pyo.SolverFactory("ipopt", **kwargs)
     if not solver.available(exception_flag=False):
         raise RuntimeError("Ipopt is unavailable. Set IPOPT_EXECUTABLE or install Ipopt.")
-    solver.options.update(
-        {
-            "linear_solver": "mumps",
-            "max_iter": args.max_solver_iterations,
-            "max_cpu_time": args.max_solve_seconds,
-            "tol": args.solver_tolerance,
-            "acceptable_tol": max(args.solver_tolerance, 1e-5),
-            "print_level": 5 if args.tee else 0,
-        }
-    )
+    options = {
+        "linear_solver": "mumps",
+        "max_iter": args.max_solver_iterations,
+        "max_cpu_time": args.max_solve_seconds,
+        "tol": args.solver_tolerance,
+        "acceptable_tol": max(args.solver_tolerance, 1e-5),
+        "print_level": 5 if args.tee else 0,
+    }
+    if args.formulation == "relaxed-kkt":
+        options.update(
+            {
+                "acceptable_tol": args.solver_tolerance,
+                "constr_viol_tol": args.solver_tolerance,
+                "acceptable_constr_viol_tol": args.solver_tolerance,
+            }
+        )
+    solver.options.update(options)
 
     def solve(model: pyo.ConcreteModel) -> SolveOutcome:
         started = time.perf_counter()
@@ -259,7 +266,8 @@ def _parallel_best_response(
         )
         solver = (
             _strong_duality_solver(args)
-            if config.formulation in {"strong-duality", "strategic-operation"}
+            if config.formulation
+            in {"strong-duality", "relaxed-kkt", "strategic-operation"}
             else _kkt_solver(args)
         )
         outcome = solver(model)
@@ -349,6 +357,8 @@ def _resume_signature(config: JacobiConfig, data_sha256: str) -> dict[str, objec
                 "strategic_quantity_withholding": False,
             }
         )
+    if config.formulation == "relaxed-kkt":
+        signature["complementarity_epsilon"] = config.complementarity_epsilon
     return signature
 
 
@@ -391,6 +401,7 @@ def _load_checkpoint(
     data: MarketData,
     config: JacobiConfig,
     data_sha256: str,
+    allow_proximal_penalty_change: bool = False,
 ) -> JacobiResult:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -407,6 +418,7 @@ def _load_checkpoint(
         )
     expected_signature = _resume_signature(config, data_sha256)
     actual_signature = payload.get("resume_signature")
+    proximal_penalty_changed = False
     if actual_signature != expected_signature:
         if not isinstance(actual_signature, dict):
             raise ValueError("Resume checkpoint has no valid configuration signature.")
@@ -415,11 +427,15 @@ def _load_checkpoint(
             for key, expected in expected_signature.items()
             if actual_signature.get(key) != expected
         ]
-        details = ", ".join(mismatches) if mismatches else "unknown fields"
-        raise ValueError(
-            "Resume checkpoint does not match the requested game configuration: "
-            f"{details}. Use the original settings and data."
-        )
+        if allow_proximal_penalty_change and set(mismatches) == {"proximal_penalty"}:
+            proximal_penalty_changed = True
+        else:
+            details = ", ".join(mismatches) if mismatches else "unknown fields"
+            raise ValueError(
+                "Resume checkpoint does not match the requested game configuration: "
+                f"{details}. Use the original settings and data, or explicitly allow "
+                "a proximal-penalty restart."
+            )
 
     investor_ids = [investor.investor_id for investor in config.investors]
     expected_keys = {
@@ -534,10 +550,18 @@ def _load_checkpoint(
         energy=energy,
         history=history,
         sweep=sweep,
-        converged=bool(payload.get("converged", False)),
-        stop_reason=str(payload.get("stop_reason", "")),
+        converged=(
+            False
+            if proximal_penalty_changed
+            else bool(payload.get("converged", False))
+        ),
+        stop_reason=(
+            "restarted with changed proximal penalty"
+            if proximal_penalty_changed
+            else str(payload.get("stop_reason", ""))
+        ),
         projection_count=projection_count,
-        stable_sweeps=stable_sweeps,
+        stable_sweeps=0 if proximal_penalty_changed else stable_sweeps,
         bid_charge=bid_charge,
         offer_discharge=offer_discharge,
     )
@@ -618,6 +642,35 @@ def _write_outputs(
             for investor in config.investors
         },
     }
+    if config.formulation == "relaxed-kkt":
+        latest = state.history[-len(config.investors) :] if state.history else []
+        summary["relaxed_kkt"] = {
+            "complementarity_epsilon": config.complementarity_epsilon,
+            "latest_maximum_product": max(
+                (
+                    float(row["complementarity_max_product"])
+                    for row in latest
+                    if row.get("complementarity_max_product") is not None
+                ),
+                default=None,
+            ),
+            "latest_maximum_violation": max(
+                (
+                    float(row["complementarity_max_violation"])
+                    for row in latest
+                    if row.get("complementarity_max_violation") is not None
+                ),
+                default=None,
+            ),
+            "latest_maximum_absolute_primal_dual_gap_eur_per_day": max(
+                (
+                    abs(float(row["primal_dual_gap_eur_per_day"]))
+                    for row in latest
+                    if row.get("primal_dual_gap_eur_per_day") is not None
+                ),
+                default=None,
+            ),
+        }
     if config.formulation == "strategic-operation":
         summary["strategic_operation"] = {
             "quantity_withholding": False,
@@ -683,7 +736,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--formulation",
-        choices=("strong-duality", "kkt-bigm", "strategic-operation"),
+        choices=("strong-duality", "relaxed-kkt", "kkt-bigm", "strategic-operation"),
         default="strong-duality",
     )
     parser.add_argument("--node-limit-mw", type=float, default=100.0)
@@ -692,6 +745,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tolerance-mw", type=float, default=0.5)
     parser.add_argument("--tolerance-mwh", type=float, default=1.0)
     parser.add_argument("--consecutive-sweeps", type=int, default=2)
+    parser.add_argument(
+        "--run-to-max-sweeps",
+        action="store_true",
+        help="Continue through --max-sweeps even after satisfying convergence.",
+    )
     parser.add_argument("--initial-power-mw", type=float, default=0.0)
     parser.add_argument("--initial-ratio-hours", type=float, default=2.0)
     parser.add_argument(
@@ -711,6 +769,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--price-bound", type=float, default=500.0)
     parser.add_argument("--dual-bound", type=float, default=10_000.0)
     parser.add_argument("--big-m-dual", type=float, default=800.0)
+    parser.add_argument(
+        "--complementarity-epsilon",
+        type=float,
+        default=1.0e-3,
+        help=(
+            "Upper bound x*y <= epsilon for every relaxed-KKT "
+            "complementarity pair."
+        ),
+    )
     parser.add_argument(
         "--bid-price-bound",
         type=float,
@@ -761,6 +828,14 @@ def parse_args() -> argparse.Namespace:
             "target sweep number, not the number of additional sweeps."
         ),
     )
+    parser.add_argument(
+        "--allow-proximal-penalty-change",
+        action="store_true",
+        help=(
+            "Allow --resume-from when only --proximal-penalty differs; reset "
+            "the convergence streak. Use a new --output-dir to preserve stage 1."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -783,6 +858,7 @@ def main() -> int:
         tolerance_mw=args.tolerance_mw,
         tolerance_mwh=args.tolerance_mwh,
         consecutive_sweeps=args.consecutive_sweeps,
+        stop_at_convergence=not args.run_to_max_sweeps,
         initial_power_mw=args.initial_power_mw,
         initial_ratio_hours=args.initial_ratio_hours,
         numerical_initial_power_mw=args.numerical_initial_power_mw,
@@ -792,6 +868,7 @@ def main() -> int:
         price_bound=args.price_bound,
         dual_bound=args.dual_bound,
         big_m_dual=args.big_m_dual,
+        complementarity_epsilon=args.complementarity_epsilon,
         sparse_capacity_tol=args.sparse_capacity_tolerance,
         warm_start_lower_level=not args.no_warm_start,
         bid_price_bound=args.bid_price_bound,
@@ -803,7 +880,11 @@ def main() -> int:
     if args.resume_from is not None:
         try:
             initial_state = _load_checkpoint(
-                args.resume_from, data, config, data_sha256
+                args.resume_from,
+                data,
+                config,
+                data_sha256,
+                allow_proximal_penalty_change=args.allow_proximal_penalty_change,
             )
         except ValueError as exc:
             raise SystemExit(f"Cannot resume: {exc}") from exc
@@ -831,9 +912,17 @@ def main() -> int:
             if args.formulation == "strategic-operation"
             else ""
         )
+        complementarity_status = (
+            "; max KKT product "
+            f"{max((float(row['complementarity_max_product']) for row in latest if row.get('complementarity_max_product') is not None), default=math.nan):.3e}, "
+            "violation "
+            f"{max((float(row['complementarity_max_violation']) for row in latest if row.get('complementarity_max_violation') is not None), default=math.nan):.1e}"
+            if args.formulation == "relaxed-kkt"
+            else ""
+        )
         print(
             f"sweep {state.sweep:>3}: max raw deviation {max_mw:.3f} MW / "
-            f"{max_mwh:.3f} MWh{bid_status}; {status}"
+            f"{max_mwh:.3f} MWh{bid_status}{complementarity_status}; {status}"
         )
         if not args.no_output:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -854,7 +943,8 @@ def main() -> int:
     if args.parallel_workers == 1:
         solver = (
             _strong_duality_solver(args)
-            if args.formulation in {"strong-duality", "strategic-operation"}
+            if args.formulation
+            in {"strong-duality", "relaxed-kkt", "strategic-operation"}
             else _kkt_solver(args)
         )
         state = run_jacobi(

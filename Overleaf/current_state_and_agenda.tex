@@ -267,10 +267,10 @@ P^{discharge}_{i,n,t,s}
 
 
 \begin{frame}{IEEE-9 calibration: two renewable export bottlenecks}
-\vspace{-0.15cm}
+\vspace{-0.25cm}
 
-\begin{columns}[T,onlytextwidth]
-    \column{0.60\textwidth}
+\begin{columns}[c,onlytextwidth]
+    \column{0.605\textwidth}
     \centering
     \resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
@@ -334,8 +334,8 @@ P^{discharge}_{i,n,t,s}
 \coordinate (n4) at ( 0.00,-1.20);
 \coordinate (n1) at ( 0.00,-3.00);
 
-% Generator symbol coordinates.
-% Bus 2 has no generator in the calibrated dataset (G_IEEE2 removed).
+% Synchronous-generator symbol coordinates.
+\coordinate (g2) at (-7.10, 3.00);
 \coordinate (g3) at ( 7.10, 3.00);
 \coordinate (g1) at ( 0.00,-4.15);
 
@@ -369,6 +369,7 @@ P^{discharge}_{i,n,t,s}
 \draw[transmission] (n4) -- (n1); % N4--N1
 
 % Generator connections.
+\draw[transmission] (n2) -- (g2);
 \draw[transmission] (n3) -- (g3);
 \draw[transmission] (n1) -- (g1);
 
@@ -443,8 +444,10 @@ P^{discharge}_{i,n,t,s}
 \node[line label,rotate=90] at ( 0.30,-2.10) {Line 1--4};
 
 % Synchronous-generator symbols and names.
+\node[generator] at (g2) {$\sim$};
 \node[generator] at (g3) {$\sim$};
 \node[generator] at (g1) {$\sim$};
+\node[component label] at ($(g2)+(0,-0.55)$) {G2};
 \node[component label] at ($(g3)+(0,-0.55)$) {G3};
 \node[component label] at ($(g1)+(0,-0.55)$) {G1};
 
@@ -464,23 +467,38 @@ P^{discharge}_{i,n,t,s}
 \end{tikzpicture}%
 }
 
-    \column{0.40\textwidth}
-    \vspace{0.05cm}
-    {\scriptsize
-    \begin{tabular}{@{}lccc@{}}
+    \column{0.315\textwidth}
+    \centering
+    {\footnotesize
+    \renewcommand{\arraystretch}{1.25}
+    \resizebox{\linewidth}{!}{%
+    \begin{tabular}{@{}lr r r@{}}
         \toprule
-        \textbf{Unit} & \textbf{Node} & \textbf{MW} & \textbf{MC} \\
-        & & & \textbf{\euro/MWh} \\
+        \textbf{Unit} & \textbf{Node} & \textbf{MW} & \makecell[r]{\textbf{MC}\\\textbf{\euro/MWh}} \\
         \midrule
-        G1 & N1 & 250 & 60.00 \\
-        G2 & N2 & 300 & 52.20 \\
-        G3 & N3 & 270 & 67.15 \\
+        G1   & N1 & 250 & 60.00 \\
+        G2   & N2 & 300 & 52.20 \\
+        G3   & N3 & 270 & 67.15 \\
+        \addlinespace[0.35ex]
         Wind & N1 & 105 & 0.00 \\
-        PV & N6 & 235 & 0.00 \\
-        PV & N8 & 436 & 0.00 \\
+        PV   & N6 & 235 & 0.00 \\
+        PV   & N8 & 436 & 0.00 \\
         \bottomrule
-    \end{tabular}}
+    \end{tabular}}}
 \end{columns}
+
+\vspace{0.50cm}
+\hrule height 0.4pt depth 0pt \relax
+\vspace{0.30cm}
+
+{\footnotesize
+\begin{itemize}
+    \setlength{\itemsep}{0.12cm}
+    \item \textbf{I1} -- merchant, WACC 8\%.
+    \item \textbf{I2} -- merchant, WACC 12\%.
+    \item \textbf{I3} -- wind-heavy portfolio, WACC 8\%: 80\% of N1 wind, 20\% of N6/N8 PV.
+    \item \textbf{I4} -- solar-heavy portfolio, WACC 8\%: 80\% of N6/N8 PV, 20\% of N1 wind.
+\end{itemize}}
 \end{frame}
 
 
@@ -555,79 +573,112 @@ P^{discharge}_{i,n,t,s}
 \end{frame}
 
 
-\begin{frame}{Capacity totals stabilize by sweep 2; siting keeps moving}
-\vspace{-0.15cm}
-
-\centering
-{\small\textbf{Investor totals remain essentially fixed (MW)}}
-
-\vspace{0.08cm}
-{\small
-\begin{tabular}{lrrr}
-    \toprule
-    \textbf{Investor} & \textbf{Sweep 2} & \textbf{Sweep 20} & \textbf{Change} \\
-    \midrule
-    I1 & 50.245 & 50.266 & +0.021 \\
-    I2 & 50.245 & 50.266 & +0.021 \\
-    I3 & 36.353 & 36.688 & +0.335 \\
-    I4 & 50.245 & 50.290 & +0.045 \\
-    \midrule
-    \textbf{Fleet} & \textbf{187.087} & \textbf{187.510} & \textbf{+0.423} \\
-    \bottomrule
-\end{tabular}}
-
-\vspace{0.28cm}
-{\small\textbf{The same capacity is repeatedly reallocated across nodes (MW)}}
-
-\vspace{0.08cm}
-{\small
-\begin{tabular}{crrrrr}
-    \toprule
-    \textbf{Sweep} & \textbf{N3} & \textbf{N6} & \textbf{N8} & \textbf{N9} & \textbf{Fleet} \\
-    \midrule
-     2 & 20.79 & 54.23 & 67.22 & 44.84 & \textbf{187.09} \\
-     5 & 25.36 & 55.36 & 68.96 & 37.50 & \textbf{187.18} \\
-    10 & 22.83 & 54.32 & 67.21 & 42.82 & \textbf{187.18} \\
-    15 & 19.78 & 56.53 & 70.92 & 39.95 & \textbf{187.18} \\
-    20 & 21.43 & 54.68 & 67.28 & 44.11 & \textbf{187.51} \\
-    \bottomrule
-\end{tabular}}
-
-\vspace{0.22cm}
-{\footnotesize
-Fleet energy is equally stable: 547.20 MWh at sweep 2 and 547.23 MWh at sweep 20.}
-\end{frame}
-
-
-\begin{frame}{Planner and EPEC agree on quantity---not location}
+\begin{frame}{Why proximal regularization? Nodal siting cycles}
 \vspace{-0.12cm}
 
 \centering
-{\small
-\begin{tabular}{lrrr}
-    \toprule
-    \textbf{Metric} & \textbf{Planner} & \textbf{EPEC sweep 20} & \textbf{Difference} \\
-    \midrule
-    Total power (MW) & 187.182 & 187.510 & +0.328 \\
-    Total energy (MWh) & 547.196 & 547.228 & +0.033 \\
-    Resource cost (\euro/day) & 375,581.18 & 375,582.07 & +0.89 \\
-    \addlinespace[0.08cm]
-    N3 power (MW) & 42.18 & 21.43 & -20.75 \\
-    N6 power (MW) & 47.35 & 54.68 & +7.33 \\
-    N8 power (MW) & 55.45 & 67.28 & +11.83 \\
-    N9 power (MW) & 42.21 & 44.11 & +1.90 \\
-    \bottomrule
-\end{tabular}}
+\includegraphics[width=0.92\textwidth]{figures/capacity_only_node_cycling.png}
 
-\vspace{0.32cm}
-\begin{itemize}
-    \item Aggregate investment differs by only 0.18\% in MW and 0.01\% in MWh.
-    \item Strategic ownership shifts capacity away from N3 and toward the renewable nodes N6 and N8.
-\end{itemize}
+\vspace{-0.12cm}
+{\footnotesize
+\textbf{After 50 unpenalized sweeps:} the fleet is stable at 187.18 MW / 547.20 MWh, but raw nodal best-response gaps remain 8.9 MW / 27.5 MWh.}
 
-\vspace{0.10cm}
-{\scriptsize
-Planner: joint capacity and dispatch cost minimization. EPEC cost uses the independently re-cleared dispatch and values all capacity at the planner's 8\% WACC. The EPEC reached its 20-sweep limit without formal nodal convergence.}
+\vspace{0.07cm}
+{\scriptsize Stable aggregate capacity $\not\Rightarrow$ stable siting: I3/I4 repeatedly reallocate between N3 and N9.}
+
+\vspace{0.04cm}
+{\tiny Strong-duality MPEC, damping $0.25$, $\rho=0$. Sweeps 51--62 are a diagnostic continuation from the original sweep-50 checkpoint and only identify the cycling nodes.}
+\end{frame}
+
+
+\begin{frame}{Two proximal sweeps meet the convergence rule}
+\vspace{-0.15cm}
+
+\centering
+\includegraphics[width=0.94\textwidth]{figures/capacity_only_relaxed_kkt_convergence.png}
+
+\vspace{-0.12cm}
+\begin{columns}[T,onlytextwidth]
+    \column{0.55\textwidth}
+    {\scriptsize
+    \textbf{Unpenalized, sweep 20:} 2.406 MW / 9.028 MWh; not converged.\\[0.08cm]
+    \textbf{$\rho=0.01$:} sweep 21 falls to 0.0848 MW / 0.00049 MWh; sweep 22 to 0.0432 MW / 0.00052 MWh.}
+
+    \column{0.43\textwidth}
+    \centering
+    {\scriptsize
+    \begin{tabular}{lrr}
+        \toprule
+        & \textbf{MW} & \textbf{MWh} \\
+        \midrule
+        I1 & 46.79 & 136.80 \\
+        I2 & 46.79 & 136.80 \\
+        I3 & 46.80 & 136.80 \\
+        I4 & 46.79 & 136.80 \\
+        \midrule
+        \textbf{Fleet} & \textbf{187.18} & \textbf{547.20} \\
+        \bottomrule
+    \end{tabular}}
+\end{columns}
+
+\vspace{0.05cm}
+{\tiny Capacity-only relaxed-KKT MPEC; Scholtes $\epsilon=10^{-3}$; damping $0.25$; four parallel IPOPT best responses. Convergence requires raw gaps below 0.5 MW / 1 MWh for two consecutive sweeps.}
+\end{frame}
+
+
+\begin{frame}{Stable capacity allocation at sweep 22}
+\vspace{-0.05cm}
+
+\begin{columns}[T,onlytextwidth]
+    \column{0.49\textwidth}
+    \centering
+    {\small\textbf{Power capacity (MW)}}
+
+    \vspace{0.08cm}
+    {\scriptsize
+    \renewcommand{\arraystretch}{1.18}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrr}
+        \toprule
+        & \textbf{N3} & \textbf{N6} & \textbf{N8} & \textbf{N9} & \textbf{Total} \\
+        \midrule
+        I1 & 9.70 & 13.80 & 17.18 & 6.11 & 46.79 \\
+        I2 & 10.35 & 13.77 & 17.12 & 5.55 & 46.79 \\
+        I3 & 15.54 & 8.25 & 7.81 & 15.20 & 46.80 \\
+        I4 & 13.41 & 8.25 & 7.82 & 17.31 & 46.79 \\
+        \midrule
+        \textbf{Node} & \textbf{49.00} & \textbf{44.08} & \textbf{49.93} & \textbf{44.17} & \textbf{187.18} \\
+        \bottomrule
+    \end{tabular}}}
+
+    \column{0.49\textwidth}
+    \centering
+    {\small\textbf{Energy capacity (MWh)}}
+
+    \vspace{0.08cm}
+    {\scriptsize
+    \renewcommand{\arraystretch}{1.18}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrr}
+        \toprule
+        & \textbf{N3} & \textbf{N6} & \textbf{N8} & \textbf{N9} & \textbf{Total} \\
+        \midrule
+        I1 & 36.32 & 43.11 & 34.53 & 22.84 & 136.80 \\
+        I2 & 38.69 & 42.99 & 34.32 & 20.80 & 136.80 \\
+        I3 & 40.67 & 33.92 & 19.02 & 43.19 & 136.80 \\
+        I4 & 39.37 & 33.23 & 17.86 & 46.33 & 136.80 \\
+        \midrule
+        \textbf{Node} & \textbf{155.05} & \textbf{153.25} & \textbf{105.73} & \textbf{133.16} & \textbf{547.20} \\
+        \bottomrule
+    \end{tabular}}}
+\end{columns}
+
+\vspace{0.35cm}
+{\footnotesize
+I1/I2 place more capacity at N6/N8; renewable-portfolio investors I3/I4 place more at N3/N9. All other nodes are zero.}
+
+\vspace{0.08cm}
+{\tiny Converged for the regularized best responses. A $\rho=0$ audit is still required before claiming an equilibrium of the unregularized game.}
 \end{frame}
 
 

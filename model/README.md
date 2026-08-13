@@ -10,6 +10,8 @@ allows strategic two-sided operating prices without quantity withholding.
 - `dual_market_clearing_model.py` — explicit dual LP and primal/dual check.
 - `mpec_strong_duality.py` — single-investor MPEC using primal feasibility,
   dual feasibility, and strong duality.
+- `mpec_relaxed_kkt.py` — capacity-only smooth Scholtes relaxation of every
+  lower-level KKT complementarity product for Ipopt.
 - `mpec_kkt_bigm.py` — the same MPEC using explicit KKT complementarity and
   binary Big-M linearisation.
 - `mpec_strategic_operation.py` — capacity-and-price MPEC with hourly charging
@@ -28,6 +30,7 @@ All superseded models, scripts, datasets, and results are under `old/`.
 python model/primal_market_clearing_model.py
 python model/dual_market_clearing_model.py --compare
 python model/run_model.py --formulation strong-duality
+python model/run_model.py --formulation relaxed-kkt --complementarity-epsilon 1e-3
 python model/run_model.py --formulation strong-duality --parallel-workers 4
 python model/run_model.py --formulation kkt-bigm --big-m-dual 800
 python model/run_model.py --formulation strategic-operation --bid-price-bound 500
@@ -36,12 +39,20 @@ python model/run_model.py --resume-from model/output/<run>/checkpoint.json --max
 python model/run_model.py --investor-config model/input/investors_merchant_wind_pv.json --parallel-workers 3
 ```
 
-The `--formulation` selector exposes three maintained MPECs:
+The `--formulation` selector exposes four maintained MPECs:
 
 1. `strong-duality`: capacity-only nonlinear MPEC;
-2. `kkt-bigm`: capacity-only KKT/Big-M MILP;
-3. `strategic-operation`: capacity plus hourly two-sided storage prices,
+2. `relaxed-kkt`: capacity-only nonlinear MPEC with each nonnegative
+   complementarity product bounded by `--complementarity-epsilon` (default
+   `1e-3`), solved by Ipopt;
+3. `kkt-bigm`: capacity-only KKT/Big-M MILP;
+4. `strategic-operation`: capacity plus hourly two-sided storage prices,
    embedded by strong duality.
+
+Relaxed-KKT runs export the maximum complementarity product, its numerical
+bound violation, and the primal-dual objective gap for every best response.
+The formulation is an epsilon approximation and must not be described as an
+exact KKT solve.
 
 In `strategic-operation`, a charging bid is the maximum willingness to pay and
 enters the ISO objective with a negative sign; a discharge offer enters with a
@@ -75,6 +86,12 @@ Jacobi state, convergence streak, projection count, and compact history. On
 resume, `--max-sweeps` is the total target sweep number. The runner rejects
 changed game settings or input data, while solver limits and the number of
 parallel workers may be changed.
+To use a completed stage as the initial state for a different L1 proximal
+penalty, pass `--allow-proximal-penalty-change`. Only the penalty itself may
+change, and the convergence streak is reset. Use a new `--output-dir` to retain
+the zero-penalty stage as a separate result.
+Use `--run-to-max-sweeps` when a diagnostic continuation should complete its
+full requested sweep horizon even if the formal convergence rule is met early.
 
 `--investor-config` accepts a JSON investor population without changing the
 market-clearing or MPEC equations. The supplied

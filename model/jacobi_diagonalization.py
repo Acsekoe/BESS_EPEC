@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 import pyomo.environ as pyo
 
 import mpec_kkt_bigm
+import mpec_relaxed_kkt
 import mpec_strategic_operation
 import mpec_strong_duality
 from mpec_strong_duality import InvestorConfig
@@ -26,6 +27,7 @@ class JacobiConfig:
     tolerance_mw: float = 0.5
     tolerance_mwh: float = 1.0
     consecutive_sweeps: int = 2
+    stop_at_convergence: bool = True
     initial_power_mw: float = 0.0
     initial_ratio_hours: float = 2.0
     numerical_initial_power_mw: float = 10.0
@@ -35,6 +37,7 @@ class JacobiConfig:
     price_bound: float = 500.0
     dual_bound: float = 10_000.0
     big_m_dual: float = 800.0
+    complementarity_epsilon: float = 1.0e-3
     sparse_capacity_tol: float = 1e-8
     warm_start_lower_level: bool = True
     bid_price_bound: float = 500.0
@@ -62,6 +65,9 @@ class BestResponseResult:
     profit_eur_per_day: float
     proposed_bid_charge: dict[tuple[str, int], float] = field(default_factory=dict)
     proposed_offer_discharge: dict[tuple[str, int], float] = field(default_factory=dict)
+    complementarity_max_product: float | None = None
+    complementarity_max_violation: float | None = None
+    primal_dual_gap_eur_per_day: float | None = None
 
 
 @dataclass
@@ -113,6 +119,7 @@ def four_investors(data: MarketData) -> tuple[InvestorConfig, ...]:
 def _validate(config: JacobiConfig) -> None:
     if config.formulation not in {
         "strong-duality",
+        "relaxed-kkt",
         "kkt-bigm",
         "strategic-operation",
     }:
@@ -135,6 +142,8 @@ def _validate(config: JacobiConfig) -> None:
         raise ValueError("Capacity seeds, tolerances, and penalties cannot be negative.")
     if config.price_bound <= 0.0 or config.dual_bound <= 0.0:
         raise ValueError("Price and dual bounds must be positive.")
+    if config.complementarity_epsilon < 0.0:
+        raise ValueError("complementarity_epsilon cannot be negative.")
     if config.bid_price_bound <= 0.0 or config.tolerance_bid_eur_per_mwh < 0.0:
         raise ValueError("The strategic bid bound must be positive and tolerance non-negative.")
     if max(
@@ -404,6 +413,11 @@ def build_best_response(
     )
     if config.formulation == "strong-duality":
         model = mpec_strong_duality.build_model(**common_kwargs)
+    elif config.formulation == "relaxed-kkt":
+        model = mpec_relaxed_kkt.build_model(
+            **common_kwargs,
+            complementarity_epsilon=config.complementarity_epsilon,
+        )
     elif config.formulation == "kkt-bigm":
         model = mpec_kkt_bigm.build_model(**common_kwargs)
     else:
@@ -491,6 +505,12 @@ def collect_best_response(
         if outcome.has_solution
         else math.nan
     )
+    relaxed_kkt = (
+        mpec_relaxed_kkt.diagnostics(model)
+        if outcome.has_solution
+        and getattr(model, "_lower_level_optimality", None) == "relaxed-kkt"
+        else None
+    )
     return BestResponseResult(
         investor_id,
         outcome,
@@ -499,6 +519,24 @@ def collect_best_response(
         profit,
         proposed_bid_charge,
         proposed_offer_discharge,
+        (
+            float(relaxed_kkt["maximum_product"])
+            if relaxed_kkt is not None
+            else None
+        ),
+        (
+            max(
+                float(relaxed_kkt["maximum_upper_bound_violation"]),
+                float(relaxed_kkt["maximum_nonnegativity_violation"]),
+            )
+            if relaxed_kkt is not None
+            else None
+        ),
+        (
+            float(relaxed_kkt["primal_dual_gap_eur_per_day"])
+            if relaxed_kkt is not None
+            else None
+        ),
     )
 
 
@@ -517,7 +555,7 @@ def run_jacobi(
         raise ValueError("Either a sequential solver or a batch solver is required.")
     state = initial_state if initial_state is not None else _initial_state(data, config)
     stable_sweeps = state.stable_sweeps
-    if state.converged:
+    if state.converged and config.stop_at_convergence:
         return state
 
     for sweep in range(state.sweep + 1, config.max_sweeps + 1):
@@ -694,6 +732,15 @@ def run_jacobi(
                     "solve_seconds": outcome.seconds,
                     "best_feasible_objective": outcome.best_feasible_objective,
                     "best_objective_bound": outcome.best_objective_bound,
+                    "proximal_penalty": config.proximal_penalty,
+                    "complementarity_epsilon": (
+                        config.complementarity_epsilon
+                        if config.formulation == "relaxed-kkt"
+                        else None
+                    ),
+                    "complementarity_max_product": response.complementarity_max_product,
+                    "complementarity_max_violation": response.complementarity_max_violation,
+                    "primal_dual_gap_eur_per_day": response.primal_dual_gap_eur_per_day,
                     "profit_eur_per_day": response.profit_eur_per_day,
                     "old_power_mw": sum(old_power[investor_id, n] for n in data.nodes),
                     "best_response_power_mw": sum(proposals_power[investor_id, n] for n in data.nodes),
@@ -715,12 +762,14 @@ def run_jacobi(
             state.converged = True
             state.stop_reason = f"converged for {stable_sweeps} consecutive sweeps"
         elif not all_optimal:
+            state.converged = False
             state.stop_reason = "one or more best responses were not solved to optimality"
         else:
+            state.converged = False
             state.stop_reason = "maximum sweeps reached"
         if on_sweep is not None:
             on_sweep(state)
-        if state.converged:
+        if state.converged and config.stop_at_convergence:
             break
 
     return state

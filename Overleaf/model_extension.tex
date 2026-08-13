@@ -10,6 +10,10 @@
 \usepackage{longtable}
 \usepackage{ragged2e}
 \usepackage{textcomp}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{calc,arrows.meta}
 \usepackage[hidelinks]{hyperref}
 
 \setlength{\mathindent}{0pt}
@@ -27,23 +31,39 @@
 
 The model is a deterministic equilibrium problem with equilibrium constraints
 (EPEC) for battery energy storage system (BESS) capacity investment in a nodal
-electricity market. Each investor chooses nodal power and energy capacity.
-Conditional on those capacities, an independent system operator (ISO)
-minimizes the physical cost of generation and BESS operation.
+electricity market. The structure is bilevel. At the lower level, an
+independent system operator (ISO) clears a fixed-demand DC spot market and
+minimizes the physical cost of generation and BESS operation. At the upper
+level, each investor chooses nodal power and energy capacity anticipating that
+market clearing.
+
+The presentation below follows that order: the lower-level linear program
+(LLP) is stated first, its Karush--Kuhn--Tucker (KKT) conditions are derived
+next, and the upper-level investor problem and the resulting EPEC are stated
+last.
 
 The formulation uses fixed demand, exact nodal and system balances, and an
-exact primal--dual representation of the lower-level linear program. It
-contains no strategic operating bids, load shedding, dispatch regularization,
-leader-side price penalty, proximal term, Tikhonov term, minimum-norm price
-selector, or relaxed complementarity condition. During an investor's best
-response, rival capacities are fixed parameters; the capacity profile is
-updated outside the mathematical program by diagonalization.
+exact representation of lower-level optimality. It contains no strategic
+operating bids, load shedding, dispatch regularization, leader-side price
+penalty, proximal term, Tikhonov term, minimum-norm price selector, or relaxed
+complementarity condition. During an investor's best response, rival
+capacities are fixed parameters; the capacity profile is updated outside the
+mathematical program by diagonalization.
+
+\paragraph{Notation conventions.}
+Sums over several indices run over the product of the corresponding sets, so
+$\sum_{g,t}$ abbreviates $\sum_{g\in\mathcal G}\sum_{t\in\mathcal T}$.
+Quantifiers are abbreviated in the same way: $\forall g,t$ means
+$\forall g\in\mathcal G,\ t\in\mathcal T$. Dual variables are stated in
+parentheses to the right of the constraint they price. All multipliers of
+inequality constraints are nonnegative; the sign convention and its relation
+to the implementation are made explicit in Section~\ref{sec:kkt}.
 
 \section{Nomenclature}
 
-Unless indicated otherwise, sums extend over the full set associated with each
-index. Power, energy, and monetary quantities are measured in MW, MWh, and EUR,
-respectively.
+Power, energy, and monetary quantities are measured in MW, MWh, and EUR,
+respectively. Because each dispatch period lasts one hour, every multiplier of
+a power or energy constraint carries the unit EUR/MWh.
 
 {\renewcommand{\arraystretch}{1.12}
 \begin{longtable}{@{}>{\RaggedRight\arraybackslash}p{0.20\textwidth}
@@ -97,19 +117,7 @@ $s_{i,g}$ & -- & Share of generator $g$ owned by investor $i$.\\
 $\omega$ & -- & Jacobi damping factor, $0<\omega\leq 1$.\\
 
 \addlinespace
-\multicolumn{3}{@{}l}{\textit{Upper-level variables and accounting terms}}\\
-\addlinespace[0.3ex]
-$X^P_{i,n}$ & MW & BESS power capacity selected by investor $i$ at node $n$.\\
-$X^E_{i,n}$ & MWh & BESS energy capacity selected by investor $i$ at node $n$.\\
-$\operatorname{CRF}_i$ & -- & Capital-recovery factor of investor $i$.\\
-$K_i$ & EUR/day & Daily annualized investment cost of investor $i$.\\
-$R_i^{\mathrm{BESS}}$ & EUR/day & Spot-market revenue from investor $i$'s BESS operation.\\
-$R_i^{\mathrm{gen}}$ & EUR/day & Spot-market rent of investor $i$'s generation portfolio.\\
-$C_i^{\mathrm{deg}}$ & EUR/day & BESS degradation cost incurred by investor $i$.\\
-$\Pi_i$ & EUR/day & Daily profit of investor $i$.\\
-
-\addlinespace
-\multicolumn{3}{@{}l}{\textit{Lower-level primal variables}}\\
+\multicolumn{3}{@{}l}{\textit{Lower-level primal variables ($\Xi^{\mathrm{LL}}$)}}\\
 \addlinespace[0.3ex]
 $P_{g,t}$ & MW & Output of generator $g$ in period $t$.\\
 $p^{\mathrm{ch}}_{j,n,t}$ & MW & Charging power of investor $j$'s BESS at node $n$.\\
@@ -120,23 +128,422 @@ $f_{l,t}$ & MW & Line flow, defined by $f_{l,t}=\sum_n H_{l,n}z_{n,t}$.\\
 $Z^P$ & EUR/day & Objective value of the primal market-clearing problem.\\
 
 \addlinespace
-\multicolumn{3}{@{}l}{\textit{Lower-level dual variables}}\\
+\multicolumn{3}{@{}l}{\textit{Lower-level dual variables ($\Xi^{\mathrm{D}}$)}}\\
 \addlinespace[0.3ex]
-$\lambda_{n,t}$ & EUR/MWh & Nodal-balance multiplier and locational marginal price (LMP).\\
-$\lambda_t^{\mathrm{sys}}$ & EUR/MWh & Free multiplier of the system-wide power balance.\\
-$\nu_{g,t}$ & -- & Multiplier of the generation upper bound; $\nu_{g,t}\leq 0$.\\
-$\mu^+_{l,t}$ & -- & Multiplier of the upper line-flow bound; $\mu^+_{l,t}\leq 0$.\\
-$\mu^-_{l,t}$ & -- & Multiplier of the lower line-flow bound; $\mu^-_{l,t}\geq 0$.\\
-$\rho_{j,n,t}$ & -- & Multiplier of the charging-power bound; $\rho_{j,n,t}\leq 0$.\\
-$\sigma_{j,n,t}$ & -- & Multiplier of the discharging-power bound; $\sigma_{j,n,t}\leq 0$.\\
-$\gamma_{j,n,t}$ & -- & Free multiplier of the state-of-charge transition.\\
-$\delta_{j,n,\tau}$ & -- & Multiplier of the energy-capacity bound; $\delta_{j,n,\tau}\leq 0$.\\
-$\rho^{\mathrm{per}}_{j,n}$ & -- & Free multiplier of the periodic state-of-charge condition.\\
+$\lambda_{n,t}$ & EUR/MWh & Nodal-balance multiplier and locational marginal price (LMP); free.\\
+$\lambda_t^{\mathrm{sys}}$ & EUR/MWh & Multiplier of the system-wide power balance; free.\\
+$\nu_{g,t}$ & EUR/MWh & Multiplier of the generation upper bound; $\nu_{g,t}\geq 0$.\\
+$\mu^+_{l,t}$ & EUR/MWh & Multiplier of the forward line-flow limit; $\mu^+_{l,t}\geq 0$.\\
+$\mu^-_{l,t}$ & EUR/MWh & Multiplier of the reverse line-flow limit; $\mu^-_{l,t}\geq 0$.\\
+$\rho_{j,n,t}$ & EUR/MWh & Multiplier of the charging-power bound; $\rho_{j,n,t}\geq 0$.\\
+$\sigma_{j,n,t}$ & EUR/MWh & Multiplier of the discharging-power bound; $\sigma_{j,n,t}\geq 0$.\\
+$\gamma_{j,n,t}$ & EUR/MWh & Multiplier of the state-of-charge transition; free.\\
+$\delta_{j,n,\tau}$ & EUR/MWh & Multiplier of the energy-capacity bound; $\delta_{j,n,\tau}\geq 0$.\\
+$\rho^{\mathrm{per}}_{j,n}$ & EUR/MWh & Multiplier of the periodic state-of-charge condition; free.\\
+$\pi^{\mathrm{g}},\pi^{\mathrm{ch}},\pi^{\mathrm{dis}},\pi^{\mathrm{e}}$ & EUR/MWh & Reduced costs of generation, charging, discharging, and stored energy.\\
 $Z^D$ & EUR/day & Objective value of the dual market-clearing problem.\\
+
+\addlinespace
+\multicolumn{3}{@{}l}{\textit{Complementarity linearization}}\\
+\addlinespace[0.3ex]
+$\beta^{\bullet}$ & -- & Binary selecting the active branch of one complementarity pair.\\
+$M^{\mathrm{s}}_{\bullet}$ & MW, MWh & Valid upper bound on the corresponding primal slack.\\
+$M^{\mathrm{d}}$ & EUR/MWh & Common upper bound on dual magnitudes.\\
+
+\addlinespace
+\multicolumn{3}{@{}l}{\textit{Upper-level variables and accounting terms}}\\
+\addlinespace[0.3ex]
+$X^P_{i,n}$ & MW & BESS power capacity selected by investor $i$ at node $n$.\\
+$X^E_{i,n}$ & MWh & BESS energy capacity selected by investor $i$ at node $n$.\\
+$\operatorname{CRF}_i$ & -- & Capital-recovery factor of investor $i$.\\
+$K_i$ & EUR/day & Daily annualized investment cost of investor $i$.\\
+$R_i^{\mathrm{BESS}}$ & EUR/day & Spot-market revenue from investor $i$'s BESS operation.\\
+$R_i^{\mathrm{gen}}$ & EUR/day & Spot-market rent of investor $i$'s generation portfolio.\\
+$C_i^{\mathrm{deg}}$ & EUR/day & BESS degradation cost incurred by investor $i$.\\
+$\Pi_i$ & EUR/day & Daily profit of investor $i$.\\
 \end{longtable}
 }
 
-\section{Investor problem}
+\section{Lower level: market clearing}
+\label{sec:llp}
+
+The capacity profile $X=(X^P,X^E)$ of all investors enters the lower level as
+a fixed parameter. Collecting the primal decisions in
+\begin{equation}\label{eq:llp-variables}
+\Xi^{\mathrm{LL}}
+:=\left\{P_{g,t},\ p^{\mathrm{ch}}_{j,n,t},\ p^{\mathrm{dis}}_{j,n,t},\
+e_{j,n,\tau},\ z_{n,t}\right\},
+\end{equation}
+the ISO minimizes the physical cost of serving demand,
+\begin{equation}\label{eq:llp-objective}
+\min_{\Xi^{\mathrm{LL}}}\quad
+Z^P:=\sum_{g,t}C_gP_{g,t}
++\tfrac{1}{2}\sum_{j,n,t}d_j
+\bigl(p^{\mathrm{ch}}_{j,n,t}+p^{\mathrm{dis}}_{j,n,t}\bigr),
+\end{equation}
+subject to
+\begin{subequations}\label{eq:llp-constraints}
+\begin{align}
+\sum_{g\in\mathcal G_n}P_{g,t}
++\sum_j\bigl(p^{\mathrm{dis}}_{j,n,t}-p^{\mathrm{ch}}_{j,n,t}\bigr)
+-z_{n,t}
+&=D_{n,t},
+&& (\lambda_{n,t})
+&& \forall n,t,
+\label{eq:nodal-balance}\\
+\sum_n z_{n,t}
+&=0,
+&& (\lambda^{\mathrm{sys}}_t)
+&& \forall t,
+\label{eq:system-balance}\\
+P_{g,t}
+&\leq\overline P_{g,t},
+&& (\nu_{g,t})
+&& \forall g,t,
+\label{eq:generation-bound}\\
+\sum_n H_{l,n}z_{n,t}
+&\leq\overline F_l,
+&& (\mu^+_{l,t})
+&& \forall l,t,
+\label{eq:line-forward}\\
+-\sum_n H_{l,n}z_{n,t}
+&\leq\overline F_l,
+&& (\mu^-_{l,t})
+&& \forall l,t,
+\label{eq:line-reverse}\\
+p^{\mathrm{ch}}_{j,n,t}
+&\leq X^P_{j,n},
+&& (\rho_{j,n,t})
+&& \forall j,n,t,
+\label{eq:charge-bound}\\
+p^{\mathrm{dis}}_{j,n,t}
+&\leq X^P_{j,n},
+&& (\sigma_{j,n,t})
+&& \forall j,n,t,
+\label{eq:discharge-bound}\\
+e_{j,n,t}-e_{j,n,t-1}
+-\eta p^{\mathrm{ch}}_{j,n,t}
++\eta^{-1}p^{\mathrm{dis}}_{j,n,t}
+&=0,
+&& (\gamma_{j,n,t})
+&& \forall j,n,t,
+\label{eq:soc-transition}\\
+e_{j,n,\tau}
+&\leq X^E_{j,n},
+&& (\delta_{j,n,\tau})
+&& \forall j,n,\tau,
+\label{eq:soc-bound}\\
+e_{j,n,0}-e_{j,n,T}
+&=0,
+&& (\rho^{\mathrm{per}}_{j,n})
+&& \forall j,n,
+\label{eq:soc-periodicity}\\
+P_{g,t},\ p^{\mathrm{ch}}_{j,n,t},\
+p^{\mathrm{dis}}_{j,n,t},\ e_{j,n,\tau}
+&\geq 0,
+&&
+&& \forall j,g,n,\tau,t.
+\label{eq:llp-nonnegativity}
+\end{align}
+\end{subequations}
+
+Constraint~\eqref{eq:nodal-balance} defines the net injection $z_{n,t}$ and
+prices it at the LMP $\lambda_{n,t}$; \eqref{eq:system-balance} enforces the
+system-wide balance required by the PTDF representation. Renewable
+curtailment is implicit in \eqref{eq:generation-bound}, since $\overline
+P_{g,t}$ is the hourly available output. The pair
+\eqref{eq:line-forward}--\eqref{eq:line-reverse} states the symmetric line
+limit $|f_{l,t}|\leq\overline F_l$ as two one-sided inequalities so that each
+direction carries its own nonnegative multiplier. Charging and discharging are
+bounded by the installed power capacity in
+\eqref{eq:charge-bound}--\eqref{eq:discharge-bound}, and the stored energy
+follows the round-trip-efficiency transition \eqref{eq:soc-transition} within
+the installed energy capacity \eqref{eq:soc-bound}. Condition
+\eqref{eq:soc-periodicity} imposes a periodic daily cycle; the model does not
+prescribe a fixed initial state of charge.
+
+Problem \eqref{eq:llp-objective}--\eqref{eq:llp-constraints} is a linear
+program in $\Xi^{\mathrm{LL}}$ for any fixed $X$. It is feasible whenever
+demand can be served, and bounded because all cost coefficients are
+nonnegative and all primal variables are either bounded or determined by the
+balances. Its KKT conditions are therefore necessary and sufficient for
+optimality.
+
+\section{Karush--Kuhn--Tucker conditions of the lower level}
+\label{sec:kkt}
+
+Attach the multipliers listed in \eqref{eq:llp-constraints} and form the
+Lagrangian
+\begin{equation}\label{eq:lagrangian}
+\begin{aligned}
+\mathcal L
+={}&
+\sum_{g,t}C_gP_{g,t}
++\tfrac{1}{2}\sum_{j,n,t}d_j
+\bigl(p^{\mathrm{ch}}_{j,n,t}+p^{\mathrm{dis}}_{j,n,t}\bigr)\\
+&-\sum_{n,t}\lambda_{n,t}
+\Bigl[
+\sum_{g\in\mathcal G_n}P_{g,t}
++\sum_j\bigl(p^{\mathrm{dis}}_{j,n,t}-p^{\mathrm{ch}}_{j,n,t}\bigr)
+-z_{n,t}-D_{n,t}
+\Bigr]
+-\sum_t\lambda^{\mathrm{sys}}_t\sum_n z_{n,t}\\
+&+\sum_{g,t}\nu_{g,t}
+\bigl(P_{g,t}-\overline P_{g,t}\bigr)
++\sum_{l,t}\mu^+_{l,t}
+\Bigl(\sum_n H_{l,n}z_{n,t}-\overline F_l\Bigr)
++\sum_{l,t}\mu^-_{l,t}
+\Bigl(-\sum_n H_{l,n}z_{n,t}-\overline F_l\Bigr)\\
+&+\sum_{j,n,t}\rho_{j,n,t}
+\bigl(p^{\mathrm{ch}}_{j,n,t}-X^P_{j,n}\bigr)
++\sum_{j,n,t}\sigma_{j,n,t}
+\bigl(p^{\mathrm{dis}}_{j,n,t}-X^P_{j,n}\bigr)
++\sum_{j,n,\tau}\delta_{j,n,\tau}
+\bigl(e_{j,n,\tau}-X^E_{j,n}\bigr)\\
+&-\sum_{j,n,t}\gamma_{j,n,t}
+\Bigl[
+e_{j,n,t}-e_{j,n,t-1}
+-\eta p^{\mathrm{ch}}_{j,n,t}
++\eta^{-1}p^{\mathrm{dis}}_{j,n,t}
+\Bigr]
+-\sum_{j,n}\rho^{\mathrm{per}}_{j,n}
+\bigl[e_{j,n,0}-e_{j,n,T}\bigr].
+\end{aligned}
+\end{equation}
+Multipliers of the two equality balances enter with a negative sign so that
+$\lambda_{n,t}=\partial Z^{P\star}/\partial D_{n,t}$ is the marginal cost of
+nodal demand, that is, the LMP in its usual positive orientation. Multipliers
+of the inequality constraints, which are all written in the form
+$g(\Xi^{\mathrm{LL}})\leq 0$, enter with a positive sign and are therefore
+nonnegative.
+
+The KKT system consists of primal feasibility, dual feasibility, and
+complementary slackness.
+
+\subsection{Primal feasibility}
+
+Primal feasibility is \eqref{eq:llp-constraints} itself, that is, the
+balances \eqref{eq:nodal-balance}--\eqref{eq:system-balance}, the transition
+and periodicity conditions
+\eqref{eq:soc-transition} and \eqref{eq:soc-periodicity}, the bounds
+\eqref{eq:generation-bound}--\eqref{eq:soc-bound}, and the nonnegativity
+restrictions \eqref{eq:llp-nonnegativity}.
+
+\subsection{Dual feasibility}
+
+Dual feasibility has two parts: sign restrictions on the multipliers and
+stationarity of the Lagrangian.
+
+\paragraph{Sign restrictions.}
+Multipliers of inequality constraints are nonnegative and multipliers of
+equality constraints are free:
+\begin{subequations}\label{eq:dual-signs}
+\begin{align}
+\nu_{g,t},\ \mu^+_{l,t},\ \mu^-_{l,t},\
+\rho_{j,n,t},\ \sigma_{j,n,t},\ \delta_{j,n,\tau}
+&\geq 0,
+&& \forall j,g,l,n,\tau,t,
+\label{eq:nonnegative-duals}\\
+\lambda_{n,t},\ \lambda^{\mathrm{sys}}_t,\
+\gamma_{j,n,t},\ \rho^{\mathrm{per}}_{j,n}
+&\in\mathbb R,
+&& \forall j,n,t.
+\label{eq:free-duals}
+\end{align}
+\end{subequations}
+
+\paragraph{Stationarity.}
+Differentiating \eqref{eq:lagrangian} with respect to each primal variable
+gives the reduced costs
+\begin{subequations}\label{eq:reduced-costs}
+\begin{align}
+\pi^{\mathrm{g}}_{g,t}
+&:=\frac{\partial\mathcal L}{\partial P_{g,t}}
+=C_g-\lambda_{n(g),t}+\nu_{g,t},
+&& \forall g,t,
+\label{eq:rc-generation}\\
+\pi^{\mathrm{ch}}_{j,n,t}
+&:=\frac{\partial\mathcal L}{\partial p^{\mathrm{ch}}_{j,n,t}}
+=\tfrac{d_j}{2}+\lambda_{n,t}+\rho_{j,n,t}+\eta\gamma_{j,n,t},
+&& \forall j,n,t,
+\label{eq:rc-charge}\\
+\pi^{\mathrm{dis}}_{j,n,t}
+&:=\frac{\partial\mathcal L}{\partial p^{\mathrm{dis}}_{j,n,t}}
+=\tfrac{d_j}{2}-\lambda_{n,t}+\sigma_{j,n,t}-\eta^{-1}\gamma_{j,n,t},
+&& \forall j,n,t,
+\label{eq:rc-discharge}\\
+\pi^{\mathrm{e}}_{j,n,\tau}
+&:=\frac{\partial\mathcal L}{\partial e_{j,n,\tau}}
+=\delta_{j,n,\tau}-\gamma_{j,n,\tau}+\gamma_{j,n,\tau+1}
+-\bigl(\mathbf 1_{\{\tau=0\}}-\mathbf 1_{\{\tau=T\}}\bigr)
+\rho^{\mathrm{per}}_{j,n},
+&& \forall j,n,\tau,
+\label{eq:rc-soc}
+\end{align}
+\end{subequations}
+where the boundary convention $\gamma_{j,n,0}=\gamma_{j,n,T+1}=0$ makes
+\eqref{eq:rc-soc} valid for every $\tau\in\mathcal T_0$. Because the four
+variables in \eqref{eq:reduced-costs} are sign restricted by
+\eqref{eq:llp-nonnegativity}, stationarity takes the inequality form
+\begin{equation}\label{eq:stationarity-inequalities}
+\pi^{\mathrm{g}}_{g,t}\geq 0,
+\qquad
+\pi^{\mathrm{ch}}_{j,n,t}\geq 0,
+\qquad
+\pi^{\mathrm{dis}}_{j,n,t}\geq 0,
+\qquad
+\pi^{\mathrm{e}}_{j,n,\tau}\geq 0,
+\qquad \forall j,g,n,\tau,t.
+\end{equation}
+The net injection $z_{n,t}$ is a free variable, so its stationarity condition
+is an equality:
+\begin{equation}\label{eq:stationarity-injection}
+\frac{\partial\mathcal L}{\partial z_{n,t}}
+=\lambda_{n,t}-\lambda^{\mathrm{sys}}_t
++\sum_l H_{l,n}\bigl(\mu^+_{l,t}-\mu^-_{l,t}\bigr)
+=0,
+\qquad \forall n,t.
+\end{equation}
+Equation~\eqref{eq:stationarity-injection} is the price-decomposition
+identity: the LMP equals a uniform system price plus the congestion component
+transmitted through the PTDF matrix.
+
+\subsection{Complementary slackness}
+
+Each inequality is complementary to its multiplier. Writing
+$0\leq a\perp b\geq 0$ for $a\geq 0$, $b\geq 0$, $ab=0$, the complementarity
+conditions are
+\begin{subequations}\label{eq:complementarity}
+\begin{align}
+0\leq P_{g,t}
+&\perp \pi^{\mathrm{g}}_{g,t}\geq 0,
+&& \forall g,t,
+\label{eq:cs-generation-variable}\\
+0\leq \overline P_{g,t}-P_{g,t}
+&\perp \nu_{g,t}\geq 0,
+&& \forall g,t,
+\label{eq:cs-generation-bound}\\
+0\leq \overline F_l-\sum_n H_{l,n}z_{n,t}
+&\perp \mu^+_{l,t}\geq 0,
+&& \forall l,t,
+\label{eq:cs-line-forward}\\
+0\leq \overline F_l+\sum_n H_{l,n}z_{n,t}
+&\perp \mu^-_{l,t}\geq 0,
+&& \forall l,t,
+\label{eq:cs-line-reverse}\\
+0\leq p^{\mathrm{ch}}_{j,n,t}
+&\perp \pi^{\mathrm{ch}}_{j,n,t}\geq 0,
+&& \forall j,n,t,
+\label{eq:cs-charge-variable}\\
+0\leq X^P_{j,n}-p^{\mathrm{ch}}_{j,n,t}
+&\perp \rho_{j,n,t}\geq 0,
+&& \forall j,n,t,
+\label{eq:cs-charge-bound}\\
+0\leq p^{\mathrm{dis}}_{j,n,t}
+&\perp \pi^{\mathrm{dis}}_{j,n,t}\geq 0,
+&& \forall j,n,t,
+\label{eq:cs-discharge-variable}\\
+0\leq X^P_{j,n}-p^{\mathrm{dis}}_{j,n,t}
+&\perp \sigma_{j,n,t}\geq 0,
+&& \forall j,n,t,
+\label{eq:cs-discharge-bound}\\
+0\leq e_{j,n,\tau}
+&\perp \pi^{\mathrm{e}}_{j,n,\tau}\geq 0,
+&& \forall j,n,\tau,
+\label{eq:cs-soc-variable}\\
+0\leq X^E_{j,n}-e_{j,n,\tau}
+&\perp \delta_{j,n,\tau}\geq 0,
+&& \forall j,n,\tau.
+\label{eq:cs-soc-bound}
+\end{align}
+\end{subequations}
+No complementarity condition is attached to $z_{n,t}$, to the two balances, or
+to \eqref{eq:soc-transition} and \eqref{eq:soc-periodicity}, because those
+variables are free and those constraints are equalities.
+
+Conditions \eqref{eq:llp-constraints},
+\eqref{eq:dual-signs}--\eqref{eq:stationarity-injection}, and
+\eqref{eq:complementarity} are jointly necessary and sufficient for optimality
+of the lower-level LP.
+
+\subsection{Disjunctive linearization of the complementarity conditions}
+\label{sec:bigm}
+
+Each product in \eqref{eq:complementarity} is bilinear. Every pair
+$0\leq a\perp b\geq 0$ is replaced by the exact disjunction
+\begin{equation}\label{eq:bigm}
+a\leq M^{\mathrm{s}}\beta,
+\qquad
+b\leq M^{\mathrm{d}}\bigl(1-\beta\bigr),
+\qquad
+\beta\in\{0,1\},
+\end{equation}
+with one binary per pair. The slack bound $M^{\mathrm{s}}$ is set
+constraint-wise from data: $\overline P_{g,t}$ for generation,
+$2\overline F_l$ for line flows, the nodal power headroom for charging and
+discharging, and the corresponding energy headroom for the state of charge.
+The dual bound $M^{\mathrm{d}}$ is a single user-set parameter and must be
+large enough to contain all optimal multipliers; it is the only
+approximation-prone element of the formulation and is verified ex post by
+checking that no multiplier attains its bound. Because the reduced costs
+\eqref{eq:reduced-costs} and the slacks are linear in the primal variables and
+the multipliers, \eqref{eq:bigm} keeps the lower-level representation linear
+and turns the best-response problem into a mixed-integer program.
+
+\subsection{Equivalent strong-duality representation}
+\label{sec:strong-duality}
+
+For a linear program the KKT system can be replaced by primal feasibility,
+dual feasibility, and a zero duality gap. From the constant terms of
+\eqref{eq:lagrangian}, the dual objective is
+\begin{equation}\label{eq:dual-objective}
+Z^D
+:=\sum_{n,t}D_{n,t}\lambda_{n,t}
+-\sum_{g,t}\overline P_{g,t}\nu_{g,t}
+-\sum_{l,t}\overline F_l\bigl(\mu^+_{l,t}+\mu^-_{l,t}\bigr)
+-\sum_{j,n,t}X^P_{j,n}\bigl(\rho_{j,n,t}+\sigma_{j,n,t}\bigr)
+-\sum_{j,n,\tau}X^E_{j,n}\delta_{j,n,\tau},
+\end{equation}
+and lower-level optimality is imposed by
+\begin{equation}\label{eq:strong-duality}
+Z^P=Z^D.
+\end{equation}
+Replacing \eqref{eq:complementarity} by \eqref{eq:strong-duality} avoids
+binaries and yields a nonconvex nonlinear program instead of a mixed-integer
+program. Both representations describe the same solution set. The maintained
+implementation solves the strong-duality form by default and uses the
+Big-M form of Section~\ref{sec:bigm} as an independent cross-check.
+
+\subsection{Sign convention used in the implementation}
+
+The derivation above uses the textbook convention in which all inequality
+multipliers are nonnegative, which answers the sign question directly: with
+the constraints written as $g(\Xi^{\mathrm{LL}})\leq 0$ in a minimization,
+$\nu,\mu^+,\mu^-,\rho,\sigma,\delta\geq 0$. The code stores the negated
+multipliers of the upper bounds, so that reported values satisfy
+$\tilde\nu,\tilde\mu^{+},\tilde\rho,\tilde\sigma,\tilde\delta\leq 0$. The
+translation is
+\begin{equation}\label{eq:sign-map}
+\tilde\nu=-\nu,
+\qquad
+\tilde\mu^{+}=-\mu^{+},
+\qquad
+\tilde\mu^{-}=\mu^{-},
+\qquad
+\tilde\rho=-\rho,
+\qquad
+\tilde\sigma=-\sigma,
+\qquad
+\tilde\delta=-\delta,
+\end{equation}
+while $\lambda$, $\lambda^{\mathrm{sys}}$, $\gamma$, and
+$\rho^{\mathrm{per}}$ are unchanged. Under \eqref{eq:sign-map} the
+stationarity conditions \eqref{eq:stationarity-inequalities} become the
+upper-bound inequalities coded in the model, for example
+$\lambda_{n(g),t}+\tilde\nu_{g,t}\leq C_g$, and \eqref{eq:dual-objective}
+becomes an expression with uniformly positive signs.
+
+\section{Upper level: investor problem}
 
 Let $X_i=(X_i^P,X_i^E)$ denote investor $i$'s capacity decision and let
 $X_{-i}$ collect the fixed capacities of its rivals. Feasible investment
@@ -146,15 +553,19 @@ decisions satisfy
 0
 &\leq X^P_{i,n}
 \leq \overline X_n-\sum_{\substack{j\in\mathcal I\\j\neq i}}X^P_{j,n},
-&& \forall n\in\mathcal N,
+&& \forall n,
 \label{eq:headroom}\\
 r^{\min}X^P_{i,n}
 &\leq X^E_{i,n}
 \leq r^{\max}X^P_{i,n},
-&& \forall n\in\mathcal N.
+&& \forall n.
 \label{eq:duration}
 \end{align}
 \end{subequations}
+Constraint~\eqref{eq:headroom} is the shared nodal connection limit, which is
+the only direct coupling between investors at the upper level;
+\eqref{eq:duration} restricts the admissible storage duration.
+
 The capital-recovery factor and daily annualized investment cost are
 \begin{subequations}\label{eq:capital-cost}
 \begin{align}
@@ -170,7 +581,7 @@ The capital-recovery factor and daily annualized investment cost are
 \label{eq:crf}\\
 K_i
 &=\frac{\operatorname{CRF}_i}{365.25}
-\sum_{n\in\mathcal N}
+\sum_n
 \left(c_i^P X^P_{i,n}+c_i^E X^E_{i,n}\right).
 \label{eq:daily-capital-cost}
 \end{align}
@@ -184,202 +595,47 @@ Investor $i$ maximizes the daily profit
 -C_i^{\mathrm{deg}}-K_i,
 \label{eq:profit-total}\\
 R_i^{\mathrm{BESS}}
-&=\sum_{n\in\mathcal N}\sum_{t\in\mathcal T}
+&=\sum_{n,t}
 \lambda_{n,t}
 \left(p^{\mathrm{dis}}_{i,n,t}-p^{\mathrm{ch}}_{i,n,t}\right),
 \label{eq:storage-revenue}\\
 R_i^{\mathrm{gen}}
-&=\sum_{g\in\mathcal G}\sum_{t\in\mathcal T}
+&=\sum_{g,t}
 s_{i,g}\left(\lambda_{n(g),t}-C_g\right)P_{g,t},
 \label{eq:generation-rent}\\
 C_i^{\mathrm{deg}}
 &=\frac{d_i}{2}
-\sum_{n\in\mathcal N}\sum_{t\in\mathcal T}
+\sum_{n,t}
 \left(p^{\mathrm{ch}}_{i,n,t}+p^{\mathrm{dis}}_{i,n,t}\right).
 \label{eq:degradation-cost}
 \end{align}
 \end{subequations}
 For a stand-alone merchant, $s_{i,g}=0$ for every $g$. A portfolio investor
 additionally internalizes the spot-market rent of its owned generation shares.
-
-\section{Lower-level market clearing}
-
-For fixed capacity profile $X=(X_i,X_{-i})$, the ISO solves
-\begin{equation}\label{eq:llp-objective}
-\begin{aligned}
-\underset{P,p^{\mathrm{ch}},p^{\mathrm{dis}},e,z}{\operatorname{minimize}}
-\quad
-Z^P
-:={}&
-\sum_{g\in\mathcal G}\sum_{t\in\mathcal T}C_gP_{g,t}\\
-&+\frac{1}{2}
-\sum_{j\in\mathcal I}\sum_{n\in\mathcal N}\sum_{t\in\mathcal T}
-d_j\left(p^{\mathrm{ch}}_{j,n,t}+p^{\mathrm{dis}}_{j,n,t}\right)
-\end{aligned}
-\end{equation}
-Define the line-flow expression
-$f_{l,t}:=\sum_{n\in\mathcal N}H_{l,n}z_{n,t}$. The primal-feasibility
-conditions are
-\begin{subequations}\label{eq:llp-primal}
-\begin{align}
-z_{n,t}
-&=
-\sum_{g\in\mathcal G_n}P_{g,t}
-+\sum_{j\in\mathcal I}
-\left(p^{\mathrm{dis}}_{j,n,t}-p^{\mathrm{ch}}_{j,n,t}\right)
--D_{n,t},
-&& \forall n\in\mathcal N,\ t\in\mathcal T,
-\label{eq:nodal-balance}\\
-\sum_{n\in\mathcal N}z_{n,t}
-&=0,
-&& \forall t\in\mathcal T,
-\label{eq:system-balance}\\
-0\leq P_{g,t}
-&\leq\overline P_{g,t},
-&& \forall g\in\mathcal G,\ t\in\mathcal T,
-\label{eq:generation-bounds}\\
--\overline F_l
-\leq f_{l,t}
-&\leq\overline F_l,
-&& \forall l\in\mathcal L,\ t\in\mathcal T,
-\label{eq:line-bounds}\\
-0\leq p^{\mathrm{ch}}_{j,n,t}
-&\leq X^P_{j,n},
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ t\in\mathcal T,
-\label{eq:charge-bounds}\\
-0\leq p^{\mathrm{dis}}_{j,n,t}
-&\leq X^P_{j,n},
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ t\in\mathcal T,
-\label{eq:discharge-bounds}\\
-e_{j,n,t}
-&=e_{j,n,t-1}
-+\eta p^{\mathrm{ch}}_{j,n,t}
--\eta^{-1}p^{\mathrm{dis}}_{j,n,t},
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ t\in\mathcal T,
-\label{eq:soc-transition}\\
-0\leq e_{j,n,\tau}
-&\leq X^E_{j,n},
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ \tau\in\mathcal T_0,
-\label{eq:soc-bounds}\\
-e_{j,n,0}
-&=e_{j,n,T},
-&& \forall j\in\mathcal I,\ n\in\mathcal N.
-\label{eq:soc-periodicity}
-\end{align}
-\end{subequations}
-Equation~\eqref{eq:soc-periodicity} imposes a periodic daily cycle; the model
-does not prescribe a fixed initial state of charge.
-
-\section{Exact lower-level optimality}
-
-The lower-level linear program is embedded through primal feasibility, dual
-feasibility, and strong duality. The dual-variable domains follow the
-minimization convention used by the implementation:
-\begin{align}
-\nu_{g,t},\ \mu^+_{l,t},\ \rho_{j,n,t},\
-\sigma_{j,n,t},\ \delta_{j,n,\tau}
-&\leq 0,
-\label{eq:nonpositive-duals}\\
-\mu^-_{l,t}
-&\geq 0,
-\label{eq:nonnegative-duals}\\
-\lambda_{n,t},\ \lambda_t^{\mathrm{sys}},\
-\gamma_{j,n,t},\ \rho^{\mathrm{per}}_{j,n}
-&\in\mathbb R.
-\label{eq:free-duals}
-\end{align}
-Stationarity with respect to generation, charging, discharging, and net
-injection gives
-\begin{subequations}\label{eq:llp-dual}
-\begin{align}
-\lambda_{n(g),t}+\nu_{g,t}
-&\leq C_g,
-&& \forall g\in\mathcal G,\ t\in\mathcal T,
-\label{eq:dual-generation}\\
--\lambda_{n,t}+\rho_{j,n,t}-\eta\gamma_{j,n,t}
-&\leq \frac{d_j}{2},
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ t\in\mathcal T,
-\label{eq:dual-charge}\\
-\lambda_{n,t}+\sigma_{j,n,t}+\eta^{-1}\gamma_{j,n,t}
-&\leq \frac{d_j}{2},
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ t\in\mathcal T,
-\label{eq:dual-discharge}\\
--\lambda_{n,t}+\lambda_t^{\mathrm{sys}}
-+\sum_{l\in\mathcal L}H_{l,n}
-\left(\mu^+_{l,t}+\mu^-_{l,t}\right)
-&=0,
-&& \forall n\in\mathcal N,\ t\in\mathcal T.
-\label{eq:dual-injection}
-\end{align}
-\end{subequations}
-
-For compact state-of-charge stationarity, set
-$\gamma_{j,n,0}=\gamma_{j,n,T+1}=0$. Then
-\begin{subequations}\label{eq:dual-soc}
-\begin{align}
-A^E_{j,n,\tau}
-:={}&
-\delta_{j,n,\tau}
-+\gamma_{j,n,\tau}
--\gamma_{j,n,\tau+1}\notag\\
-&+
-\left(\mathbf 1_{\{\tau=0\}}-\mathbf 1_{\{\tau=T\}}\right)
-\rho^{\mathrm{per}}_{j,n},
-\label{eq:soc-stationarity-expression}\\
-A^E_{j,n,\tau}
-&\leq 0,
-&& \forall j\in\mathcal I,\ n\in\mathcal N,\ \tau\in\mathcal T_0.
-\label{eq:soc-stationarity}
-\end{align}
-\end{subequations}
-
-The corresponding dual objective is
-\begin{align}
-Z^D
-:={}&
-\sum_{n\in\mathcal N}\sum_{t\in\mathcal T}
-D_{n,t}\lambda_{n,t}
-+\sum_{g\in\mathcal G}\sum_{t\in\mathcal T}
-\overline P_{g,t}\nu_{g,t}
-\notag\\
-&+\sum_{l\in\mathcal L}\sum_{t\in\mathcal T}
-\overline F_l\left(\mu^+_{l,t}-\mu^-_{l,t}\right)
-\notag\\
-&+\sum_{j\in\mathcal I}\sum_{n\in\mathcal N}\sum_{t\in\mathcal T}
-X^P_{j,n}\left(\rho_{j,n,t}+\sigma_{j,n,t}\right)
-\notag\\
-&+\sum_{j\in\mathcal I}\sum_{n\in\mathcal N}
-\sum_{\tau\in\mathcal T_0}
-X^E_{j,n}\delta_{j,n,\tau}.
-\label{eq:dual-objective}
-\end{align}
-Exact lower-level optimality is imposed by
-\begin{equation}\label{eq:strong-duality}
-Z^P=Z^D.
-\end{equation}
-Together, primal feasibility \eqref{eq:llp-primal}, dual feasibility
-\eqref{eq:llp-dual}--\eqref{eq:dual-soc}, and
-\eqref{eq:strong-duality} are necessary and sufficient for optimality of the
-lower-level LP. Explicit complementarity products are therefore unnecessary.
+The dispatch quantities and the prices in \eqref{eq:profit} are lower-level
+outcomes, so the upper level cannot be evaluated without the lower level.
 
 \section{Capacity-only EPEC}
 
-Let $y$ and $u$ collect the lower-level primal and dual variables,
-respectively. Given $X_{-i}$, investor $i$ solves the single-level MPEC
+Let $y:=\Xi^{\mathrm{LL}}$ and $u:=\Xi^{\mathrm{D}}$ collect the lower-level
+primal and dual variables. Given $X_{-i}$, investor $i$ solves the
+single-level mathematical program with equilibrium constraints (MPEC)
 \begin{equation}\label{eq:best-response}
 \begin{aligned}
 \underset{X_i^P,X_i^E,y,u}{\operatorname{maximize}}
 \quad & \Pi_i\\
 \text{subject to}\quad
 &\eqref{eq:investment},\
-\eqref{eq:llp-primal},\
-\eqref{eq:nonpositive-duals}\text{--}\eqref{eq:dual-soc},\
-\eqref{eq:strong-duality},
+\eqref{eq:llp-constraints},\
+\eqref{eq:dual-signs}\text{--}\eqref{eq:stationarity-injection},\
+\eqref{eq:complementarity},
 \end{aligned}
-\qquad \text{given }X_{-i}.
+\qquad \text{given }X_{-i},
 \end{equation}
-Products between endogenous capacities and dual variables in
-\eqref{eq:dual-objective}, together with LMP settlement in
+in which the complementarity block \eqref{eq:complementarity} may be replaced
+either by its Big-M form \eqref{eq:bigm} or by the strong-duality condition
+\eqref{eq:strong-duality}. Products between endogenous capacities and dual
+variables in \eqref{eq:dual-objective}, together with LMP settlement in
 \eqref{eq:profit}, make the best-response problem nonconvex.
 
 Define $\operatorname{BR}_i(X_{-i})$ as investor $i$'s best-response
@@ -413,21 +669,267 @@ r^k
 with separate implementation tolerances for power and energy capacity.
 
 Because a fixed-capacity LP can admit multiple dual-optimal LMP vectors, the
-strong-duality formulation uses an optimistic convention: the embedded dual
-vector may be selected in the active investor's favour. No secondary
-minimum-norm or other price-selection rule is imposed. Consequently, embedded
-investor-specific LMPs should be distinguished from prices obtained by an
-independent common-market re-clear.
+formulation uses an optimistic convention: the embedded dual vector may be
+selected in the active investor's favour. No secondary minimum-norm or other
+price-selection rule is imposed. Consequently, embedded investor-specific LMPs
+should be distinguished from prices obtained by an independent common-market
+re-clear.
 
 \section{Implementation}
 
 The maintained implementation is organized as follows:
 \begin{itemize}
-\item \texttt{primal\_market\_clearing\_model.py}: lower-level primal LP;
-\item \texttt{dual\_market\_clearing\_model.py}: explicit lower-level dual LP;
-\item \texttt{mpec\_strong\_duality.py}: single-investor best-response MPEC;
-\item \texttt{jacobi\_diagonalization.py}: simultaneous multi-investor updates;
+\item \texttt{primal\_market\_clearing\_model.py}: lower-level primal LP
+      \eqref{eq:llp-objective}--\eqref{eq:llp-constraints};
+\item \texttt{dual\_market\_clearing\_model.py}: explicit lower-level dual LP
+      \eqref{eq:dual-objective};
+\item \texttt{mpec\_strong\_duality.py}: best-response MPEC with
+      \eqref{eq:strong-duality};
+\item \texttt{mpec\_kkt\_bigm.py}: best-response MILP with the Big-M
+      complementarity form \eqref{eq:bigm};
+\item \texttt{jacobi\_diagonalization.py}: simultaneous multi-investor updates
+      \eqref{eq:jacobi};
 \item \texttt{run\_model.py}: solver settings, convergence, output, and resume.
 \end{itemize}
+
+\section{Test system}
+\label{sec:test-system}
+
+The numerical study uses a calibrated version of the IEEE 9-bus system shown
+in Figure~\ref{fig:ieee9}, with the generation portfolio of
+Table~\ref{tab:ieee9-generation}. Three dispatchable units sit at Buses~1--3
+and three renewable units are added: wind at Bus~1 and photovoltaics at
+Buses~6 and~8. Demand is concentrated at Buses~5, 6, and~8.
+
+The network is deliberately calibrated so that congestion is occasional rather
+than permanent. The lines of the outer ring (L14, L45, L57, L72, L93) are
+rated at 400~MW and are effectively non-binding, whereas the two renewable
+export corridors L46 and L69 are rated at 180~MW and the corridors L78 and L98
+at 210~MW. These four lines are the only ones that bind, and they do so in the
+midday hours when photovoltaic output at Buses~6 and~8 exceeds local demand.
+The result is a price pattern in which the renewable-rich nodes separate from
+the thermally priced nodes for part of the day, which is what makes nodal BESS
+siting economically meaningful.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.92\textwidth}{!}{%
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  transmission/.style={
+    draw=black,
+    line width=0.75pt,
+    line cap=round,
+    line join=round
+  },
+  crossing/.style={
+    transmission,
+    preaction={draw=white,line width=3.0pt,line cap=round}
+  },
+  busbar/.style={
+    draw=black,
+    line width=2.4pt,
+    line cap=butt
+  },
+  bus label/.style={
+    font=\small,
+    inner sep=1pt
+  },
+  line label/.style={
+    font=\footnotesize,
+    fill=white,
+    inner sep=1.2pt
+  },
+  generator/.style={
+    circle,
+    draw=black,
+    fill=white,
+    line width=0.9pt,
+    minimum size=0.58cm,
+    inner sep=0pt,
+    font=\small
+  },
+  load arrow/.style={
+    draw=black,
+    line width=0.75pt,
+    -{Latex[length=4.5pt,width=3.4pt]}
+  },
+  component label/.style={
+    font=\small,
+    inner sep=1pt
+  }
+]
+
+% ---------------------------------------------------------------------------
+% Adjustable bus coordinates, arranged to match the reference skeleton.
+% The upper buses are vertical; the middle and lower buses are horizontal.
+% ---------------------------------------------------------------------------
+\coordinate (n2) at (-6.00, 3.00);
+\coordinate (n7) at (-3.80, 3.00);
+\coordinate (n8) at ( 0.00, 3.00);
+\coordinate (n9) at ( 3.80, 3.00);
+\coordinate (n3) at ( 6.00, 3.00);
+\coordinate (n5) at (-2.60, 0.60);
+\coordinate (n6) at ( 2.60, 0.60);
+\coordinate (n4) at ( 0.00,-1.20);
+\coordinate (n1) at ( 0.00,-3.00);
+
+% Synchronous-generator symbol coordinates.
+\coordinate (g2) at (-7.10, 3.00);
+\coordinate (g3) at ( 7.10, 3.00);
+\coordinate (g1) at ( 0.00,-4.15);
+
+% Renewable generator symbol coordinates: wind at Bus 1, PV at Buses 6 and 8.
+% Each sits on a stub drawn normal (perpendicular) to its own busbar.
+\coordinate (w1) at ( 1.15,-4.15);
+\coordinate (pv6) at ( 1.60, 1.75);
+\coordinate (pv8) at (-1.15, 3.86);
+
+% ---------------------------------------------------------------------------
+% Transmission connections (drawn before the busbars)
+% ---------------------------------------------------------------------------
+
+% Upper spine and the two outer links.
+\draw[transmission] (n2) -- (n7); % N2--N7
+\draw[transmission] (n7) -- (n8); % N7--N8
+\draw[transmission] (n8) -- (n9); % N8--N9
+\draw[transmission] (n9) -- (n3); % N9--N3
+
+% Left and right descending sides of the reference skeleton.
+\draw[transmission]
+  (n5) -- (-2.60,2.40) -- ($(n7)+(0,-0.60)$); % N7--N5
+\draw[transmission]
+  ($(n5)+(0.80,0)$) -- ($(n4)+(-1.80,0)$); % N5--N4
+\draw[transmission]
+  ($(n4)+(1.80,0)$) -- ($(n6)+(-0.80,0)$); % N4--N6
+\draw[transmission]
+  (n6) -- ( 2.60,2.40) -- ($(n9)+(0,-0.60)$); % N6--N9
+
+% Lower central link; transformer symbols are intentionally omitted.
+\draw[transmission] (n4) -- (n1); % N4--N1
+
+% Generator connections.
+\draw[transmission] (n2) -- (g2);
+\draw[transmission] (n3) -- (g3);
+\draw[transmission] (n1) -- (g1);
+
+% Renewable generator connections: each stub is normal to its own busbar.
+\draw[transmission] ($(n1)+(1.15,0)$) -- (w1);
+\draw[transmission] ($(n6)+(-1.00,0)$) -- (pv6);
+\draw[transmission] ($(n8)+(0,0.86)$) -- (pv8);
+
+% Load connections: C at Bus 8, A at Bus 5, and B at Bus 6.
+\draw[load arrow]
+  ($(n8)+(0,0.68)$) -- ($(n8)+(0.95,0.68)$);
+\draw[load arrow]
+  ($(n5)+(-0.65,0)$) -- ($(n5)+(-0.65,-0.85)$);
+\draw[load arrow]
+  ($(n6)+(0.65,0)$) -- ($(n6)+(0.65,-0.85)$);
+
+% ---------------------------------------------------------------------------
+% Busbars (drawn last so they remain visually dominant)
+% ---------------------------------------------------------------------------
+
+% Standard vertical busbars at the two outer buses.
+\foreach \bus in {n2,n3}{
+  \draw[busbar]
+    ($(\bus)+(0,-0.43)$) -- ($(\bus)+(0,0.43)$);
+}
+
+% Bus 8 extends farther in the positive y direction.
+\draw[busbar] ($(n8)+(0,-0.43)$) -- ($(n8)+(0,0.86)$);
+
+% Buses 7 and 9 extend farther in the negative y direction.
+\foreach \bus in {n7,n9}{
+  \draw[busbar]
+    ($(\bus)+(0,-0.86)$) -- ($(\bus)+(0,0.43)$);
+}
+
+% Buses 5 and 6 extend equally in both x directions.
+\foreach \bus in {n5,n6}{
+  \draw[busbar]
+    ($(\bus)+(-1.00,0)$) -- ($(\bus)+(1.00,0)$);
+}
+
+% Bus 4 spans beneath Buses 5 and 6 so both connections can be vertical.
+\draw[busbar] ($(n4)+(-2.80,0)$) -- ($(n4)+(2.80,0)$);
+
+% Bus 1 extends farther in the positive x direction for the wind-generator stub.
+\draw[busbar] ($(n1)+(-0.62,0)$) -- ($(n1)+(1.15,0)$);
+
+% ---------------------------------------------------------------------------
+% Bus names
+% ---------------------------------------------------------------------------
+\node[bus label] at ($(n2)+(0,-0.68)$) {Bus 2};
+\node[bus label] at ($(n7)+(-0.55,-0.68)$) {Bus 7};
+\node[bus label] at ($(n8)+(0,-0.68)$) {Bus 8};
+\node[bus label] at ($(n9)+(0.48,-0.58)$) {Bus 9};
+\node[bus label] at ($(n3)+(0,-0.68)$) {Bus 3};
+\node[bus label] at ($(n5)+(-1.65,0)$) {Bus 5};
+\node[bus label] at ($(n6)+( 1.65,0)$) {Bus 6};
+\node[bus label] at ($(n4)+(-3.28,0)$) {Bus 4};
+\node[bus label] at ($(n1)+(-1.05,0)$) {Bus 1};
+
+% ---------------------------------------------------------------------------
+% Line names
+% ---------------------------------------------------------------------------
+\node[line label] at (-4.90,3.34) {Line 2--7};
+\node[line label] at (-1.90,3.34) {Line 7--8};
+\node[line label] at ( 1.90,3.34) {Line 8--9};
+\node[line label] at ( 4.90,3.34) {Line 3--9};
+\node[line label,rotate=90] at (-2.88,1.50) {Line 5--7};
+\node[line label,rotate=90] at (-2.08,-0.30) {Line 4--5};
+\node[line label,rotate=90] at ( 2.08,-0.30) {Line 4--6};
+\node[line label,rotate=90] at ( 2.88,1.50) {Line 6--9};
+\node[line label,rotate=90] at ( 0.30,-2.10) {Line 1--4};
+
+% Synchronous-generator symbols and names.
+\node[generator] at (g2) {$\sim$};
+\node[generator] at (g3) {$\sim$};
+\node[generator] at (g1) {$\sim$};
+\node[component label] at ($(g2)+(0,-0.55)$) {G2};
+\node[component label] at ($(g3)+(0,-0.55)$) {G3};
+\node[component label] at ($(g1)+(0,-0.55)$) {G1};
+
+% Renewable-generator symbols and names (same circle as the synchronous units).
+\node[generator] at (w1) {W};
+\node[generator,font=\scriptsize] at (pv6) {PV};
+\node[generator,font=\scriptsize] at (pv8) {PV};
+\node[component label] at ($(w1)+(0,-0.55)$) {W1};
+\node[component label] at ($(pv6)+(0,0.55)$) {PV6};
+\node[component label] at ($(pv8)+(0,0.55)$) {PV8};
+
+% Load names.
+\node[component label] at ($(n8)+(1.48,0.68)$) {Load C};
+\node[component label] at ($(n5)+(-0.65,-1.12)$) {Load A};
+\node[component label] at ($(n6)+( 0.65,-1.12)$) {Load B};
+
+\end{tikzpicture}%
+}
+\caption{Calibrated IEEE 9-bus test system. Congestion arises on the two
+renewable export corridors, Lines 4--6/6--9 out of Bus~6 and Lines
+7--8/8--9 out of Bus~8.}
+\label{fig:ieee9}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Generation portfolio of the calibrated IEEE 9-bus system. Renewable
+entries report peak available output $\overline P_{g,t}$ over the day.}
+\label{tab:ieee9-generation}
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Unit & Node & Capacity (MW) & Marginal cost (EUR/MWh) \\
+\midrule
+G1   & N1 & 250 & 60.00 \\
+G2   & N2 & 300 & 52.20 \\
+G3   & N3 & 270 & 67.15 \\
+Wind & N1 & 105 & 0.00 \\
+PV   & N6 & 235 & 0.00 \\
+PV   & N8 & 436 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \end{document}

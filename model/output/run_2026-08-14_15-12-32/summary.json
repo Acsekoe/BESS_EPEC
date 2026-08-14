@@ -1,0 +1,70 @@
+{
+  "formulation": "strategic-price-relaxed-kkt",
+  "parallel_workers": 4,
+  "sweeps": 10,
+  "converged": false,
+  "stop_reason": "maximum sweeps reached",
+  "projection_count": 0,
+  "stable_sweeps": 0,
+  "total_power_mw": 198.18113181642295,
+  "total_energy_mwh": 547.3758550740755,
+  "investor_totals": {
+    "I1": {
+      "power_mw": 50.862951828825906,
+      "energy_mwh": 135.9121719299331
+    },
+    "I2": {
+      "power_mw": 49.4104211719857,
+      "energy_mwh": 135.91209882640214
+    },
+    "I3": {
+      "power_mw": 50.71442505395985,
+      "energy_mwh": 136.4374751758346
+    },
+    "I4": {
+      "power_mw": 47.1933337616515,
+      "energy_mwh": 139.11410914190566
+    }
+  },
+  "relaxed_kkt": {
+    "complementarity_epsilon": 0.001,
+    "latest_maximum_product": 0.0010025468652394454,
+    "latest_maximum_violation": 2.5468652394453842e-06,
+    "latest_maximum_absolute_primal_dual_gap_eur_per_day": 1.7575263575999998
+  },
+  "strategic_price_relaxed_kkt": {
+    "quantity_withholding": false,
+    "full_quantity_availability": true,
+    "bid_price_bound_eur_per_mwh": 500.0,
+    "bid_tolerance_eur_per_mwh": 0.5,
+    "lower_level_optimality": "relaxed-kkt",
+    "active_capacity_bid_ranges": {
+      "I1": {
+        "charge_bid_min": -0.4666023888182889,
+        "charge_bid_max": -7.518573231332836e-05,
+        "discharge_offer_min": -0.018626162950858102,
+        "discharge_offer_max": 1.764886317891979
+      },
+      "I2": {
+        "charge_bid_min": -1.0230722658501568,
+        "charge_bid_max": -7.544324566489765e-05,
+        "discharge_offer_min": -0.027975293971493318,
+        "discharge_offer_max": 1.7842693722302463
+      },
+      "I3": {
+        "charge_bid_min": -7.449030384815591,
+        "charge_bid_max": -6.208514000224938e-05,
+        "discharge_offer_min": -0.013510544324851147,
+        "discharge_offer_max": 1.7711846313049233
+      },
+      "I4": {
+        "charge_bid_min": -4.3671369847815535,
+        "charge_bid_max": 1.5736668712697923,
+        "discharge_offer_min": -0.011609561575464,
+        "discharge_offer_max": 1.940291000682341
+      }
+    },
+    "proximal_penalty_scope": "capacities and prices",
+    "proximal_price_scale_eur_per_mwh": 10.0
+  }
+}

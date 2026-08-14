@@ -1,0 +1,66 @@
+{
+  "formulation": "strategic-quantity",
+  "parallel_workers": 4,
+  "sweeps": 5,
+  "converged": false,
+  "stop_reason": "maximum sweeps reached",
+  "projection_count": 2,
+  "stable_sweeps": 0,
+  "total_power_mw": 212.87384582711775,
+  "total_energy_mwh": 628.1471861729875,
+  "investor_totals": {
+    "I1": {
+      "power_mw": 52.72432113180964,
+      "energy_mwh": 155.7842371942953
+    },
+    "I2": {
+      "power_mw": 53.52016474640663,
+      "energy_mwh": 157.9677807890676
+    },
+    "I3": {
+      "power_mw": 53.56406611307393,
+      "energy_mwh": 157.88784509629428
+    },
+    "I4": {
+      "power_mw": 53.06529383582755,
+      "energy_mwh": 156.50732309333034
+    }
+  },
+  "relaxed_kkt": {
+    "complementarity_epsilon": 0.001,
+    "latest_maximum_product": 0.0010023618559577968,
+    "latest_maximum_violation": 2.3618559577968153e-06,
+    "latest_maximum_absolute_primal_dual_gap_eur_per_day": 3.208060867036693
+  },
+  "strategic_quantity": {
+    "quantity_withholding": true,
+    "quantity_tolerance_mw": 0.5,
+    "settlement": "realised dispatch at nodal LMP",
+    "active_capacity_bid_ranges_mw": {
+      "I1": {
+        "charge_bid_min": 1.8978960156187932e-07,
+        "charge_bid_max": 22.21927611957955,
+        "discharge_bid_min": 2.092740744513065e-07,
+        "discharge_bid_max": 19.616732506426466
+      },
+      "I2": {
+        "charge_bid_min": 1.981595187338107e-07,
+        "charge_bid_max": 21.05218504959363,
+        "discharge_bid_min": 2.0827294383271444e-07,
+        "discharge_bid_max": 18.364012642504562
+      },
+      "I3": {
+        "charge_bid_min": 1.7536364901384164e-07,
+        "charge_bid_max": 27.42290826898258,
+        "discharge_bid_min": 1.753478342780334e-07,
+        "discharge_bid_max": 15.304755707838662
+      },
+      "I4": {
+        "charge_bid_min": 5.570835322137899e-07,
+        "charge_bid_max": 17.503288137628633,
+        "discharge_bid_min": 6.176035069453993e-07,
+        "discharge_bid_max": 14.326681068473118
+      }
+    }
+  }
+}

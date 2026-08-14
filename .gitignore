@@ -5,9 +5,6 @@
 __pycache__/
 *.py[cod]
 
-# Fresh model runs; historical results are tracked under model/old/output.
-model/output/
-
 # LaTeX build artifacts
 *.aux
 *.bbl

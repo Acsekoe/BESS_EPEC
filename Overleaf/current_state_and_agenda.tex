@@ -266,7 +266,7 @@ P^{discharge}_{i,n,t,s}
 \end{frame}
 
 
-\begin{frame}{IEEE-9 calibration: two renewable export bottlenecks}
+\begin{frame}{IEEE-9 Bus System   }
 \vspace{-0.25cm}
 
 \begin{columns}[c,onlytextwidth]
@@ -502,7 +502,142 @@ P^{discharge}_{i,n,t,s}
 \end{frame}
 
 
-\begin{frame}{Midday congestion separates renewable-node LMPs}
+\begin{frame}{Method: investor MPEC and Jacobi iteration}
+\vfill
+
+\begin{columns}[T,onlytextwidth]
+    \column{0.53\textwidth}
+    {\small\textbf{Inside one investor MPEC}}
+
+    \vspace{0.10cm}
+    {\scriptsize
+    \textbf{Investor: storage and portfolio profit}
+    \vspace{-0.14cm}
+    \[
+    \max_{\mathbf K_i}\quad
+    \Pi_i=R_i^{\mathrm{BESS}}+R_i^{\mathrm{portfolio}}-C_i^{\mathrm{cap}}
+    \]
+
+    \vspace{-0.24cm}
+    \hspace*{0.25cm}\textbf{s.t. siting and sizing}
+    \vspace{-0.14cm}
+    \[
+    \mathbf K_i=(P_{i,n},E_{i,n})\in\mathcal K_i
+    \]
+
+    \vspace{-0.24cm}
+    \hspace*{0.55cm}\textbf{and least-cost market clearing}
+    \vspace{-0.14cm}
+    \[
+    \begin{aligned}
+    \mathbf y_i\in\arg\min_{\mathbf y}\quad
+    &\sum_{t,g}c_g p_{g,t}\\[-0.05cm]
+    &+\sum_{t,n}c^{\mathrm{deg}}
+      (p^{\mathrm{ch}}_{n,t}+p^{\mathrm{dis}}_{n,t})
+    \end{aligned}
+    \]
+
+    \vspace{-0.24cm}
+    \hspace*{0.85cm}\textbf{s.t. nodal power balance}
+    \vspace{-0.14cm}
+    \[
+    q_{n,t}=\sum_{g\in G_n}p_{g,t}
+    +p^{\mathrm{dis}}_{n,t}-p^{\mathrm{ch}}_{n,t}-d_{n,t}
+    \]
+
+    \vspace{-0.24cm}
+    \hspace*{1.15cm}\textbf{and grid physics}
+    \vspace{-0.14cm}
+    \[
+    \mathbf f_t=\mathbf H\mathbf q_t,
+    \qquad -\bar{\mathbf f}\leq\mathbf f_t\leq\bar{\mathbf f}
+    \]
+    }
+
+    \column{0.44\textwidth}
+    {\small\textbf{One Jacobi sweep}}
+
+    \vspace{0.10cm}
+    \centering
+    \resizebox{0.98\linewidth}{!}{%
+    \begin{tikzpicture}[
+        state/.style={
+            draw=metublue,
+            fill=metublue!8,
+            rounded corners=1.5pt,
+            line width=0.8pt,
+            minimum width=4.30cm,
+            minimum height=0.78cm,
+            align=center,
+            font=\scriptsize
+        },
+        investor/.style={
+            draw=metugreen,
+            fill=metugreen!10,
+            rounded corners=1.5pt,
+            line width=0.7pt,
+            minimum width=1.00cm,
+            minimum height=0.72cm,
+            align=center,
+            font=\tiny
+        },
+        next investor/.style={
+            investor,
+            draw=metugray,
+            fill=metugray!8
+        },
+        flow/.style={
+            draw=metugray,
+            line width=0.75pt,
+            -{Latex[length=4.2pt,width=3.2pt]}
+        },
+        bus/.style={draw=metugray,line width=0.75pt}
+    ]
+        \node[state] (statek) at (0,0)
+            {Market state $\mathbf x^{(k)}$\\[-0.03cm]
+             {\tiny same frozen rival strategies}};
+
+        \coordinate (splitk) at (0,-0.72);
+        \draw[flow] (statek.south) -- (splitk);
+        \draw[bus] (-1.80,-0.72) -- (1.80,-0.72);
+
+        \foreach \x/\name in {-1.80/1,-0.60/2,0.60/3,1.80/4}{
+            \node[investor] (mpec\name) at (\x,-1.40)
+                {\textbf{I\name}\\MPEC};
+            \draw[flow] (\x,-0.72) -- (mpec\name.north);
+        }
+
+        \draw[bus] (-1.80,-2.08) -- (1.80,-2.08);
+        \foreach \x/\name in {-1.80/1,-0.60/2,0.60/3,1.80/4}{
+            \draw[flow] (mpec\name.south) -- (\x,-2.08);
+        }
+
+        \node[state] (statekp) at (0,-2.78)
+            {New market state $\mathbf x^{(k+1)}$\\[-0.03cm]
+             {\tiny simultaneous best-response update}};
+        \draw[flow] (0,-2.08) -- (statekp.north);
+
+        \coordinate (splitkp) at (0,-3.50);
+        \draw[flow] (statekp.south) -- (splitkp);
+        \draw[bus] (-1.80,-3.50) -- (1.80,-3.50);
+
+        \foreach \x/\name in {-1.80/1,-0.60/2,0.60/3,1.80/4}{
+            \node[next investor] (next\name) at (\x,-4.18)
+                {\textbf{I\name}\\MPEC};
+            \draw[flow] (\x,-3.50) -- (next\name.north);
+        }
+
+        \node[font=\scriptsize, text=metugray] (dots) at (0,-5.05) {$\vdots$};
+        \draw[flow] (0,-4.58) -- (dots.north);
+    \end{tikzpicture}%
+    }
+\end{columns}
+
+\vfill
+\end{frame}
+
+
+\begin{frame}{\hspace{0.15cm}Midday congestion, renewable-node LMPs}
 \vspace{-0.15cm}
 
 \centering
@@ -558,76 +693,16 @@ P^{discharge}_{i,n,t,s}
 \end{axis}
 \end{tikzpicture}
 
-\vspace{-0.15cm}
-\begin{columns}[T,onlytextwidth]
-    \column{0.58\textwidth}
-    \small
-    \textbf{Interpretation:} outside the solar window, nodes share the thermal marginal cost. When L46 and L78 bind, curtailed PV drives N6/N8 prices down while N1 remains thermally priced.
-
-    \column{0.40\textwidth}
-    \raggedleft
-    \tiny
-    Clean LLP: fixed demand, no BESS, no dispatch regularization.\\
-    LMPs are HiGHS solver duals; the unregularized LP can admit alternative dual-optimal prices.
-\end{columns}
-\end{frame}
-
-
-\begin{frame}{Why proximal regularization? Nodal siting cycles}
-\vspace{-0.12cm}
-
-\centering
-\includegraphics[width=0.92\textwidth]{figures/capacity_only_node_cycling.png}
-
-\vspace{-0.12cm}
-{\footnotesize
-\textbf{After 50 unpenalized sweeps:} the fleet is stable at 187.18 MW / 547.20 MWh, but raw nodal best-response gaps remain 8.9 MW / 27.5 MWh.}
-
-\vspace{0.07cm}
-{\scriptsize Stable aggregate capacity $\not\Rightarrow$ stable siting: I3/I4 repeatedly reallocate between N3 and N9.}
-
-\vspace{0.04cm}
-{\tiny Strong-duality MPEC, damping $0.25$, $\rho=0$. Sweeps 51--62 are a diagnostic continuation from the original sweep-50 checkpoint and only identify the cycling nodes.}
-\end{frame}
-
-
-\begin{frame}{Two proximal sweeps meet the convergence rule}
-\vspace{-0.15cm}
-
-\centering
-\includegraphics[width=0.94\textwidth]{figures/capacity_only_relaxed_kkt_convergence.png}
-
-\vspace{-0.12cm}
-\begin{columns}[T,onlytextwidth]
-    \column{0.55\textwidth}
-    {\scriptsize
-    \textbf{Unpenalized, sweep 20:} 2.406 MW / 9.028 MWh; not converged.\\[0.08cm]
-    \textbf{$\rho=0.01$:} sweep 21 falls to 0.0848 MW / 0.00049 MWh; sweep 22 to 0.0432 MW / 0.00052 MWh.}
-
-    \column{0.43\textwidth}
-    \centering
-    {\scriptsize
-    \begin{tabular}{lrr}
-        \toprule
-        & \textbf{MW} & \textbf{MWh} \\
-        \midrule
-        I1 & 46.79 & 136.80 \\
-        I2 & 46.79 & 136.80 \\
-        I3 & 46.80 & 136.80 \\
-        I4 & 46.79 & 136.80 \\
-        \midrule
-        \textbf{Fleet} & \textbf{187.18} & \textbf{547.20} \\
-        \bottomrule
-    \end{tabular}}
-\end{columns}
-
 \vspace{0.05cm}
-{\tiny Capacity-only relaxed-KKT MPEC; Scholtes $\epsilon=10^{-3}$; damping $0.25$; four parallel IPOPT best responses. Convergence requires raw gaps below 0.5 MW / 1 MWh for two consecutive sweeps.}
+\begin{minipage}{0.78\textwidth}
+\small
+\textbf{Interpretation:} outside the solar window, nodes share the thermal marginal cost. When L46 and L78 bind, curtailed PV drives N6/N8 prices down while N1 remains thermally priced.
+\end{minipage}
 \end{frame}
 
 
-\begin{frame}{Stable capacity allocation at sweep 22}
-\vspace{-0.05cm}
+\begin{frame}{Preliminary results: capacity allocation by investor}
+\vfill
 
 \begin{columns}[T,onlytextwidth]
     \column{0.49\textwidth}
@@ -673,12 +748,73 @@ P^{discharge}_{i,n,t,s}
     \end{tabular}}}
 \end{columns}
 
-\vspace{0.35cm}
+\vspace{0.45cm}
 {\footnotesize
 I1/I2 place more capacity at N6/N8; renewable-portfolio investors I3/I4 place more at N3/N9. All other nodes are zero.}
 
-\vspace{0.08cm}
-{\tiny Converged for the regularized best responses. A $\rho=0$ audit is still required before claiming an equilibrium of the unregularized game.}
+\vfill
+\end{frame}
+
+
+\begin{frame}{Two proximal sweeps meet the convergence rule}
+\vfill
+
+\centering
+\includegraphics[width=0.92\textwidth]{figures/capacity_only_relaxed_kkt_convergence.png}
+
+\vspace{0.14cm}
+{\footnotesize\textbf{Unregularized investor objective and proximal penalty (\euro/day)}}
+
+\vspace{0.06cm}
+{\scriptsize
+\renewcommand{\arraystretch}{1.07}
+\begin{tabular}{clrrrr}
+    \toprule
+    \textbf{Sweep} & \textbf{Metric} & \textbf{I1} & \textbf{I2} & \textbf{I3} & \textbf{I4} \\
+    \midrule
+    20 ($\rho=0$) & Objective & \textbf{4,704.90} & \textbf{4,468.33} & \textbf{125,701.18} & \textbf{186,362.85} \\
+                    & Penalty   & 0 & 0 & 0 & 0 \\
+    \addlinespace[0.18cm]
+    21 ($\rho=0.01$) & Objective & \textbf{4,704.91} & \textbf{4,468.34} & \textbf{125,701.13} & \textbf{186,362.84} \\
+                       & Penalty   & \mbox{$9.91\times10^{-6}$} & \mbox{$9.91\times10^{-6}$} & \mbox{$1.70\times10^{-3}$} & \mbox{$1.64\times10^{-3}$} \\
+    \addlinespace[0.18cm]
+    22 ($\rho=0.01$) & Objective & \textbf{4,704.92} & \textbf{4,468.35} & \textbf{125,701.18} & \textbf{186,362.88} \\
+                       & Penalty   & \mbox{$9.86\times10^{-6}$} & \mbox{$9.86\times10^{-6}$} & \mbox{$8.64\times10^{-4}$} & \mbox{$8.11\times10^{-4}$} \\
+    \bottomrule
+\end{tabular}}
+
+\vfill
+\end{frame}
+
+
+\begin{frame}{Why proximal regularization? Nodal siting cycles}
+\vfill
+
+\centering
+\includegraphics[width=0.90\textwidth]{figures/capacity_only_node_cycling.png}
+
+\vspace{0.16cm}
+{\footnotesize
+\textbf{After 50 unpenalized sweeps:} the fleet is stable at 187.18 MW / 547.20 MWh, but raw nodal best-response gaps remain 8.9 MW / 27.5 MWh.}
+
+\vspace{0.13cm}
+{\scriptsize Stable aggregate capacity $\not\Rightarrow$ stable siting: I3/I4 repeatedly reallocate between N3 and N9.}
+
+\vfill
+\end{frame}
+
+
+\begin{frame}{Future work}
+\vfill
+
+\begin{itemize}
+    \setlength{\itemsep}{0.45cm}
+    \item \textbf{Expand strategic behavior:} allow investors to submit charging bids and discharge offers.
+    \item \textbf{Broaden the case analysis:} test different investor portfolios and ownership structures.
+    \item \textbf{Stress-test and verify convergence:} run damping sensitivity tests, evaluate Gauss--Seidel after one initial Jacobi sweep, and verify the MPEC results with the KKT Big-M formulation and global-optimality certificates.
+\end{itemize}
+
+\vfill
 \end{frame}
 
 

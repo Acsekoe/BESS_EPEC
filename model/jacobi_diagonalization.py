@@ -11,7 +11,10 @@ import pyomo.environ as pyo
 
 import mpec_kkt_bigm
 import mpec_relaxed_kkt
+import mpec_strategic_access_relaxed_kkt
 import mpec_strategic_operation
+import mpec_strategic_price_relaxed_kkt
+import mpec_strategic_quantity_relaxed_kkt
 import mpec_strong_duality
 from mpec_strong_duality import InvestorConfig
 from primal_market_clearing_model import MarketData, build_primal_market_clearing_model
@@ -34,6 +37,7 @@ class JacobiConfig:
     cleanup_tolerance: float = 1e-6
     proximal_penalty: float = 0.0
     proximal_energy_scale: float = 2.0
+    proximal_price_scale: float = 10.0
     price_bound: float = 500.0
     dual_bound: float = 10_000.0
     big_m_dual: float = 800.0
@@ -44,6 +48,13 @@ class JacobiConfig:
     initial_bid_charge_eur_per_mwh: float = 0.0
     initial_offer_discharge_eur_per_mwh: float = 0.0
     tolerance_bid_eur_per_mwh: float = 0.5
+    initial_charge_bid_mw: float = 0.0
+    initial_discharge_bid_mw: float = 0.0
+    tolerance_quantity_bid_mw: float = 0.5
+    access_request_limit_mw: float = 200.0
+    access_bid_bound: float = 500.0
+    initial_access_bid_eur_per_mw_day: float = 0.0
+    tolerance_access_bid_eur_per_mw_day: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -68,6 +79,14 @@ class BestResponseResult:
     complementarity_max_product: float | None = None
     complementarity_max_violation: float | None = None
     primal_dual_gap_eur_per_day: float | None = None
+    proposed_bid_charge_price: dict[tuple[str, int], float] = field(
+        default_factory=dict
+    )
+    proposed_offer_discharge_price: dict[tuple[str, int], float] = field(
+        default_factory=dict
+    )
+    proposed_access_quantity: dict[str, float] = field(default_factory=dict)
+    proposed_access_bid: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -82,6 +101,14 @@ class JacobiResult:
     stable_sweeps: int = 0
     bid_charge: dict[tuple[str, str, int], float] = field(default_factory=dict)
     offer_discharge: dict[tuple[str, str, int], float] = field(default_factory=dict)
+    bid_charge_price: dict[tuple[str, str, int], float] = field(
+        default_factory=dict
+    )
+    offer_discharge_price: dict[tuple[str, str, int], float] = field(
+        default_factory=dict
+    )
+    access_quantity: dict[tuple[str, str], float] = field(default_factory=dict)
+    access_bid: dict[tuple[str, str], float] = field(default_factory=dict)
 
 
 ModelSolver = Callable[[pyo.ConcreteModel], SolveOutcome]
@@ -93,6 +120,10 @@ BatchSolver = Callable[
         dict[tuple[str, str], float],
         dict[tuple[str, str, int], float],
         dict[tuple[str, str, int], float],
+        dict[tuple[str, str, int], float],
+        dict[tuple[str, str, int], float],
+        dict[tuple[str, str], float],
+        dict[tuple[str, str], float],
     ],
     dict[str, BestResponseResult],
 ]
@@ -122,6 +153,10 @@ def _validate(config: JacobiConfig) -> None:
         "relaxed-kkt",
         "kkt-bigm",
         "strategic-operation",
+        "strategic-price-relaxed-kkt",
+        "strategic-quantity",
+        "strategic-price-quantity",
+        "strategic-access",
     }:
         raise ValueError(f"Unknown formulation: {config.formulation}")
     if not 0.0 < config.damping <= 1.0:
@@ -140,12 +175,40 @@ def _validate(config: JacobiConfig) -> None:
         config.sparse_capacity_tol,
     ) < 0.0:
         raise ValueError("Capacity seeds, tolerances, and penalties cannot be negative.")
-    if config.price_bound <= 0.0 or config.dual_bound <= 0.0:
-        raise ValueError("Price and dual bounds must be positive.")
+    if (
+        config.price_bound <= 0.0
+        or config.dual_bound <= 0.0
+        or config.proximal_energy_scale <= 0.0
+    ):
+        raise ValueError("Price/dual bounds and the energy scale must be positive.")
+    if (
+        config.formulation
+        in {
+            "strategic-price-quantity",
+            "strategic-price-relaxed-kkt",
+            "strategic-access",
+        }
+        and config.proximal_price_scale <= 0.0
+    ):
+        raise ValueError("The proximal price scale must be positive.")
     if config.complementarity_epsilon < 0.0:
         raise ValueError("complementarity_epsilon cannot be negative.")
+    if min(
+        config.initial_charge_bid_mw,
+        config.initial_discharge_bid_mw,
+        config.tolerance_quantity_bid_mw,
+    ) < 0.0:
+        raise ValueError("Strategic quantity seeds and tolerance cannot be negative.")
     if config.bid_price_bound <= 0.0 or config.tolerance_bid_eur_per_mwh < 0.0:
         raise ValueError("The strategic bid bound must be positive and tolerance non-negative.")
+    if (
+        config.access_request_limit_mw <= 0.0
+        or config.access_bid_bound <= 0.0
+        or config.initial_access_bid_eur_per_mw_day < 0.0
+        or config.initial_access_bid_eur_per_mw_day > config.access_bid_bound
+        or config.tolerance_access_bid_eur_per_mw_day < 0.0
+    ):
+        raise ValueError("Invalid strategic-access request or bid settings.")
     if max(
         abs(config.initial_bid_charge_eur_per_mwh),
         abs(config.initial_offer_discharge_eur_per_mwh),
@@ -174,7 +237,10 @@ def _initial_state(data: MarketData, config: JacobiConfig) -> JacobiResult:
         for investor in config.investors
         for n in data.nodes
     }
-    if config.formulation == "strategic-operation":
+    if config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }:
         if (
             config.initial_offer_discharge_eur_per_mwh
             < config.initial_bid_charge_eur_per_mwh / (data.eta**2)
@@ -194,15 +260,147 @@ def _initial_state(data: MarketData, config: JacobiConfig) -> JacobiResult:
             for n in data.nodes
             for t in data.times
         }
+    elif config.formulation in {
+        "strategic-quantity",
+        "strategic-price-quantity",
+    }:
+        if max(
+            config.initial_charge_bid_mw,
+            config.initial_discharge_bid_mw,
+        ) > seed + 1.0e-9:
+            raise ValueError(
+                "Initial strategic quantity bids cannot exceed initial installed MW."
+            )
+        bid_charge = {
+            (investor.investor_id, n, int(t)): config.initial_charge_bid_mw
+            for investor in config.investors
+            for n in data.nodes
+            for t in data.times
+        }
+        offer_discharge = {
+            (investor.investor_id, n, int(t)): config.initial_discharge_bid_mw
+            for investor in config.investors
+            for n in data.nodes
+            for t in data.times
+        }
     else:
         bid_charge = {}
         offer_discharge = {}
-    return JacobiResult(
+    if config.formulation == "strategic-price-quantity":
+        if (
+            config.initial_offer_discharge_eur_per_mwh
+            < config.initial_bid_charge_eur_per_mwh / (data.eta**2)
+        ):
+            raise ValueError(
+                "Initial strategic prices permit a negative-cost storage loop."
+            )
+        bid_charge_price = {
+            (investor.investor_id, n, int(t)):
+            config.initial_bid_charge_eur_per_mwh
+            for investor in config.investors
+            for n in data.nodes
+            for t in data.times
+        }
+        offer_discharge_price = {
+            (investor.investor_id, n, int(t)):
+            config.initial_offer_discharge_eur_per_mwh
+            for investor in config.investors
+            for n in data.nodes
+            for t in data.times
+        }
+    else:
+        bid_charge_price = {}
+        offer_discharge_price = {}
+    if config.formulation == "strategic-access":
+        access_quantity = {
+            (investor.investor_id, node): min(
+                max(0.0, config.initial_power_mw),
+                config.node_limit_mw,
+                config.access_request_limit_mw,
+            )
+            for investor in config.investors
+            for node in data.nodes
+        }
+        for investor in config.investors:
+            total = sum(
+                access_quantity[investor.investor_id, node]
+                for node in data.nodes
+            )
+            if total > config.access_request_limit_mw:
+                scale = config.access_request_limit_mw / total
+                for node in data.nodes:
+                    access_quantity[investor.investor_id, node] *= scale
+        access_bid = {
+            (investor.investor_id, node): config.initial_access_bid_eur_per_mw_day
+            for investor in config.investors
+            for node in data.nodes
+        }
+    else:
+        access_quantity = {}
+        access_bid = {}
+    state = JacobiResult(
         power=power,
         energy=energy,
         bid_charge=bid_charge,
         offer_discharge=offer_discharge,
+        bid_charge_price=bid_charge_price,
+        offer_discharge_price=offer_discharge_price,
+        access_quantity=access_quantity,
+        access_bid=access_bid,
     )
+    if config.formulation == "strategic-access":
+        _clear_access_allocation(data, config, state)
+    return state
+
+
+def _clear_access_allocation(
+    data: MarketData,
+    config: JacobiConfig,
+    state: JacobiResult,
+) -> pyo.ConcreteModel:
+    """Clear one common exact access/dispatch LP and update derived capacity."""
+
+    quantity = {
+        investor.investor_id: {
+            node: state.access_quantity[investor.investor_id, node]
+            for node in data.nodes
+        }
+        for investor in config.investors
+    }
+    bid = {
+        investor.investor_id: {
+            node: state.access_bid[investor.investor_id, node]
+            for node in data.nodes
+        }
+        for investor in config.investors
+    }
+    energy = {
+        investor.investor_id: {
+            node: state.energy[investor.investor_id, node]
+            for node in data.nodes
+        }
+        for investor in config.investors
+    }
+    lower = mpec_strategic_access_relaxed_kkt.solve_fixed_access_market(
+        data,
+        access_quantity=quantity,
+        access_bid=bid,
+        energy_capacity=energy,
+        degradation={
+            investor.investor_id: investor.degradation_eur_per_mwh
+            for investor in config.investors
+        },
+        node_limit_mw=config.node_limit_mw,
+    )
+    for investor in config.investors:
+        investor_id = investor.investor_id
+        for node in data.nodes:
+            key = investor_id, node
+            awarded = max(0.0, float(pyo.value(lower.X_awarded[key])))
+            if awarded < config.cleanup_tolerance:
+                awarded = 0.0
+            state.power[key] = awarded
+    return lower
 
 
 def _fixed_storage_data(model: pyo.ConcreteModel, data: MarketData) -> MarketData:
@@ -379,9 +577,80 @@ def build_best_response(
     snapshot_energy: dict[tuple[str, str], float],
     snapshot_bid_charge: dict[tuple[str, str, int], float] | None = None,
     snapshot_offer_discharge: dict[tuple[str, str, int], float] | None = None,
+    snapshot_bid_charge_price: dict[tuple[str, str, int], float] | None = None,
+    snapshot_offer_discharge_price: dict[tuple[str, str, int], float] | None = None,
+    snapshot_access_quantity: dict[tuple[str, str], float] | None = None,
+    snapshot_access_bid: dict[tuple[str, str], float] | None = None,
 ) -> pyo.ConcreteModel:
     active = investor.investor_id
     rivals = [other for other in config.investors if other.investor_id != active]
+    if config.formulation == "strategic-access":
+        if (
+            snapshot_access_quantity is None
+            or snapshot_access_bid is None
+        ):
+            raise ValueError("Strategic-access best responses require access snapshots.")
+        model = mpec_strategic_access_relaxed_kkt.build_model(
+            data,
+            investor=investor,
+            rival_access_quantity={
+                other.investor_id: {
+                    node: snapshot_access_quantity[other.investor_id, node]
+                    for node in data.nodes
+                }
+                for other in rivals
+            },
+            rival_access_bid={
+                other.investor_id: {
+                    node: snapshot_access_bid[other.investor_id, node]
+                    for node in data.nodes
+                }
+                for other in rivals
+            },
+            rival_energy_capacity={
+                other.investor_id: {
+                    node: snapshot_energy[other.investor_id, node]
+                    for node in data.nodes
+                }
+                for other in rivals
+            },
+            rival_degradation={
+                other.investor_id: other.degradation_eur_per_mwh
+                for other in rivals
+            },
+            node_limit_mw=config.node_limit_mw,
+            investor_request_limit_mw=config.access_request_limit_mw,
+            access_bid_bound=config.access_bid_bound,
+            initial_access_quantity={
+                node: snapshot_access_quantity[active, node]
+                for node in data.nodes
+            },
+            initial_access_bid={
+                node: snapshot_access_bid[active, node] for node in data.nodes
+            },
+            initial_energy_capacity={
+                node: snapshot_energy[active, node] for node in data.nodes
+            },
+            price_bound=config.price_bound,
+            dual_bound=config.dual_bound,
+            complementarity_epsilon=config.complementarity_epsilon,
+            proximal_access_quantity={
+                node: snapshot_access_quantity[active, node]
+                for node in data.nodes
+            },
+            proximal_access_bid={
+                node: snapshot_access_bid[active, node] for node in data.nodes
+            },
+            proximal_energy_capacity={
+                node: snapshot_energy[active, node] for node in data.nodes
+            },
+            proximal_penalty=config.proximal_penalty,
+            proximal_price_scale=config.proximal_price_scale,
+            proximal_energy_scale=config.proximal_energy_scale,
+        )
+        if config.warm_start_lower_level:
+            mpec_strategic_access_relaxed_kkt.initialise_lower_level(model, data)
+        return model
     rival_power = {
         other.investor_id: {
             n: snapshot_power[other.investor_id, n] for n in data.nodes
@@ -420,7 +689,156 @@ def build_best_response(
         )
     elif config.formulation == "kkt-bigm":
         model = mpec_kkt_bigm.build_model(**common_kwargs)
-    else:
+    elif config.formulation in {
+        "strategic-quantity",
+        "strategic-price-quantity",
+    }:
+        if snapshot_bid_charge is None or snapshot_offer_discharge is None:
+            raise ValueError(
+                "Strategic-quantity best responses require quantity snapshots."
+            )
+        combined_prices = config.formulation == "strategic-price-quantity"
+        if combined_prices and (
+            snapshot_bid_charge_price is None
+            or snapshot_offer_discharge_price is None
+        ):
+            raise ValueError(
+                "Strategic price-quantity best responses require price snapshots."
+            )
+        rival_charge_bid_mw = {
+            other.investor_id: {
+                (n, int(t)): snapshot_bid_charge[other.investor_id, n, int(t)]
+                for n in data.nodes
+                for t in data.times
+            }
+            for other in rivals
+        }
+        rival_discharge_bid_mw = {
+            other.investor_id: {
+                (n, int(t)): snapshot_offer_discharge[
+                    other.investor_id, n, int(t)
+                ]
+                for n in data.nodes
+                for t in data.times
+            }
+            for other in rivals
+        }
+        model = mpec_strategic_quantity_relaxed_kkt.build_model(
+            **common_kwargs,
+            rival_charge_bid_mw=rival_charge_bid_mw,
+            rival_discharge_bid_mw=rival_discharge_bid_mw,
+            initial_charge_bid_mw={
+                (n, int(t)): snapshot_bid_charge[active, n, int(t)]
+                for n in data.nodes
+                for t in data.times
+            },
+            initial_discharge_bid_mw={
+                (n, int(t)): snapshot_offer_discharge[active, n, int(t)]
+                for n in data.nodes
+                for t in data.times
+            },
+            strategic_prices=combined_prices,
+            rival_charge_bid_eur_per_mwh=(
+                {
+                    other.investor_id: {
+                        (n, int(t)): snapshot_bid_charge_price[
+                            other.investor_id, n, int(t)
+                        ]
+                        for n in data.nodes
+                        for t in data.times
+                    }
+                    for other in rivals
+                }
+                if combined_prices
+                else None
+            ),
+            rival_discharge_offer_eur_per_mwh=(
+                {
+                    other.investor_id: {
+                        (n, int(t)): snapshot_offer_discharge_price[
+                            other.investor_id, n, int(t)
+                        ]
+                        for n in data.nodes
+                        for t in data.times
+                    }
+                    for other in rivals
+                }
+                if combined_prices
+                else None
+            ),
+            initial_charge_bid_eur_per_mwh=(
+                {
+                    (n, int(t)): snapshot_bid_charge_price[active, n, int(t)]
+                    for n in data.nodes
+                    for t in data.times
+                }
+                if combined_prices
+                else None
+            ),
+            initial_discharge_offer_eur_per_mwh=(
+                {
+                    (n, int(t)): snapshot_offer_discharge_price[
+                        active, n, int(t)
+                    ]
+                    for n in data.nodes
+                    for t in data.times
+                }
+                if combined_prices
+                else None
+            ),
+            bid_price_bound=config.bid_price_bound,
+            proximal_price_scale=config.proximal_price_scale,
+            proximal_charge_bid_mw=(
+                {
+                    (n, int(t)): snapshot_bid_charge[active, n, int(t)]
+                    for n in data.nodes
+                    for t in data.times
+                }
+                if combined_prices
+                else None
+            ),
+            proximal_discharge_bid_mw=(
+                {
+                    (n, int(t)): snapshot_offer_discharge[active, n, int(t)]
+                    for n in data.nodes
+                    for t in data.times
+                }
+                if combined_prices
+                else None
+            ),
+            proximal_charge_bid_eur_per_mwh=(
+                {
+                    (n, int(t)): snapshot_bid_charge_price[active, n, int(t)]
+                    for n in data.nodes
+                    for t in data.times
+                }
+                if combined_prices
+                else None
+            ),
+            proximal_discharge_offer_eur_per_mwh=(
+                {
+                    (n, int(t)): snapshot_offer_discharge_price[
+                        active, n, int(t)
+                    ]
+                    for n in data.nodes
+                    for t in data.times
+                }
+                if combined_prices
+                else None
+            ),
+            complementarity_epsilon=config.complementarity_epsilon,
+        )
+        if any(
+            snapshot_power[active, n] > config.cleanup_tolerance
+            for n in data.nodes
+        ):
+            for n in data.nodes:
+                model.X_power[n].set_value(snapshot_power[active, n])
+                model.X_energy[n].set_value(snapshot_energy[active, n])
+    elif config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }:
         if snapshot_bid_charge is None or snapshot_offer_discharge is None:
             raise ValueError("Strategic-operation best responses require price snapshots.")
         rival_bid_charge = {
@@ -441,7 +859,12 @@ def build_best_response(
             }
             for other in rivals
         }
-        model = mpec_strategic_operation.build_model(
+        price_builder = (
+            mpec_strategic_price_relaxed_kkt.build_model
+            if config.formulation == "strategic-price-relaxed-kkt"
+            else mpec_strategic_operation.build_model
+        )
+        model = price_builder(
             **common_kwargs,
             rival_bid_charge=rival_bid_charge,
             rival_offer_discharge=rival_offer_discharge,
@@ -456,9 +879,53 @@ def build_best_response(
                 for t in data.times
             },
             bid_price_bound=config.bid_price_bound,
+            **(
+                {
+                    "proximal_bid_charge": {
+                        (n, int(t)): snapshot_bid_charge[active, n, int(t)]
+                        for n in data.nodes
+                        for t in data.times
+                    },
+                    "proximal_offer_discharge": {
+                        (n, int(t)): snapshot_offer_discharge[
+                            active, n, int(t)
+                        ]
+                        for n in data.nodes
+                        for t in data.times
+                    },
+                    "proximal_price_scale": config.proximal_price_scale,
+                    "complementarity_epsilon": config.complementarity_epsilon,
+                }
+                if config.formulation == "strategic-price-relaxed-kkt"
+                else {}
+            ),
         )
+        if (
+            config.formulation == "strategic-price-relaxed-kkt"
+            and any(
+                snapshot_power[active, n] > config.cleanup_tolerance
+                for n in data.nodes
+            )
+        ):
+            for n in data.nodes:
+                model.X_power[n].set_value(snapshot_power[active, n])
+                model.X_energy[n].set_value(snapshot_energy[active, n])
+    else:
+        raise ValueError(f"Unknown formulation: {config.formulation}")
     if config.warm_start_lower_level:
-        initialise_lower_level(model, data)
+        if config.formulation in {
+            "strategic-quantity",
+            "strategic-price-quantity",
+        }:
+            mpec_strategic_quantity_relaxed_kkt.initialise_lower_level(
+                model, data
+            )
+        elif config.formulation == "strategic-price-relaxed-kkt":
+            mpec_strategic_price_relaxed_kkt.initialise_lower_level(
+                model, data
+            )
+        else:
+            initialise_lower_level(model, data)
         if config.formulation == "kkt-bigm":
             initialise_bigm_binaries(model, data)
     return model
@@ -472,30 +939,72 @@ def collect_best_response(
     """Extract the small serialisable result needed by the Jacobi update."""
 
     investor_id = model._active_id
-    proposed_power = {
-        n: max(0.0, pyo.value(model.X_power[n])) for n in data.nodes
-    }
-    proposed_energy = {
-        n: max(0.0, pyo.value(model.X_energy[n])) for n in data.nodes
-    }
-    proposed_bid_charge = (
-        {
+    if getattr(model, "_strategic_access", False):
+        proposed_power = {
+            n: max(0.0, pyo.value(model.X_awarded[investor_id, n]))
+            for n in data.nodes
+        }
+        proposed_energy = {
+            n: max(0.0, pyo.value(model.EnergyCapacity[n]))
+            for n in data.nodes
+        }
+        proposed_access_quantity = {
+            n: max(0.0, pyo.value(model.AccessQuantity[n])) for n in data.nodes
+        }
+        proposed_access_bid = {
+            n: max(0.0, pyo.value(model.AccessBid[n])) for n in data.nodes
+        }
+    else:
+        proposed_power = {
+            n: max(0.0, pyo.value(model.X_power[n])) for n in data.nodes
+        }
+        proposed_energy = {
+            n: max(0.0, pyo.value(model.X_energy[n])) for n in data.nodes
+        }
+        proposed_access_quantity = {}
+        proposed_access_bid = {}
+    if hasattr(model, "BidCharge") and outcome.has_solution:
+        proposed_bid_charge = {
             (n, int(t)): pyo.value(model.BidCharge[n, t])
             for n in data.nodes
             for t in data.times
         }
-        if hasattr(model, "BidCharge") and outcome.has_solution
-        else {}
-    )
-    proposed_offer_discharge = (
-        {
+    elif hasattr(model, "ChargeBidMW") and outcome.has_solution:
+        proposed_bid_charge = {
+            (n, int(t)): pyo.value(model.ChargeBidMW[n, t])
+            for n in data.nodes
+            for t in data.times
+        }
+    else:
+        proposed_bid_charge = {}
+    if hasattr(model, "OfferDischarge") and outcome.has_solution:
+        proposed_offer_discharge = {
             (n, int(t)): pyo.value(model.OfferDischarge[n, t])
             for n in data.nodes
             for t in data.times
         }
-        if hasattr(model, "OfferDischarge") and outcome.has_solution
-        else {}
-    )
+    elif hasattr(model, "DischargeBidMW") and outcome.has_solution:
+        proposed_offer_discharge = {
+            (n, int(t)): pyo.value(model.DischargeBidMW[n, t])
+            for n in data.nodes
+            for t in data.times
+        }
+    else:
+        proposed_offer_discharge = {}
+    if hasattr(model, "BidChargeEURPerMWh") and outcome.has_solution:
+        proposed_bid_charge_price = {
+            (n, int(t)): pyo.value(model.BidChargeEURPerMWh[n, t])
+            for n in data.nodes
+            for t in data.times
+        }
+        proposed_offer_discharge_price = {
+            (n, int(t)): pyo.value(model.OfferDischargeEURPerMWh[n, t])
+            for n in data.nodes
+            for t in data.times
+        }
+    else:
+        proposed_bid_charge_price = {}
+        proposed_offer_discharge_price = {}
     profit = (
         pyo.value(
             model.kkt_unregularized_profit
@@ -537,6 +1046,10 @@ def collect_best_response(
             if relaxed_kkt is not None
             else None
         ),
+        proposed_bid_charge_price,
+        proposed_offer_discharge_price,
+        proposed_access_quantity,
+        proposed_access_bid,
     )
 
 
@@ -554,6 +1067,17 @@ def run_jacobi(
     if solve is None and solve_batch is None:
         raise ValueError("Either a sequential solver or a batch solver is required.")
     state = initial_state if initial_state is not None else _initial_state(data, config)
+    combined_strategic = config.formulation == "strategic-price-quantity"
+    price_strategic = config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }
+    quantity_strategic = config.formulation in {
+        "strategic-quantity",
+        "strategic-price-quantity",
+    }
+    access_strategic = config.formulation == "strategic-access"
+    strategic_bids = price_strategic or quantity_strategic
     stable_sweeps = state.stable_sweeps
     if state.converged and config.stop_at_convergence:
         return state
@@ -563,10 +1087,18 @@ def run_jacobi(
         old_energy = dict(state.energy)
         old_bid_charge = dict(state.bid_charge)
         old_offer_discharge = dict(state.offer_discharge)
+        old_bid_charge_price = dict(state.bid_charge_price)
+        old_offer_discharge_price = dict(state.offer_discharge_price)
+        old_access_quantity = dict(state.access_quantity)
+        old_access_bid = dict(state.access_bid)
         proposals_power: dict[tuple[str, str], float] = {}
         proposals_energy: dict[tuple[str, str], float] = {}
         proposals_bid_charge: dict[tuple[str, str, int], float] = {}
         proposals_offer_discharge: dict[tuple[str, str, int], float] = {}
+        proposals_bid_charge_price: dict[tuple[str, str, int], float] = {}
+        proposals_offer_discharge_price: dict[tuple[str, str, int], float] = {}
+        proposals_access_quantity: dict[tuple[str, str], float] = {}
+        proposals_access_bid: dict[tuple[str, str], float] = {}
 
         if solve_batch is not None:
             responses = solve_batch(
@@ -576,6 +1108,10 @@ def run_jacobi(
                 old_energy,
                 old_bid_charge,
                 old_offer_discharge,
+                old_bid_charge_price,
+                old_offer_discharge_price,
+                old_access_quantity,
+                old_access_bid,
             )
         else:
             models = {
@@ -587,6 +1123,10 @@ def run_jacobi(
                     old_energy,
                     old_bid_charge,
                     old_offer_discharge,
+                    old_bid_charge_price,
+                    old_offer_discharge_price,
+                    old_access_quantity,
+                    old_access_bid,
                 )
                 for investor in config.investors
             }
@@ -619,7 +1159,18 @@ def run_jacobi(
                     if outcome.optimal
                     else old_energy[investor_id, n]
                 )
-                if config.formulation == "strategic-operation":
+                if access_strategic:
+                    proposals_access_quantity[investor_id, n] = (
+                        response.proposed_access_quantity[n]
+                        if outcome.optimal
+                        else old_access_quantity[investor_id, n]
+                    )
+                    proposals_access_bid[investor_id, n] = (
+                        response.proposed_access_bid[n]
+                        if outcome.optimal
+                        else old_access_bid[investor_id, n]
+                    )
+                if strategic_bids:
                     for t in data.times:
                         price_key = investor_id, n, int(t)
                         proposals_bid_charge[price_key] = (
@@ -632,15 +1183,50 @@ def run_jacobi(
                             if outcome.optimal
                             else old_offer_discharge[price_key]
                         )
+                        if combined_strategic:
+                            proposals_bid_charge_price[price_key] = (
+                                response.proposed_bid_charge_price[n, int(t)]
+                                if outcome.optimal
+                                else old_bid_charge_price[price_key]
+                            )
+                            proposals_offer_discharge_price[price_key] = (
+                                response.proposed_offer_discharge_price[n, int(t)]
+                                if outcome.optimal
+                                else old_offer_discharge_price[price_key]
+                            )
 
-        for key in state.power:
-            state.power[key] = (1.0 - config.damping) * old_power[key] + config.damping * proposals_power[key]
-            state.energy[key] = (1.0 - config.damping) * old_energy[key] + config.damping * proposals_energy[key]
-            if state.power[key] < config.cleanup_tolerance:
-                state.power[key] = 0.0
-                state.energy[key] = 0.0
+        if access_strategic:
+            for key in state.access_quantity:
+                state.access_quantity[key] = (
+                    (1.0 - config.damping) * old_access_quantity[key]
+                    + config.damping * proposals_access_quantity[key]
+                )
+                state.access_bid[key] = (
+                    (1.0 - config.damping) * old_access_bid[key]
+                    + config.damping * proposals_access_bid[key]
+                )
+                state.energy[key] = (
+                    (1.0 - config.damping) * old_energy[key]
+                    + config.damping * proposals_energy[key]
+                )
+                if state.access_quantity[key] < config.cleanup_tolerance:
+                    state.access_quantity[key] = 0.0
+            _clear_access_allocation(data, config, state)
+        else:
+            for key in state.power:
+                state.power[key] = (
+                    (1.0 - config.damping) * old_power[key]
+                    + config.damping * proposals_power[key]
+                )
+                state.energy[key] = (
+                    (1.0 - config.damping) * old_energy[key]
+                    + config.damping * proposals_energy[key]
+                )
+                if state.power[key] < config.cleanup_tolerance:
+                    state.power[key] = 0.0
+                    state.energy[key] = 0.0
 
-        if config.formulation == "strategic-operation":
+        if price_strategic:
             investors_by_id = {
                 investor.investor_id: investor for investor in config.investors
             }
@@ -662,8 +1248,49 @@ def run_jacobi(
                     )
                     state.bid_charge[key] = -half_cost
                     state.offer_discharge[key] = half_cost
+        elif quantity_strategic:
+            for key in state.bid_charge:
+                investor_id, node, _ = key
+                state.bid_charge[key] = (
+                    (1.0 - config.damping) * old_bid_charge[key]
+                    + config.damping * proposals_bid_charge[key]
+                )
+                state.offer_discharge[key] = (
+                    (1.0 - config.damping) * old_offer_discharge[key]
+                    + config.damping * proposals_offer_discharge[key]
+                )
+                if state.power[investor_id, node] < config.cleanup_tolerance:
+                    state.bid_charge[key] = 0.0
+                    state.offer_discharge[key] = 0.0
+            if combined_strategic:
+                investors_by_id = {
+                    investor.investor_id: investor
+                    for investor in config.investors
+                }
+                for key in state.bid_charge_price:
+                    investor_id, node, _ = key
+                    state.bid_charge_price[key] = (
+                        (1.0 - config.damping) * old_bid_charge_price[key]
+                        + config.damping * proposals_bid_charge_price[key]
+                    )
+                    state.offer_discharge_price[key] = (
+                        (1.0 - config.damping)
+                        * old_offer_discharge_price[key]
+                        + config.damping
+                        * proposals_offer_discharge_price[key]
+                    )
+                    if state.power[investor_id, node] < config.cleanup_tolerance:
+                        half_cost = min(
+                            config.bid_price_bound,
+                            0.5
+                            * investors_by_id[
+                                investor_id
+                            ].degradation_eur_per_mwh,
+                        )
+                        state.bid_charge_price[key] = -half_cost
+                        state.offer_discharge_price[key] = half_cost
 
-        for n in data.nodes:
+        for n in (data.nodes if not access_strategic else []):
             total = sum(state.power[investor.investor_id, n] for investor in config.investors)
             if total > config.node_limit_mw + 1e-9:
                 scale = config.node_limit_mw / total
@@ -672,6 +1299,11 @@ def run_jacobi(
                     key = investor.investor_id, n
                     state.power[key] *= scale
                     state.energy[key] *= scale
+                    if quantity_strategic:
+                        for t in data.times:
+                            bid_key = investor.investor_id, n, int(t)
+                            state.bid_charge[bid_key] *= scale
+                            state.offer_discharge[bid_key] *= scale
 
         max_raw_power = max(abs(proposals_power[key] - old_power[key]) for key in state.power)
         max_raw_energy = max(abs(proposals_energy[key] - old_energy[key]) for key in state.energy)
@@ -686,7 +1318,7 @@ def run_jacobi(
             )
             > config.sparse_capacity_tol
         ]
-        max_raw_bid = max(
+        max_raw_primary_bid = max(
             (
                 max(
                     abs(proposals_bid_charge[key] - old_bid_charge[key]),
@@ -698,8 +1330,8 @@ def run_jacobi(
                 for key in active_price_keys
             ),
             default=0.0,
-        )
-        max_iterate_bid = max(
+        ) if strategic_bids else 0.0
+        max_iterate_primary_bid = max(
             (
                 max(
                     abs(state.bid_charge[key] - old_bid_charge[key]),
@@ -708,13 +1340,111 @@ def run_jacobi(
                 for key in active_price_keys
             ),
             default=0.0,
-        )
+        ) if strategic_bids else 0.0
+        if price_strategic:
+            max_raw_price_bid = max_raw_primary_bid
+            max_iterate_price_bid = max_iterate_primary_bid
+            max_raw_quantity_bid = 0.0
+            max_iterate_quantity_bid = 0.0
+        else:
+            max_raw_quantity_bid = (
+                max_raw_primary_bid if quantity_strategic else 0.0
+            )
+            max_iterate_quantity_bid = (
+                max_iterate_primary_bid if quantity_strategic else 0.0
+            )
+        if combined_strategic:
+            active_combined_price_keys = [
+                key
+                for key in proposals_bid_charge_price
+                if max(
+                    old_power[key[0], key[1]],
+                    proposals_power[key[0], key[1]],
+                )
+                > config.sparse_capacity_tol
+            ]
+            max_raw_price_bid = max(
+                (
+                    max(
+                        abs(
+                            proposals_bid_charge_price[key]
+                            - old_bid_charge_price[key]
+                        ),
+                        abs(
+                            proposals_offer_discharge_price[key]
+                            - old_offer_discharge_price[key]
+                        ),
+                    )
+                    for key in active_combined_price_keys
+                ),
+                default=0.0,
+            )
+            max_iterate_price_bid = max(
+                (
+                    max(
+                        abs(
+                            state.bid_charge_price[key]
+                            - old_bid_charge_price[key]
+                        ),
+                        abs(
+                            state.offer_discharge_price[key]
+                            - old_offer_discharge_price[key]
+                        ),
+                    )
+                    for key in active_combined_price_keys
+                ),
+                default=0.0,
+            )
+        elif not price_strategic:
+            max_raw_price_bid = 0.0
+            max_iterate_price_bid = 0.0
+        if access_strategic:
+            max_raw_access_quantity = max(
+                abs(proposals_access_quantity[key] - old_access_quantity[key])
+                for key in state.access_quantity
+            )
+            max_iterate_access_quantity = max(
+                abs(state.access_quantity[key] - old_access_quantity[key])
+                for key in state.access_quantity
+            )
+            active_access_keys = [
+                key
+                for key in state.access_quantity
+                if max(
+                    old_access_quantity[key],
+                    proposals_access_quantity[key],
+                )
+                > config.sparse_capacity_tol
+            ]
+            max_raw_access_bid = max(
+                (
+                    abs(proposals_access_bid[key] - old_access_bid[key])
+                    for key in active_access_keys
+                ),
+                default=0.0,
+            )
+            max_iterate_access_bid = max(
+                (
+                    abs(state.access_bid[key] - old_access_bid[key])
+                    for key in active_access_keys
+                ),
+                default=0.0,
+            )
+        else:
+            max_raw_access_quantity = 0.0
+            max_iterate_access_quantity = 0.0
+            max_raw_access_bid = 0.0
+            max_iterate_access_bid = 0.0
         all_optimal = all(response.outcome.optimal for response in responses.values())
         is_stable = (
             all_optimal
             and max_raw_power <= config.tolerance_mw
             and max_raw_energy <= config.tolerance_mwh
-            and max_raw_bid <= config.tolerance_bid_eur_per_mwh
+            and max_raw_quantity_bid <= config.tolerance_quantity_bid_mw
+            and max_raw_price_bid <= config.tolerance_bid_eur_per_mwh
+            and max_raw_access_quantity <= config.tolerance_mw
+            and max_raw_access_bid
+            <= config.tolerance_access_bid_eur_per_mw_day
         )
         stable_sweeps = stable_sweeps + 1 if is_stable else 0
         state.stable_sweeps = stable_sweeps
@@ -735,7 +1465,14 @@ def run_jacobi(
                     "proximal_penalty": config.proximal_penalty,
                     "complementarity_epsilon": (
                         config.complementarity_epsilon
-                        if config.formulation == "relaxed-kkt"
+                        if config.formulation
+                        in {
+                            "relaxed-kkt",
+                            "strategic-price-relaxed-kkt",
+                            "strategic-quantity",
+                            "strategic-price-quantity",
+                            "strategic-access",
+                        }
                         else None
                     ),
                     "complementarity_max_product": response.complementarity_max_product,
@@ -748,12 +1485,58 @@ def run_jacobi(
                     "old_energy_mwh": sum(old_energy[investor_id, n] for n in data.nodes),
                     "best_response_energy_mwh": sum(proposals_energy[investor_id, n] for n in data.nodes),
                     "new_energy_mwh": sum(state.energy[investor_id, n] for n in data.nodes),
+                    "old_access_request_mw": (
+                        sum(
+                            old_access_quantity[investor_id, n]
+                            for n in data.nodes
+                        )
+                        if access_strategic
+                        else None
+                    ),
+                    "best_response_access_request_mw": (
+                        sum(
+                            proposals_access_quantity[investor_id, n]
+                            for n in data.nodes
+                        )
+                        if access_strategic
+                        else None
+                    ),
+                    "new_access_request_mw": (
+                        sum(
+                            state.access_quantity[investor_id, n]
+                            for n in data.nodes
+                        )
+                        if access_strategic
+                        else None
+                    ),
                     "max_raw_deviation_mw": max_raw_power,
                     "max_raw_deviation_mwh": max_raw_energy,
                     "max_iterate_change_mw": max_iterate_power,
                     "max_iterate_change_mwh": max_iterate_energy,
-                    "max_raw_bid_deviation_eur_per_mwh": max_raw_bid,
-                    "max_iterate_bid_change_eur_per_mwh": max_iterate_bid,
+                    "max_raw_bid_deviation_eur_per_mwh": (
+                        max_raw_price_bid
+                    ),
+                    "max_iterate_bid_change_eur_per_mwh": (
+                        max_iterate_price_bid
+                    ),
+                    "max_raw_quantity_bid_deviation_mw": (
+                        max_raw_quantity_bid
+                    ),
+                    "max_iterate_quantity_bid_change_mw": (
+                        max_iterate_quantity_bid
+                    ),
+                    "max_raw_access_quantity_deviation_mw": (
+                        max_raw_access_quantity
+                    ),
+                    "max_iterate_access_quantity_change_mw": (
+                        max_iterate_access_quantity
+                    ),
+                    "max_raw_access_bid_deviation_eur_per_mw_day": (
+                        max_raw_access_bid
+                    ),
+                    "max_iterate_access_bid_change_eur_per_mw_day": (
+                        max_iterate_access_bid
+                    ),
                 }
             )
 

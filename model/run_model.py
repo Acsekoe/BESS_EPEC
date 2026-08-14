@@ -1,4 +1,4 @@
-"""Executable entry point for the multi-investor capacity-only game."""
+"""Executable entry point for the maintained multi-investor BESS games."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 import pyomo.environ as pyo
+
+import mpec_strategic_access_relaxed_kkt
 
 from jacobi_diagonalization import (
     BestResponseResult,
@@ -165,14 +167,20 @@ def _strong_duality_solver(args: argparse.Namespace):
     if not solver.available(exception_flag=False):
         raise RuntimeError("Ipopt is unavailable. Set IPOPT_EXECUTABLE or install Ipopt.")
     options = {
-        "linear_solver": "mumps",
+        "linear_solver": args.ipopt_linear_solver,
         "max_iter": args.max_solver_iterations,
         "max_cpu_time": args.max_solve_seconds,
         "tol": args.solver_tolerance,
         "acceptable_tol": max(args.solver_tolerance, 1e-5),
         "print_level": 5 if args.tee else 0,
     }
-    if args.formulation == "relaxed-kkt":
+    if args.formulation in {
+        "relaxed-kkt",
+        "strategic-price-relaxed-kkt",
+        "strategic-quantity",
+        "strategic-price-quantity",
+        "strategic-access",
+    }:
         options.update(
             {
                 "acceptable_tol": args.solver_tolerance,
@@ -248,6 +256,10 @@ def _parallel_best_response(
     snapshot_energy: dict[tuple[str, str], float],
     snapshot_bid_charge: dict[tuple[str, str, int], float],
     snapshot_offer_discharge: dict[tuple[str, str, int], float],
+    snapshot_bid_charge_price: dict[tuple[str, str, int], float],
+    snapshot_offer_discharge_price: dict[tuple[str, str, int], float],
+    snapshot_access_quantity: dict[tuple[str, str], float],
+    snapshot_access_bid: dict[tuple[str, str], float],
     solver_arguments: dict[str, object],
 ) -> BestResponseResult:
     """Process-pool worker: build and solve one Jacobi best response."""
@@ -263,11 +275,23 @@ def _parallel_best_response(
             snapshot_energy,
             snapshot_bid_charge,
             snapshot_offer_discharge,
+            snapshot_bid_charge_price,
+            snapshot_offer_discharge_price,
+            snapshot_access_quantity,
+            snapshot_access_bid,
         )
         solver = (
             _strong_duality_solver(args)
             if config.formulation
-            in {"strong-duality", "relaxed-kkt", "strategic-operation"}
+            in {
+                "strong-duality",
+                "relaxed-kkt",
+                "strategic-operation",
+                "strategic-price-relaxed-kkt",
+                "strategic-quantity",
+                "strategic-price-quantity",
+                "strategic-access",
+            }
             else _kkt_solver(args)
         )
         outcome = solver(model)
@@ -296,6 +320,19 @@ def _parallel_best_response(
             }
             if snapshot_offer_discharge
             else {},
+            proposed_access_quantity=(
+                {
+                    n: snapshot_access_quantity[investor_id, n]
+                    for n in data.nodes
+                }
+                if snapshot_access_quantity
+                else {}
+            ),
+            proposed_access_bid=(
+                {n: snapshot_access_bid[investor_id, n] for n in data.nodes}
+                if snapshot_access_bid
+                else {}
+            ),
         )
     return collect_best_response(model, outcome, data)
 
@@ -347,7 +384,10 @@ def _resume_signature(config: JacobiConfig, data_sha256: str) -> dict[str, objec
             for investor in config.investors
         ],
     }
-    if config.formulation == "strategic-operation":
+    if config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }:
         signature.update(
             {
                 "bid_price_bound": config.bid_price_bound,
@@ -357,7 +397,53 @@ def _resume_signature(config: JacobiConfig, data_sha256: str) -> dict[str, objec
                 "strategic_quantity_withholding": False,
             }
         )
-    if config.formulation == "relaxed-kkt":
+    if config.formulation in {
+        "strategic-quantity",
+        "strategic-price-quantity",
+    }:
+        signature.update(
+            {
+                "initial_charge_bid_mw": config.initial_charge_bid_mw,
+                "initial_discharge_bid_mw": config.initial_discharge_bid_mw,
+                "tolerance_quantity_bid_mw": config.tolerance_quantity_bid_mw,
+                "strategic_quantity_withholding": True,
+            }
+        )
+    if config.formulation == "strategic-price-quantity":
+        signature.update(
+            {
+                "bid_price_bound": config.bid_price_bound,
+                "initial_bid_charge_eur_per_mwh": config.initial_bid_charge_eur_per_mwh,
+                "initial_offer_discharge_eur_per_mwh": config.initial_offer_discharge_eur_per_mwh,
+                "tolerance_bid_eur_per_mwh": config.tolerance_bid_eur_per_mwh,
+                "proximal_price_scale": config.proximal_price_scale,
+                "strategic_price_bidding": True,
+            }
+        )
+    if config.formulation == "strategic-price-relaxed-kkt":
+        signature["proximal_price_scale"] = config.proximal_price_scale
+    if config.formulation == "strategic-access":
+        signature.update(
+            {
+                "access_request_limit_mw": config.access_request_limit_mw,
+                "access_bid_bound_eur_per_mw_day": config.access_bid_bound,
+                "initial_access_bid_eur_per_mw_day": (
+                    config.initial_access_bid_eur_per_mw_day
+                ),
+                "tolerance_access_bid_eur_per_mw_day": (
+                    config.tolerance_access_bid_eur_per_mw_day
+                ),
+                "proximal_price_scale": config.proximal_price_scale,
+                "access_settlement": "pay-as-bid",
+            }
+        )
+    if config.formulation in {
+        "relaxed-kkt",
+        "strategic-price-relaxed-kkt",
+        "strategic-quantity",
+        "strategic-price-quantity",
+        "strategic-access",
+    }:
         signature["complementarity_epsilon"] = config.complementarity_epsilon
     return signature
 
@@ -368,9 +454,25 @@ def _checkpoint(
     config: JacobiConfig,
     data_sha256: str,
 ) -> None:
-    strategic = config.formulation == "strategic-operation"
+    price_strategic = config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }
+    quantity_strategic = config.formulation == "strategic-quantity"
+    combined_strategic = config.formulation == "strategic-price-quantity"
+    access_strategic = config.formulation == "strategic-access"
     payload = {
-        "format_version": 3 if strategic else 2,
+        "format_version": (
+            7
+            if access_strategic
+            else 5
+            if combined_strategic
+            else 4
+            if quantity_strategic
+            else 3
+            if price_strategic
+            else 2
+        ),
         "sweep": state.sweep,
         "converged": state.converged,
         "stop_reason": state.stop_reason,
@@ -382,7 +484,7 @@ def _checkpoint(
         "history": state.history,
         "resume_signature": _resume_signature(config, data_sha256),
     }
-    if strategic:
+    if price_strategic:
         payload["bid_charge_eur_per_mwh"] = {
             f"{i}|{n}|{t}": value
             for (i, n, t), value in state.bid_charge.items()
@@ -390,6 +492,32 @@ def _checkpoint(
         payload["offer_discharge_eur_per_mwh"] = {
             f"{i}|{n}|{t}": value
             for (i, n, t), value in state.offer_discharge.items()
+        }
+    elif quantity_strategic or combined_strategic:
+        payload["charge_bid_mw"] = {
+            f"{i}|{n}|{t}": value
+            for (i, n, t), value in state.bid_charge.items()
+        }
+        payload["discharge_bid_mw"] = {
+            f"{i}|{n}|{t}": value
+            for (i, n, t), value in state.offer_discharge.items()
+        }
+        if combined_strategic:
+            payload["bid_charge_eur_per_mwh"] = {
+                f"{i}|{n}|{t}": value
+                for (i, n, t), value in state.bid_charge_price.items()
+            }
+            payload["offer_discharge_eur_per_mwh"] = {
+                f"{i}|{n}|{t}": value
+                for (i, n, t), value in state.offer_discharge_price.items()
+            }
+    if access_strategic:
+        payload["access_quantity_mw"] = {
+            f"{i}|{n}": value
+            for (i, n), value in state.access_quantity.items()
+        }
+        payload["access_bid_eur_per_mw_day"] = {
+            f"{i}|{n}": value for (i, n), value in state.access_bid.items()
         }
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -410,8 +538,24 @@ def _load_checkpoint(
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Cannot read resume checkpoint {path}: {exc}") from exc
 
-    strategic = config.formulation == "strategic-operation"
-    expected_version = 3 if strategic else 2
+    price_strategic = config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }
+    quantity_strategic = config.formulation == "strategic-quantity"
+    combined_strategic = config.formulation == "strategic-price-quantity"
+    access_strategic = config.formulation == "strategic-access"
+    expected_version = (
+        7
+        if access_strategic
+        else 5
+        if combined_strategic
+        else 4
+        if quantity_strategic
+        else 3
+        if price_strategic
+        else 2
+    )
     if payload.get("format_version") != expected_version:
         raise ValueError(
             f"This formulation requires checkpoint format version {expected_version}."
@@ -469,14 +613,19 @@ def _load_checkpoint(
         investor.investor_id: investor for investor in config.investors
     }
     tolerance = max(config.cleanup_tolerance, 1e-7)
-    for investor_id in investor_ids:
-        investor = investors_by_id[investor_id]
-        for node in data.nodes:
-            key = investor_id, node
-            if energy[key] < investor.ratio_min * power[key] - tolerance:
-                raise ValueError(f"Checkpoint violates the minimum duration at {key}.")
-            if energy[key] > investor.ratio_max * power[key] + tolerance:
-                raise ValueError(f"Checkpoint violates the maximum duration at {key}.")
+    if not access_strategic:
+        for investor_id in investor_ids:
+            investor = investors_by_id[investor_id]
+            for node in data.nodes:
+                key = investor_id, node
+                if energy[key] < investor.ratio_min * power[key] - tolerance:
+                    raise ValueError(
+                        f"Checkpoint violates the minimum energy-to-power ratio at {key}."
+                    )
+                if energy[key] > investor.ratio_max * power[key] + tolerance:
+                    raise ValueError(
+                        f"Checkpoint violates the maximum energy-to-power ratio at {key}."
+                    )
     for node in data.nodes:
         total = sum(power[investor_id, node] for investor_id in investor_ids)
         if total > config.node_limit_mw + tolerance:
@@ -485,50 +634,105 @@ def _load_checkpoint(
                 f"{total:g} MW."
             )
 
+    access_quantity: dict[tuple[str, str], float] = {}
+    access_bid: dict[tuple[str, str], float] = {}
+    if access_strategic:
+        access_quantity = capacities("access_quantity_mw")
+        access_bid = capacities("access_bid_eur_per_mw_day")
+        for investor_id in investor_ids:
+            total_request = sum(
+                access_quantity[investor_id, node] for node in data.nodes
+            )
+            if total_request > config.access_request_limit_mw + tolerance:
+                raise ValueError(
+                    f"Checkpoint exceeds the access request limit for {investor_id}."
+                )
+            for node in data.nodes:
+                key = investor_id, node
+                if access_quantity[key] > config.node_limit_mw + tolerance:
+                    raise ValueError(f"Checkpoint access request exceeds the nodal limit at {key}.")
+                if access_bid[key] > config.access_bid_bound + tolerance:
+                    raise ValueError(f"Checkpoint access bid exceeds its bound at {key}.")
+
     bid_charge: dict[tuple[str, str, int], float] = {}
     offer_discharge: dict[tuple[str, str, int], float] = {}
-    if strategic:
-        expected_price_keys = {
+    bid_charge_price: dict[tuple[str, str, int], float] = {}
+    offer_discharge_price: dict[tuple[str, str, int], float] = {}
+    if price_strategic or quantity_strategic or combined_strategic:
+        expected_hour_keys = {
             f"{investor_id}|{node}|{int(time)}"
             for investor_id in investor_ids
             for node in data.nodes
             for time in data.times
         }
 
-        def prices(field: str) -> dict[tuple[str, str, int], float]:
-            raw = payload.get(field)
-            if not isinstance(raw, dict) or set(raw) != expected_price_keys:
+    def prices(field: str) -> dict[tuple[str, str, int], float]:
+        raw = payload.get(field)
+        if not isinstance(raw, dict) or set(raw) != expected_hour_keys:
+            raise ValueError(
+                f"Checkpoint field {field!r} does not contain exactly the "
+                "current investor-node-hour keys."
+            )
+        parsed: dict[tuple[str, str, int], float] = {}
+        for key, raw_value in raw.items():
+            investor_id, node, raw_time = key.split("|", 2)
+            try:
+                value = float(raw_value)
+                time = int(raw_time)
+            except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    f"Checkpoint field {field!r} does not contain exactly the "
-                    "current investor-node-hour keys."
-                )
-            parsed: dict[tuple[str, str, int], float] = {}
-            for key, raw_value in raw.items():
-                investor_id, node, raw_time = key.split("|", 2)
-                try:
-                    value = float(raw_value)
-                    time = int(raw_time)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        f"Invalid {field} value for {key}: {raw_value!r}"
-                    ) from exc
-                if (
-                    not math.isfinite(value)
-                    or abs(value) > config.bid_price_bound + 1e-7
-                ):
-                    raise ValueError(
-                        f"Invalid {field} value for {key}: {raw_value!r}"
-                    )
-                parsed[investor_id, node, time] = value
-            return parsed
+                    f"Invalid {field} value for {key}: {raw_value!r}"
+                ) from exc
+            if not math.isfinite(value) or abs(value) > config.bid_price_bound + 1e-7:
+                raise ValueError(f"Invalid {field} value for {key}: {raw_value!r}")
+            parsed[investor_id, node, time] = value
+        return parsed
 
+    def quantities(field: str) -> dict[tuple[str, str, int], float]:
+        raw = payload.get(field)
+        if not isinstance(raw, dict) or set(raw) != expected_hour_keys:
+            raise ValueError(
+                f"Checkpoint field {field!r} does not contain exactly the "
+                "current investor-node-hour keys."
+            )
+        parsed: dict[tuple[str, str, int], float] = {}
+        for key, raw_value in raw.items():
+            investor_id, node, raw_time = key.split("|", 2)
+            try:
+                value = float(raw_value)
+                time = int(raw_time)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid {field} value for {key}: {raw_value!r}"
+                ) from exc
+            if (
+                not math.isfinite(value)
+                or value < 0.0
+                or value > power[investor_id, node] + tolerance
+            ):
+                raise ValueError(f"Invalid {field} value for {key}: {raw_value!r}")
+            parsed[investor_id, node, time] = value
+        return parsed
+
+    if price_strategic:
         bid_charge = prices("bid_charge_eur_per_mwh")
         offer_discharge = prices("offer_discharge_eur_per_mwh")
-        for key in bid_charge:
-            if offer_discharge[key] + 1e-8 < bid_charge[key] / (data.eta**2):
-                raise ValueError(
-                    f"Checkpoint prices permit a same-hour storage loop at {key}."
-                )
+    elif quantity_strategic or combined_strategic:
+        bid_charge = quantities("charge_bid_mw")
+        offer_discharge = quantities("discharge_bid_mw")
+        if combined_strategic:
+            bid_charge_price = prices("bid_charge_eur_per_mwh")
+            offer_discharge_price = prices("offer_discharge_eur_per_mwh")
+
+    checked_charge_prices = bid_charge if price_strategic else bid_charge_price
+    checked_discharge_prices = (
+        offer_discharge if price_strategic else offer_discharge_price
+    )
+    for key in checked_charge_prices:
+        if checked_discharge_prices[key] + 1e-8 < checked_charge_prices[key] / (data.eta**2):
+            raise ValueError(
+                f"Checkpoint prices permit a same-hour storage loop at {key}."
+            )
 
     try:
         sweep = int(payload["sweep"])
@@ -544,6 +748,15 @@ def _load_checkpoint(
     for row in history:
         row.setdefault("max_raw_bid_deviation_eur_per_mwh", 0.0)
         row.setdefault("max_iterate_bid_change_eur_per_mwh", 0.0)
+        row.setdefault("max_raw_quantity_bid_deviation_mw", 0.0)
+        row.setdefault("max_iterate_quantity_bid_change_mw", 0.0)
+        row.setdefault("max_raw_access_quantity_deviation_mw", 0.0)
+        row.setdefault("max_iterate_access_quantity_change_mw", 0.0)
+        row.setdefault("max_raw_access_bid_deviation_eur_per_mw_day", 0.0)
+        row.setdefault("max_iterate_access_bid_change_eur_per_mw_day", 0.0)
+        row.setdefault("old_access_request_mw", None)
+        row.setdefault("best_response_access_request_mw", None)
+        row.setdefault("new_access_request_mw", None)
 
     return JacobiResult(
         power=power,
@@ -564,6 +777,10 @@ def _load_checkpoint(
         stable_sweeps=0 if proximal_penalty_changed else stable_sweeps,
         bid_charge=bid_charge,
         offer_discharge=offer_discharge,
+        bid_charge_price=bid_charge_price,
+        offer_discharge_price=offer_discharge_price,
+        access_quantity=access_quantity,
+        access_bid=access_bid,
     )
 
 
@@ -591,7 +808,106 @@ def _write_outputs(
             for node in data.nodes:
                 key = investor.investor_id, node
                 writer.writerow([*key, state.power[key], state.energy[key]])
-    if config.formulation == "strategic-operation":
+    access_lower = None
+    if config.formulation == "strategic-access":
+        access_lower = mpec_strategic_access_relaxed_kkt.solve_fixed_access_market(
+            data,
+            access_quantity={
+                investor.investor_id: {
+                    node: state.access_quantity[investor.investor_id, node]
+                    for node in data.nodes
+                }
+                for investor in config.investors
+            },
+            access_bid={
+                investor.investor_id: {
+                    node: state.access_bid[investor.investor_id, node]
+                    for node in data.nodes
+                }
+                for investor in config.investors
+            },
+            energy_capacity={
+                investor.investor_id: {
+                    node: state.energy[investor.investor_id, node]
+                    for node in data.nodes
+                }
+                for investor in config.investors
+            },
+            degradation={
+                investor.investor_id: investor.degradation_eur_per_mwh
+                for investor in config.investors
+            },
+            node_limit_mw=config.node_limit_mw,
+        )
+        with (output_dir / "final_access_bids.csv").open(
+            "w", newline="", encoding="utf-8"
+        ) as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "investor",
+                    "node",
+                    "requested_power_mw",
+                    "access_bid_eur_per_mw_day",
+                    "awarded_power_mw",
+                    "energy_capacity_mwh",
+                    "implied_duration_hours",
+                    "pay_as_bid_payment_eur_per_day",
+                ]
+            )
+            for investor in config.investors:
+                for node in data.nodes:
+                    key = investor.investor_id, node
+                    writer.writerow(
+                        [
+                            *key,
+                            state.access_quantity[key],
+                            state.access_bid[key],
+                            state.power[key],
+                            state.energy[key],
+                            (
+                                state.energy[key] / state.power[key]
+                                if state.power[key] > config.cleanup_tolerance
+                                else 0.0
+                            ),
+                            state.access_bid[key] * state.power[key],
+                        ]
+                    )
+        with (output_dir / "final_nodal_access.csv").open(
+            "w", newline="", encoding="utf-8"
+        ) as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "node",
+                    "limit_mw",
+                    "total_requested_mw",
+                    "total_awarded_mw",
+                    "scarcity_value_eur_per_mw_day",
+                ]
+            )
+            for node in data.nodes:
+                writer.writerow(
+                    [
+                        node,
+                        config.node_limit_mw,
+                        sum(
+                            state.access_quantity[investor.investor_id, node]
+                            for investor in config.investors
+                        ),
+                        sum(
+                            state.power[investor.investor_id, node]
+                            for investor in config.investors
+                        ),
+                        -float(
+                            access_lower.dual[access_lower.nodal_access_bound[node]]
+                        ),
+                    ]
+                )
+    if config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }:
         with (output_dir / "final_strategic_bids.csv").open(
             "w", newline="", encoding="utf-8"
         ) as handle:
@@ -618,6 +934,45 @@ def _write_outputs(
                                 state.offer_discharge[key],
                             ]
                         )
+    elif config.formulation in {
+        "strategic-quantity",
+        "strategic-price-quantity",
+    }:
+        combined = config.formulation == "strategic-price-quantity"
+        with (output_dir / "final_strategic_quantities.csv").open(
+            "w", newline="", encoding="utf-8"
+        ) as handle:
+            writer = csv.writer(handle)
+            columns = [
+                "investor",
+                "node",
+                "hour",
+                "installed_power_mw",
+                "charge_bid_mw",
+                "discharge_bid_mw",
+            ]
+            if combined:
+                columns += [
+                    "bid_charge_eur_per_mwh",
+                    "offer_discharge_eur_per_mwh",
+                ]
+            writer.writerow(columns)
+            for investor in config.investors:
+                for node in data.nodes:
+                    for time in data.times:
+                        key = investor.investor_id, node, int(time)
+                        row = [
+                            *key,
+                            state.power[investor.investor_id, node],
+                            state.bid_charge[key],
+                            state.offer_discharge[key],
+                        ]
+                        if combined:
+                            row += [
+                                state.bid_charge_price[key],
+                                state.offer_discharge_price[key],
+                            ]
+                        writer.writerow(row)
     summary = {
         "formulation": config.formulation,
         "parallel_workers": args.parallel_workers,
@@ -642,7 +997,13 @@ def _write_outputs(
             for investor in config.investors
         },
     }
-    if config.formulation == "relaxed-kkt":
+    if config.formulation in {
+        "relaxed-kkt",
+        "strategic-price-relaxed-kkt",
+        "strategic-quantity",
+        "strategic-price-quantity",
+        "strategic-access",
+    }:
         latest = state.history[-len(config.investors) :] if state.history else []
         summary["relaxed_kkt"] = {
             "complementarity_epsilon": config.complementarity_epsilon,
@@ -671,11 +1032,110 @@ def _write_outputs(
                 default=None,
             ),
         }
-    if config.formulation == "strategic-operation":
-        summary["strategic_operation"] = {
+    if config.formulation == "strategic-access":
+        assert access_lower is not None
+        summary["strategic_access"] = {
+            "settlement": "pay-as-bid",
+            "access_bid_unit": "EUR/MW-day",
+            "access_bid_bound_eur_per_mw_day": config.access_bid_bound,
+            "investor_request_limit_mw": config.access_request_limit_mw,
+            "access_bid_tolerance_eur_per_mw_day": (
+                config.tolerance_access_bid_eur_per_mw_day
+            ),
+            "total_requested_power_mw": sum(state.access_quantity.values()),
+            "maximum_minimum_ratio_violation_mwh": max(
+                max(
+                    0.0,
+                    investor.ratio_min
+                    * state.power[investor.investor_id, node]
+                    - state.energy[investor.investor_id, node],
+                )
+                for investor in config.investors
+                for node in data.nodes
+            ),
+            "maximum_maximum_ratio_violation_mwh": max(
+                max(
+                    0.0,
+                    state.energy[investor.investor_id, node]
+                    - investor.ratio_max
+                    * state.power[investor.investor_id, node],
+                )
+                for investor in config.investors
+                for node in data.nodes
+            ),
+            "total_access_payment_eur_per_day": sum(
+                state.access_bid[key] * state.power[key]
+                for key in state.access_bid
+            ),
+            "common_lower_objective_eur_per_day": float(
+                pyo.value(access_lower.objective)
+            ),
+            "common_generation_cost_eur_per_day": sum(
+                data.generation_cost[g]
+                * float(pyo.value(access_lower.P_gen[g, t]))
+                for g, t in access_lower.GT
+            ),
+            "investors": {
+                investor.investor_id: {
+                    "requested_power_mw": sum(
+                        state.access_quantity[investor.investor_id, node]
+                        for node in data.nodes
+                    ),
+                    "awarded_power_mw": sum(
+                        state.power[investor.investor_id, node]
+                        for node in data.nodes
+                    ),
+                    "energy_capacity_mwh": sum(
+                        state.energy[investor.investor_id, node]
+                        for node in data.nodes
+                    ),
+                    "access_payment_eur_per_day": sum(
+                        state.access_bid[investor.investor_id, node]
+                        * state.power[investor.investor_id, node]
+                        for node in data.nodes
+                    ),
+                    "minimum_access_bid_eur_per_mw_day": min(
+                        state.access_bid[investor.investor_id, node]
+                        for node in data.nodes
+                    ),
+                    "maximum_access_bid_eur_per_mw_day": max(
+                        state.access_bid[investor.investor_id, node]
+                        for node in data.nodes
+                    ),
+                }
+                for investor in config.investors
+            },
+            "nodal_access": {
+                node: {
+                    "limit_mw": config.node_limit_mw,
+                    "requested_mw": sum(
+                        state.access_quantity[investor.investor_id, node]
+                        for investor in config.investors
+                    ),
+                    "awarded_mw": sum(
+                        state.power[investor.investor_id, node]
+                        for investor in config.investors
+                    ),
+                    "scarcity_value_eur_per_mw_day": -float(
+                        access_lower.dual[access_lower.nodal_access_bound[node]]
+                    ),
+                }
+                for node in data.nodes
+            },
+        }
+    if config.formulation in {
+        "strategic-operation",
+        "strategic-price-relaxed-kkt",
+    }:
+        price_relaxed_kkt = config.formulation == "strategic-price-relaxed-kkt"
+        price_summary = {
             "quantity_withholding": False,
+            "full_quantity_availability": True,
             "bid_price_bound_eur_per_mwh": config.bid_price_bound,
             "bid_tolerance_eur_per_mwh": config.tolerance_bid_eur_per_mwh,
+            "lower_level_optimality": (
+                "relaxed-kkt" if price_relaxed_kkt else "strong-duality"
+            ),
             "active_capacity_bid_ranges": {
                 investor.investor_id: {
                     "charge_bid_min": min(
@@ -719,13 +1179,136 @@ def _write_outputs(
                 )
             },
         }
+        if price_relaxed_kkt:
+            price_summary.update(
+                {
+                    "proximal_penalty_scope": "capacities and prices",
+                    "proximal_price_scale_eur_per_mwh": config.proximal_price_scale,
+                }
+            )
+        summary[
+            "strategic_price_relaxed_kkt"
+            if price_relaxed_kkt
+            else "strategic_operation"
+        ] = price_summary
+    elif config.formulation in {
+        "strategic-quantity",
+        "strategic-price-quantity",
+    }:
+        combined = config.formulation == "strategic-price-quantity"
+        strategic_summary = {
+            "quantity_withholding": True,
+            "quantity_tolerance_mw": config.tolerance_quantity_bid_mw,
+            "settlement": "realised dispatch at nodal LMP",
+            "active_capacity_bid_ranges_mw": {
+                investor.investor_id: {
+                    "charge_bid_min": min(
+                        state.bid_charge[investor.investor_id, node, int(time)]
+                        for node in data.nodes
+                        for time in data.times
+                        if state.power[investor.investor_id, node]
+                        > config.sparse_capacity_tol
+                    ),
+                    "charge_bid_max": max(
+                        state.bid_charge[investor.investor_id, node, int(time)]
+                        for node in data.nodes
+                        for time in data.times
+                        if state.power[investor.investor_id, node]
+                        > config.sparse_capacity_tol
+                    ),
+                    "discharge_bid_min": min(
+                        state.offer_discharge[
+                            investor.investor_id, node, int(time)
+                        ]
+                        for node in data.nodes
+                        for time in data.times
+                        if state.power[investor.investor_id, node]
+                        > config.sparse_capacity_tol
+                    ),
+                    "discharge_bid_max": max(
+                        state.offer_discharge[
+                            investor.investor_id, node, int(time)
+                        ]
+                        for node in data.nodes
+                        for time in data.times
+                        if state.power[investor.investor_id, node]
+                        > config.sparse_capacity_tol
+                    ),
+                }
+                for investor in config.investors
+                if any(
+                    state.power[investor.investor_id, node]
+                    > config.sparse_capacity_tol
+                    for node in data.nodes
+                )
+            },
+        }
+        if combined:
+            strategic_summary.update(
+                {
+                    "strategic_prices": True,
+                    "bid_price_bound_eur_per_mwh": config.bid_price_bound,
+                    "bid_tolerance_eur_per_mwh": config.tolerance_bid_eur_per_mwh,
+                    "proximal_penalty_scope": "capacities, quantities, and prices",
+                    "proximal_price_scale_eur_per_mwh": config.proximal_price_scale,
+                    "active_capacity_price_ranges_eur_per_mwh": {
+                        investor.investor_id: {
+                            "charge_bid_min": min(
+                                state.bid_charge_price[
+                                    investor.investor_id, node, int(time)
+                                ]
+                                for node in data.nodes
+                                for time in data.times
+                                if state.power[investor.investor_id, node]
+                                > config.sparse_capacity_tol
+                            ),
+                            "charge_bid_max": max(
+                                state.bid_charge_price[
+                                    investor.investor_id, node, int(time)
+                                ]
+                                for node in data.nodes
+                                for time in data.times
+                                if state.power[investor.investor_id, node]
+                                > config.sparse_capacity_tol
+                            ),
+                            "discharge_offer_min": min(
+                                state.offer_discharge_price[
+                                    investor.investor_id, node, int(time)
+                                ]
+                                for node in data.nodes
+                                for time in data.times
+                                if state.power[investor.investor_id, node]
+                                > config.sparse_capacity_tol
+                            ),
+                            "discharge_offer_max": max(
+                                state.offer_discharge_price[
+                                    investor.investor_id, node, int(time)
+                                ]
+                                for node in data.nodes
+                                for time in data.times
+                                if state.power[investor.investor_id, node]
+                                > config.sparse_capacity_tol
+                            ),
+                        }
+                        for investor in config.investors
+                        if any(
+                            state.power[investor.investor_id, node]
+                            > config.sparse_capacity_tol
+                            for node in data.nodes
+                        )
+                    },
+                }
+            )
+        summary[
+            "strategic_price_quantity" if combined else "strategic_quantity"
+        ] = strategic_summary
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     _checkpoint(output_dir / "checkpoint.json", state, config, data_sha256)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run a capacity or strategic-operation EPEC by Gauss-Jacobi."
+        description="Run a capacity, price-strategic, or quantity-strategic EPEC."
     )
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
     parser.add_argument(
@@ -736,7 +1319,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--formulation",
-        choices=("strong-duality", "relaxed-kkt", "kkt-bigm", "strategic-operation"),
+        choices=(
+            "strong-duality",
+            "relaxed-kkt",
+            "kkt-bigm",
+            "strategic-operation",
+            "strategic-price-relaxed-kkt",
+            "strategic-quantity",
+            "strategic-price-quantity",
+            "strategic-access",
+        ),
         default="strong-duality",
     )
     parser.add_argument("--node-limit-mw", type=float, default=100.0)
@@ -750,7 +1342,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Continue through --max-sweeps even after satisfying convergence.",
     )
-    parser.add_argument("--initial-power-mw", type=float, default=0.0)
+    parser.add_argument(
+        "--initial-power-mw",
+        type=float,
+        default=0.0,
+        help=(
+            "Initial installed MW per investor-node; for strategic-access, "
+            "the initial requested MW per investor-node before enforcing the "
+            "portfolio request cap."
+        ),
+    )
     parser.add_argument("--initial-ratio-hours", type=float, default=2.0)
     parser.add_argument(
         "--numerical-initial-power-mw",
@@ -766,6 +1367,12 @@ def parse_args() -> argparse.Namespace:
         help="L1 best-response regularizer in EUR/(MW day); zero is the baseline.",
     )
     parser.add_argument("--proximal-energy-scale", type=float, default=2.0)
+    parser.add_argument(
+        "--proximal-price-scale",
+        type=float,
+        default=10.0,
+        help="EUR/MWh normalization for the combined strategy's L1 price changes.",
+    )
     parser.add_argument("--price-bound", type=float, default=500.0)
     parser.add_argument("--dual-bound", type=float, default=10_000.0)
     parser.add_argument("--big-m-dual", type=float, default=800.0)
@@ -802,8 +1409,56 @@ def parse_args() -> argparse.Namespace:
         default=0.5,
         help="Raw EUR/MWh convergence tolerance for strategic bid prices.",
     )
+    parser.add_argument(
+        "--initial-charge-quantity-mw",
+        type=float,
+        default=0.0,
+        help="Initial maximum charging bid in MW for every node-hour.",
+    )
+    parser.add_argument(
+        "--initial-discharge-quantity-mw",
+        type=float,
+        default=0.0,
+        help="Initial maximum discharging bid in MW for every node-hour.",
+    )
+    parser.add_argument(
+        "--quantity-bid-tolerance-mw",
+        type=float,
+        default=0.5,
+        help="Raw MW convergence tolerance for strategic quantity bids.",
+    )
+    parser.add_argument(
+        "--access-request-limit-mw",
+        type=float,
+        default=200.0,
+        help="Maximum total nodal MW requested by one access bidder.",
+    )
+    parser.add_argument(
+        "--access-bid-bound",
+        type=float,
+        default=500.0,
+        help="Non-negative upper bound on access bids in EUR/MW-day.",
+    )
+    parser.add_argument(
+        "--initial-access-bid",
+        type=float,
+        default=0.0,
+        help="Initial access bid in EUR/MW-day at every node.",
+    )
+    parser.add_argument(
+        "--access-bid-tolerance",
+        type=float,
+        default=0.5,
+        help="Raw EUR/MW-day convergence tolerance for access bids.",
+    )
     parser.add_argument("--sparse-capacity-tolerance", type=float, default=1e-8)
     parser.add_argument("--solver-tolerance", type=float, default=1e-6)
+    parser.add_argument(
+        "--ipopt-linear-solver",
+        choices=("ma57", "mumps"),
+        default="ma57",
+        help="Sparse linear solver used by Ipopt; MA57 is the default.",
+    )
     parser.add_argument("--max-solver-iterations", type=int, default=1500)
     parser.add_argument("--max-solve-seconds", type=float, default=300.0)
     parser.add_argument("--mip-gap", type=float, default=1e-4)
@@ -865,6 +1520,7 @@ def main() -> int:
         cleanup_tolerance=args.cleanup_tolerance,
         proximal_penalty=args.proximal_penalty,
         proximal_energy_scale=args.proximal_energy_scale,
+        proximal_price_scale=args.proximal_price_scale,
         price_bound=args.price_bound,
         dual_bound=args.dual_bound,
         big_m_dual=args.big_m_dual,
@@ -875,6 +1531,13 @@ def main() -> int:
         initial_bid_charge_eur_per_mwh=args.initial_bid_charge,
         initial_offer_discharge_eur_per_mwh=args.initial_offer_discharge,
         tolerance_bid_eur_per_mwh=args.bid_tolerance,
+        initial_charge_bid_mw=args.initial_charge_quantity_mw,
+        initial_discharge_bid_mw=args.initial_discharge_quantity_mw,
+        tolerance_quantity_bid_mw=args.quantity_bid_tolerance_mw,
+        access_request_limit_mw=args.access_request_limit_mw,
+        access_bid_bound=args.access_bid_bound,
+        initial_access_bid_eur_per_mw_day=args.initial_access_bid,
+        tolerance_access_bid_eur_per_mw_day=args.access_bid_tolerance,
     )
     initial_state = None
     if args.resume_from is not None:
@@ -907,17 +1570,42 @@ def main() -> int:
             f"{row['investor']}={row['termination']}" for row in latest
         )
         bid_status = (
-            " / "
+            (
+                " / "
+                f"{max(float(row['max_raw_access_quantity_deviation_mw']) for row in latest):.3f} MW requests / "
+                f"{max(float(row['max_raw_access_bid_deviation_eur_per_mw_day']) for row in latest):.3f} EUR/MW-day"
+            )
+            if args.formulation == "strategic-access"
+            else " / "
             f"{max(float(row['max_raw_bid_deviation_eur_per_mwh']) for row in latest):.3f} EUR/MWh"
-            if args.formulation == "strategic-operation"
-            else ""
+            if args.formulation
+            in {"strategic-operation", "strategic-price-relaxed-kkt"}
+            else (
+                " / "
+                f"{max(float(row['max_raw_quantity_bid_deviation_mw']) for row in latest):.3f} MW bids / "
+                f"{max(float(row['max_raw_bid_deviation_eur_per_mwh']) for row in latest):.3f} EUR/MWh"
+                if args.formulation == "strategic-price-quantity"
+                else (
+                    " / "
+                    f"{max(float(row['max_raw_quantity_bid_deviation_mw']) for row in latest):.3f} MW bids"
+                    if args.formulation == "strategic-quantity"
+                    else ""
+                )
+            )
         )
         complementarity_status = (
             "; max KKT product "
             f"{max((float(row['complementarity_max_product']) for row in latest if row.get('complementarity_max_product') is not None), default=math.nan):.3e}, "
             "violation "
             f"{max((float(row['complementarity_max_violation']) for row in latest if row.get('complementarity_max_violation') is not None), default=math.nan):.1e}"
-            if args.formulation == "relaxed-kkt"
+            if args.formulation
+            in {
+                "relaxed-kkt",
+                "strategic-price-relaxed-kkt",
+                "strategic-quantity",
+                "strategic-price-quantity",
+                "strategic-access",
+            }
             else ""
         )
         print(
@@ -944,7 +1632,15 @@ def main() -> int:
         solver = (
             _strong_duality_solver(args)
             if args.formulation
-            in {"strong-duality", "relaxed-kkt", "strategic-operation"}
+            in {
+                "strong-duality",
+                "relaxed-kkt",
+                "strategic-operation",
+                "strategic-price-relaxed-kkt",
+                "strategic-quantity",
+                "strategic-price-quantity",
+                "strategic-access",
+            }
             else _kkt_solver(args)
         )
         state = run_jacobi(
@@ -961,6 +1657,10 @@ def main() -> int:
                 snapshot_energy: dict[tuple[str, str], float],
                 snapshot_bid_charge: dict[tuple[str, str, int], float],
                 snapshot_offer_discharge: dict[tuple[str, str, int], float],
+                snapshot_bid_charge_price: dict[tuple[str, str, int], float],
+                snapshot_offer_discharge_price: dict[tuple[str, str, int], float],
+                snapshot_access_quantity: dict[tuple[str, str], float],
+                snapshot_access_bid: dict[tuple[str, str], float],
             ) -> dict[str, BestResponseResult]:
                 futures = {
                     executor.submit(
@@ -972,6 +1672,10 @@ def main() -> int:
                         snapshot_energy,
                         snapshot_bid_charge,
                         snapshot_offer_discharge,
+                        snapshot_bid_charge_price,
+                        snapshot_offer_discharge_price,
+                        snapshot_access_quantity,
+                        snapshot_access_bid,
                         solver_arguments,
                     ): investor.investor_id
                     for investor in batch_config.investors
@@ -1007,6 +1711,22 @@ def main() -> int:
                             }
                             if snapshot_offer_discharge
                             else {},
+                            proposed_access_quantity=(
+                                {
+                                    n: snapshot_access_quantity[investor_id, n]
+                                    for n in batch_data.nodes
+                                }
+                                if snapshot_access_quantity
+                                else {}
+                            ),
+                            proposed_access_bid=(
+                                {
+                                    n: snapshot_access_bid[investor_id, n]
+                                    for n in batch_data.nodes
+                                }
+                                if snapshot_access_bid
+                                else {}
+                            ),
                         )
                 return solved
 

@@ -1,0 +1,50 @@
+{
+  "formulation": "strategic-operation",
+  "parallel_workers": 3,
+  "sweeps": 50,
+  "converged": false,
+  "stop_reason": "maximum sweeps reached",
+  "projection_count": 0,
+  "stable_sweeps": 0,
+  "total_power_mw": 279.81616185523063,
+  "total_energy_mwh": 683.4752097796675,
+  "investor_totals": {
+    "I1": {
+      "power_mw": 80.24054312408623,
+      "energy_mwh": 160.48170156527863
+    },
+    "I3": {
+      "power_mw": 98.36293650760705,
+      "energy_mwh": 223.52328258380956
+    },
+    "I4": {
+      "power_mw": 101.21268222353734,
+      "energy_mwh": 299.47022563057925
+    }
+  },
+  "strategic_operation": {
+    "quantity_withholding": false,
+    "bid_price_bound_eur_per_mwh": 500.0,
+    "bid_tolerance_eur_per_mwh": 0.5,
+    "active_capacity_bid_ranges": {
+      "I1": {
+        "charge_bid_min": -374.94500633380926,
+        "charge_bid_max": 270.41553601464597,
+        "discharge_offer_min": 243.68690094386596,
+        "discharge_offer_max": 449.77193655637944
+      },
+      "I3": {
+        "charge_bid_min": -427.3270807773229,
+        "charge_bid_max": 292.5129455900426,
+        "discharge_offer_min": 4.507642317903532,
+        "discharge_offer_max": 468.45320252747035
+      },
+      "I4": {
+        "charge_bid_min": -433.32763850635763,
+        "charge_bid_max": 348.05047195133164,
+        "discharge_offer_min": -309.06390918061993,
+        "discharge_offer_max": 458.6183324111798
+      }
+    }
+  }
+}

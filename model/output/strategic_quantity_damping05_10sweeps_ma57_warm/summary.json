@@ -1,0 +1,66 @@
+{
+  "formulation": "strategic-quantity",
+  "parallel_workers": 4,
+  "sweeps": 10,
+  "converged": false,
+  "stop_reason": "maximum sweeps reached",
+  "projection_count": 4,
+  "stable_sweeps": 0,
+  "total_power_mw": 168.34708089105519,
+  "total_energy_mwh": 508.609776601707,
+  "investor_totals": {
+    "I1": {
+      "power_mw": 41.587229946857214,
+      "energy_mwh": 120.88899645304906
+    },
+    "I2": {
+      "power_mw": 42.35070874520906,
+      "energy_mwh": 122.9667102071716
+    },
+    "I3": {
+      "power_mw": 42.28955722036043,
+      "energy_mwh": 132.41327859586409
+    },
+    "I4": {
+      "power_mw": 42.11958497862847,
+      "energy_mwh": 132.34079134562222
+    }
+  },
+  "relaxed_kkt": {
+    "complementarity_epsilon": 0.001,
+    "latest_maximum_product": 0.0010000718375733865,
+    "latest_maximum_violation": 7.18375733864407e-08,
+    "latest_maximum_absolute_primal_dual_gap_eur_per_day": 3.0355868576443754
+  },
+  "strategic_quantity": {
+    "quantity_withholding": true,
+    "quantity_tolerance_mw": 0.5,
+    "settlement": "realised dispatch at nodal LMP",
+    "active_capacity_bid_ranges_mw": {
+      "I1": {
+        "charge_bid_min": 1.40470600923401e-07,
+        "charge_bid_max": 16.26055270255039,
+        "discharge_bid_min": 1.6177434177403138e-07,
+        "discharge_bid_max": 16.014382824918904
+      },
+      "I2": {
+        "charge_bid_min": 9.342936219395728e-08,
+        "charge_bid_max": 17.556924499142117,
+        "discharge_bid_min": 9.90217039272545e-08,
+        "discharge_bid_max": 15.554639574650196
+      },
+      "I3": {
+        "charge_bid_min": 1.423513504419373e-07,
+        "charge_bid_max": 15.19305936004027,
+        "discharge_bid_min": 1.2641507963172247e-07,
+        "discharge_bid_max": 10.409076550548239
+      },
+      "I4": {
+        "charge_bid_min": 2.7694065927578323e-07,
+        "charge_bid_max": 13.484430580369624,
+        "discharge_bid_min": 3.028664077648071e-07,
+        "discharge_bid_max": 12.098438374496526
+      }
+    }
+  }
+}

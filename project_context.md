@@ -76,6 +76,11 @@ allocation and every physical storage constraint are represented by
 Scholtes-relaxed KKT conditions. After each simultaneous Jacobi strategy
 update, a common exact HiGHS clearing derives the awarded fleet; format-v7
 checkpoints retain requests, bids, MWh strategies, and MW awards.
+Fresh strategic-access runs seed every investor-node access bid at
+`1 EUR/MW-day`. Their first 10 sweeps use full, undamped simultaneous best
+responses; from sweep 11 onward they use the configured Jacobi damping factor
+(default `0.25`). The cutoff is configurable and follows the total sweep
+number when resuming a checkpoint.
 
 `model/jacobi_diagonalization.py` builds the configured investor models against one
 frozen rival-capacity snapshot and applies all responses simultaneously.

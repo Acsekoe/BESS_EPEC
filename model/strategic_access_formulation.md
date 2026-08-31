@@ -134,12 +134,18 @@ Ipopt solves the nonconvex relaxed MPEC.
 
 ## Jacobi state
 
-The damped upper strategies are \((q^A,b^A,X^E)\). After all best responses
-are updated simultaneously, the runner clears one common exact ISO LP to
-derive awarded MW without overwriting the independent MWh choices. During a
-nonconverged Jacobi iterate, a simultaneous change in all bids can make a
-player's common award differ from the award in its own counterfactual best
-response, so the stored common state may temporarily violate that player's
-2--8 hour bounds. These violations are exported explicitly and must vanish at
-a claimed equilibrium. Format-v7 checkpoints retain requests, bids,
-independent energy capacities, and common power awards.
+The updated upper strategies are \((q^A,b^A,X^E)\). They start from a low
+common access bid of 1 EUR/MW-day at every investor-node. By default, sweeps
+1--10 apply each full best response without damping; later sweeps apply the
+configured damping factor. The transition is controlled by
+`--access-undamped-sweeps` and uses the total sweep number across checkpoint
+resumes.
+
+After all best responses are updated simultaneously, the runner clears one
+common exact ISO LP to derive awarded MW without overwriting the independent
+MWh choices. During a nonconverged Jacobi iterate, a simultaneous change in
+all bids can make a player's common award differ from the award in its own
+counterfactual best response, so the stored common state may temporarily
+violate that player's 2--8 hour bounds. These violations are exported
+explicitly and must vanish at a claimed equilibrium. Format-v7 checkpoints
+retain requests, bids, independent energy capacities, and common power awards.

@@ -53,7 +53,8 @@ class JacobiConfig:
     tolerance_quantity_bid_mw: float = 0.5
     access_request_limit_mw: float = 200.0
     access_bid_bound: float = 500.0
-    initial_access_bid_eur_per_mw_day: float = 0.0
+    initial_access_bid_eur_per_mw_day: float = 1.0
+    access_undamped_sweeps: int = 10
     tolerance_access_bid_eur_per_mw_day: float = 0.5
 
 
@@ -161,8 +162,15 @@ def _validate(config: JacobiConfig) -> None:
         raise ValueError(f"Unknown formulation: {config.formulation}")
     if not 0.0 < config.damping <= 1.0:
         raise ValueError("damping must be in (0, 1].")
-    if config.max_sweeps <= 0 or config.consecutive_sweeps <= 0:
-        raise ValueError("Sweep counts must be positive.")
+    if (
+        config.max_sweeps <= 0
+        or config.consecutive_sweeps <= 0
+        or config.access_undamped_sweeps < 0
+    ):
+        raise ValueError(
+            "Maximum/convergence sweep counts must be positive and the "
+            "undamped access-sweep count cannot be negative."
+        )
     if config.tolerance_mw < 0.0 or config.tolerance_mwh < 0.0:
         raise ValueError("Convergence tolerances cannot be negative.")
     if config.node_limit_mw <= 0.0:
@@ -1083,6 +1091,11 @@ def run_jacobi(
         return state
 
     for sweep in range(state.sweep + 1, config.max_sweeps + 1):
+        effective_damping = (
+            1.0
+            if access_strategic and sweep <= config.access_undamped_sweeps
+            else config.damping
+        )
         old_power = dict(state.power)
         old_energy = dict(state.energy)
         old_bid_charge = dict(state.bid_charge)
@@ -1198,16 +1211,16 @@ def run_jacobi(
         if access_strategic:
             for key in state.access_quantity:
                 state.access_quantity[key] = (
-                    (1.0 - config.damping) * old_access_quantity[key]
-                    + config.damping * proposals_access_quantity[key]
+                    (1.0 - effective_damping) * old_access_quantity[key]
+                    + effective_damping * proposals_access_quantity[key]
                 )
                 state.access_bid[key] = (
-                    (1.0 - config.damping) * old_access_bid[key]
-                    + config.damping * proposals_access_bid[key]
+                    (1.0 - effective_damping) * old_access_bid[key]
+                    + effective_damping * proposals_access_bid[key]
                 )
                 state.energy[key] = (
-                    (1.0 - config.damping) * old_energy[key]
-                    + config.damping * proposals_energy[key]
+                    (1.0 - effective_damping) * old_energy[key]
+                    + effective_damping * proposals_energy[key]
                 )
                 if state.access_quantity[key] < config.cleanup_tolerance:
                     state.access_quantity[key] = 0.0
@@ -1463,6 +1476,7 @@ def run_jacobi(
                     "best_feasible_objective": outcome.best_feasible_objective,
                     "best_objective_bound": outcome.best_objective_bound,
                     "proximal_penalty": config.proximal_penalty,
+                    "effective_damping": effective_damping,
                     "complementarity_epsilon": (
                         config.complementarity_epsilon
                         if config.formulation

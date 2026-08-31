@@ -430,6 +430,7 @@ def _resume_signature(config: JacobiConfig, data_sha256: str) -> dict[str, objec
                 "initial_access_bid_eur_per_mw_day": (
                     config.initial_access_bid_eur_per_mw_day
                 ),
+                "access_undamped_sweeps": config.access_undamped_sweeps,
                 "tolerance_access_bid_eur_per_mw_day": (
                     config.tolerance_access_bid_eur_per_mw_day
                 ),
@@ -562,6 +563,14 @@ def _load_checkpoint(
         )
     expected_signature = _resume_signature(config, data_sha256)
     actual_signature = payload.get("resume_signature")
+    if (
+        access_strategic
+        and isinstance(actual_signature, dict)
+        and "access_undamped_sweeps" not in actual_signature
+    ):
+        # Format-v7 checkpoints written before this schedule existed used the
+        # configured damping immediately, which is equivalent to a zero cutoff.
+        actual_signature = {**actual_signature, "access_undamped_sweeps": 0}
     proximal_penalty_changed = False
     if actual_signature != expected_signature:
         if not isinstance(actual_signature, dict):
@@ -754,6 +763,7 @@ def _load_checkpoint(
         row.setdefault("max_iterate_access_quantity_change_mw", 0.0)
         row.setdefault("max_raw_access_bid_deviation_eur_per_mw_day", 0.0)
         row.setdefault("max_iterate_access_bid_change_eur_per_mw_day", 0.0)
+        row.setdefault("effective_damping", None)
         row.setdefault("old_access_request_mw", None)
         row.setdefault("best_response_access_request_mw", None)
         row.setdefault("new_access_request_mw", None)
@@ -1039,6 +1049,11 @@ def _write_outputs(
             "access_bid_unit": "EUR/MW-day",
             "access_bid_bound_eur_per_mw_day": config.access_bid_bound,
             "investor_request_limit_mw": config.access_request_limit_mw,
+            "initial_access_bid_eur_per_mw_day": (
+                config.initial_access_bid_eur_per_mw_day
+            ),
+            "undamped_sweeps": config.access_undamped_sweeps,
+            "later_damping": config.damping,
             "access_bid_tolerance_eur_per_mw_day": (
                 config.tolerance_access_bid_eur_per_mw_day
             ),
@@ -1334,6 +1349,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--node-limit-mw", type=float, default=100.0)
     parser.add_argument("--max-sweeps", type=int, default=60)
     parser.add_argument("--damping", type=float, default=0.25)
+    parser.add_argument(
+        "--access-undamped-sweeps",
+        type=int,
+        default=10,
+        help=(
+            "For strategic-access only, apply full best responses through this "
+            "total sweep number, then use --damping."
+        ),
+    )
     parser.add_argument("--tolerance-mw", type=float, default=0.5)
     parser.add_argument("--tolerance-mwh", type=float, default=1.0)
     parser.add_argument("--consecutive-sweeps", type=int, default=2)
@@ -1442,7 +1466,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--initial-access-bid",
         type=float,
-        default=0.0,
+        default=1.0,
         help="Initial access bid in EUR/MW-day at every node.",
     )
     parser.add_argument(
@@ -1510,6 +1534,7 @@ def main() -> int:
         node_limit_mw=args.node_limit_mw,
         max_sweeps=args.max_sweeps,
         damping=args.damping,
+        access_undamped_sweeps=args.access_undamped_sweeps,
         tolerance_mw=args.tolerance_mw,
         tolerance_mwh=args.tolerance_mwh,
         consecutive_sweeps=args.consecutive_sweeps,
@@ -1618,9 +1643,15 @@ def main() -> int:
                 output_dir / "checkpoint.json", state, config, data_sha256
             )
 
+    damping_status = f"damping={args.damping:g}"
+    if args.formulation == "strategic-access" and args.access_undamped_sweeps > 0:
+        damping_status = (
+            f"undamped through sweep {args.access_undamped_sweeps}, "
+            f"then damping={args.damping:g}"
+        )
     print(
         f"Running {len(investors)}-investor Jacobi with {args.formulation}; "
-        f"damping={args.damping:g}, max_sweeps={args.max_sweeps}, "
+        f"{damping_status}, max_sweeps={args.max_sweeps}, "
         f"parallel_workers={args.parallel_workers}."
     )
     if initial_state is not None:

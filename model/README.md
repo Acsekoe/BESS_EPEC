@@ -92,6 +92,14 @@ The corrected relaxed KKT contains no cubic constraints: SOC complementarity
 uses `(X_energy - SOC) * (-delta)`, and awarded-MW stationarity contains no
 duration multiplier.
 
+Access bids start at `1 EUR/MW-day` per investor-node by default. Strategic-
+access sweeps 1--10 apply the full best response (`effective damping = 1`) so
+unattractive nodes can fall to zero and attractive nodes can separate from the
+low common seed. From sweep 11 onward, the runner applies `--damping` (default
+`0.25`). Change the transition with `--access-undamped-sweeps`; setting it to
+zero applies the configured damping immediately. The cutoff is based on the
+total sweep number, so checkpoint resumes preserve the schedule.
+
 Its active investor chooses separate hourly maximum charging and discharging
 quantities. The ISO pays and charges only for realised dispatch at the nodal
 LMP. The complete one-hour bids are constrained by installed MW and by the
@@ -141,7 +149,8 @@ L1 best-response regularizer. In `strategic-price-quantity`, it covers
 capacity, hourly quantities, and scaled hourly prices; set
 `--proximal-penalty 0.01` for the proposed stabilization stage and adjust the
 price normalization with `--proximal-price-scale` if needed.
-The default Jacobi damping factor is `0.25`.
+The default Jacobi damping factor is `0.25`, subject to the strategic-access
+initial undamped phase described above.
 Ipopt formulations use HSL MA57 by default; select MUMPS explicitly with
 `--ipopt-linear-solver mumps` for a solver comparison.
 For strategic-quantity sweeps after the first, the NLP starts from the active

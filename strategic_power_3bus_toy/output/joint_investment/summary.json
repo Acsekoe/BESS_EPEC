@@ -1,0 +1,56 @@
+{
+  "formulation": "one-stage simultaneous continuous investment and availability game",
+  "sequential_game": false,
+  "strategic_charge_availability": false,
+  "strategic_discharge_availability": true,
+  "duration_bounds_hours": [
+    2.0,
+    8.0
+  ],
+  "individual_power_upper_bound_mw": 30.0,
+  "sweeps": 30,
+  "converged": false,
+  "stable_sweeps": 0,
+  "final_investments": {
+    "I1": {
+      "power_mw": 5.8691798223635825,
+      "energy_mwh": 11.738378418817694,
+      "duration_hours": 2.000003198758787
+    },
+    "I2": {
+      "power_mw": 6.818325589621734,
+      "energy_mwh": 13.636669968248748,
+      "duration_hours": 2.000002755662667
+    },
+    "I3": {
+      "power_mw": 7.891455092197138,
+      "energy_mwh": 15.783499464537773,
+      "duration_hours": 2.000074673192284
+    },
+    "I4": {
+      "power_mw": 9.793275759093513,
+      "energy_mwh": 19.58680046783963,
+      "duration_hours": 2.0000254204679546
+    }
+  },
+  "maximum_discharge_withholding_mw": {
+    "I1": 2.642976021860477e-05,
+    "I2": 0.00014753402934797322,
+    "I3": 0.0013972906172448063,
+    "I4": 0.0007106083456847045
+  },
+  "final_profits_eur_per_day": {
+    "I1": 23.901924064355654,
+    "I2": 2.902158069404649,
+    "I3": 3354.90824257542,
+    "I4": 5050.2614169536
+  },
+  "final_audit": {
+    "max_nash_power_mw": 0.1158781775594857,
+    "max_nash_energy_mwh": 0.2315077670385719,
+    "max_nash_offer_mw": 0.11587817751758323,
+    "max_profitable_deviation_eur_per_day": 515.9854491664892,
+    "max_lmp_reclear_gap_eur_per_mwh": 0.0009035668118855256,
+    "max_embedded_reclear_profit_gap_eur_per_day": 0.0070559492501018894
+  }
+}

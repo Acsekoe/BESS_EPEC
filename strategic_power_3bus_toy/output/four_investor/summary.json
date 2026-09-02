@@ -1,0 +1,61 @@
+{
+  "formulation": "fixed-capacity strategic hourly charge/discharge availability",
+  "strategic_charge_availability": false,
+  "strategic_discharge_availability": true,
+  "algorithm": "damped Gauss-Seidel with simultaneous Nash audit after each sweep",
+  "sweeps": 40,
+  "converged": false,
+  "stop_reason": "maximum sweeps reached",
+  "damping": 0.35,
+  "tolerance_mw": 0.1,
+  "consecutive_sweeps": 2,
+  "complementarity_epsilon": 1e-05,
+  "availability_tie_breaker_eur_per_mw": 0.001,
+  "price_audit_tolerance_eur_per_mwh": 0.02,
+  "profit_audit_tolerance_eur_per_day": 0.25,
+  "nash_profit_tolerance_eur_per_day": 0.5,
+  "final_max_nash_deviation_mw": 0.0004923552992153191,
+  "final_all_audits_optimal": true,
+  "final_max_lmp_reclear_gap_eur_per_mwh": 0.06354686562347212,
+  "final_max_embedded_reclear_profit_gap_eur_per_day": 2.1434507327612664,
+  "final_max_profitable_deviation_eur_per_day": 0.00018493420702725416,
+  "final_market_objective_eur_per_day": 23713.93721604387,
+  "final_profits_eur_per_day": {
+    "I1": -23.389952622156073,
+    "I2": -39.96329591292226,
+    "I3": 3300.5040259760763,
+    "I4": 4860.998250403264
+  },
+  "investors": {
+    "I1": {
+      "node": "N3",
+      "power_mw": 10.0,
+      "energy_mwh": 25.0,
+      "owned_generation_shares": {}
+    },
+    "I2": {
+      "node": "N3",
+      "power_mw": 10.0,
+      "energy_mwh": 25.0,
+      "owned_generation_shares": {}
+    },
+    "I3": {
+      "node": "N3",
+      "power_mw": 10.0,
+      "energy_mwh": 25.0,
+      "owned_generation_shares": {
+        "RES_WIND_N1": 0.8,
+        "RES_PV_N3": 0.2
+      }
+    },
+    "I4": {
+      "node": "N3",
+      "power_mw": 10.0,
+      "energy_mwh": 25.0,
+      "owned_generation_shares": {
+        "RES_WIND_N1": 0.2,
+        "RES_PV_N3": 0.8
+      }
+    }
+  }
+}

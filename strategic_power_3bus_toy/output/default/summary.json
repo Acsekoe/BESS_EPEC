@@ -1,0 +1,43 @@
+{
+  "formulation": "fixed-capacity strategic hourly charge/discharge availability",
+  "strategic_charge_availability": false,
+  "strategic_discharge_availability": true,
+  "algorithm": "damped Gauss-Seidel with simultaneous Nash audit after each sweep",
+  "sweeps": 15,
+  "converged": true,
+  "stop_reason": "Nash, LMP-reclear, and profit-reclear audits passed for 2 consecutive sweeps",
+  "damping": 0.35,
+  "tolerance_mw": 0.1,
+  "consecutive_sweeps": 2,
+  "complementarity_epsilon": 1e-05,
+  "availability_tie_breaker_eur_per_mw": 0.001,
+  "price_audit_tolerance_eur_per_mwh": 0.02,
+  "profit_audit_tolerance_eur_per_day": 0.25,
+  "nash_profit_tolerance_eur_per_day": 0.5,
+  "final_max_nash_deviation_mw": 0.06378461202489305,
+  "final_all_audits_optimal": true,
+  "final_max_lmp_reclear_gap_eur_per_mwh": 0.0006795031496693582,
+  "final_max_embedded_reclear_profit_gap_eur_per_day": 0.014348950365729252,
+  "final_max_profitable_deviation_eur_per_day": 0.14104195660615915,
+  "final_market_objective_eur_per_day": 27220.10914386798,
+  "final_profits_eur_per_day": {
+    "BESS_A": 131.28219149583435,
+    "BESS_B": 380.4675068737767
+  },
+  "investors": {
+    "BESS_A": {
+      "node": "N3",
+      "power_mw": 20.0,
+      "energy_mwh": 50.0,
+      "owned_generation_shares": {}
+    },
+    "BESS_B": {
+      "node": "N3",
+      "power_mw": 20.0,
+      "energy_mwh": 50.0,
+      "owned_generation_shares": {
+        "G2_MID": 0.5
+      }
+    }
+  }
+}

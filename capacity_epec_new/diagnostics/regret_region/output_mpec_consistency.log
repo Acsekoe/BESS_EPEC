@@ -1,0 +1,153 @@
+[    26s] rho=100.0 I1 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=3581.62 rec=3572.68 gap=+8.94 prod=1.0e-03
+[    31s] rho=100.0 I1 incumbent            eps1e-3_tol1e-6                term=optimal emb=3581.63 rec=3572.68 gap=+8.95 prod=1.0e-03
+[    35s] rho=100.0 I1 incumbent            eps1e-4_tol1e-4                term=optimal emb=3581.50 rec=3580.70 gap=+0.80 prod=9.5e-05
+[    61s] rho=100.0 I1 incumbent            eps1e-3_tol1e-8                term=optimal emb=3581.63 rec=3572.67 gap=+8.96 prod=1.0e-03
+[    76s] rho=100.0 I1 incumbent            strong_duality_tol1e-4         term=optimal emb=3581.49 rec=3581.45 gap=+0.04 prod=3.7e-07
+[   116s] rho=100.0 I1 incumbent            eps1e-6_tol1e-6                term=error: Cannot load a SolverResults object with bad status: error emb=1920.92 rec=1920.92 gap=+0.00 prod=6.5e-09
+[   138s] rho=50.0 I1 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=3582.51 rec=3578.02 gap=+4.48 prod=1.0e-03
+[   140s] rho=100.0 I1 incumbent            eps1e-5_tol1e-6                term=error: Cannot load a SolverResults object with bad status: error emb=1920.92 rec=1920.92 gap=+0.00 prod=6.5e-09
+[   154s] rho=100.0 I1 incumbent            strong_duality_tol1e-6         term=optimal emb=3581.49 rec=3581.49 gap=+0.00 prod=1.7e-08
+[   162s] rho=25.0 I1 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=3585.43 rec=3583.06 gap=+2.37 prod=9.9e-04
+[   163s] rho=100.0 I1 replace_N6_10mw_4h   run_eps1e-3_tol1e-4            term=optimal emb=3581.62 rec=3572.68 gap=+8.94 prod=1.0e-03
+[   186s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-4_tol1e-4                term=optimal emb=3581.50 rec=3580.70 gap=+0.80 prod=9.5e-05
+[   186s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-3_tol1e-6                term=optimal emb=3581.63 rec=3572.68 gap=+8.95 prod=1.0e-03
+[   207s] rho=100.0 I1 incumbent            strong_duality_tol1e-8         term=optimal emb=3581.49 rec=3581.49 gap=+0.00 prod=6.3e-09
+[   218s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-3_tol1e-8                term=optimal emb=3581.63 rec=3572.67 gap=+8.96 prod=1.0e-03
+[   261s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-5_tol1e-6                term=optimal emb=3581.49 rec=3581.29 gap=+0.20 prod=1.0e-05
+[   264s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-6_tol1e-6                term=optimal emb=3581.49 rec=3581.47 gap=+0.02 prod=7.0e-07
+[   325s] rho=100.0 I1 replace_N6_10mw_4h   strong_duality_tol1e-4         term=optimal emb=3581.49 rec=3581.39 gap=+0.10 prod=1.2e-07
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I1, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I1, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[   341s] rho=100.0 I1 incumbent            eps1e-8_tol1e-8                term=maxIterations emb=3086.67 rec=3086.66 gap=+0.01 prod=8.7e-08
+[   348s] rho=100.0 I1 incumbent            eps1e-6_tol1e-8                term=maxIterations emb=3581.49 rec=3581.47 gap=+0.02 prod=7.0e-07
+[   362s] rho=100.0 I1 replace_N6_10mw_4h   strong_duality_tol1e-6         term=optimal emb=3581.49 rec=3581.37 gap=+0.12 prod=6.6e-09
+[   365s] rho=50.0 I1 replace_N6_10mw_4h   run_eps1e-3_tol1e-4            term=optimal emb=3582.51 rec=3578.02 gap=+4.49 prod=1.0e-03
+[   371s] rho=25.0 I1 replace_N6_10mw_4h   run_eps1e-3_tol1e-4            term=optimal emb=3585.43 rec=3583.06 gap=+2.37 prod=9.9e-04
+[   386s] rho=100.0 I2 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=75790.78 rec=75764.68 gap=+26.10 prod=1.0e-03
+[   396s] rho=100.0 I2 incumbent            eps1e-3_tol1e-6                term=optimal emb=75790.79 rec=75764.07 gap=+26.72 prod=1.0e-03
+[   400s] rho=100.0 I2 incumbent            eps1e-4_tol1e-4                term=optimal emb=75790.52 rec=75775.29 gap=+15.23 prod=9.9e-05
+[   417s] rho=100.0 I2 incumbent            eps1e-3_tol1e-8                term=optimal emb=75790.79 rec=75764.05 gap=+26.74 prod=1.0e-03
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I1, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I1, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[   526s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-8_tol1e-8                term=maxIterations emb=3576.98 rec=3576.99 gap=-0.00 prod=2.0e-04
+[   530s] rho=100.0 I1 replace_N6_10mw_4h   eps1e-6_tol1e-8                term=maxIterations emb=3581.49 rec=3581.48 gap=+0.00 prod=9.7e-07
+[   534s] rho=100.0 I2 incumbent            eps1e-5_tol1e-6                term=error: Cannot load a SolverResults object with bad status: error emb=73564.63 rec=73564.63 gap=+0.00 prod=2.7e-08
+[   559s] rho=100.0 I1 replace_N6_10mw_4h   strong_duality_tol1e-8         term=optimal emb=3581.49 rec=3581.44 gap=+0.05 prod=3.8e-10
+[   588s] rho=100.0 I2 incumbent            eps1e-6_tol1e-6                term=error: Cannot load a SolverResults object with bad status: error emb=73564.63 rec=73564.63 gap=+0.00 prod=2.7e-08
+[   589s] rho=100.0 I2 incumbent            strong_duality_tol1e-4         term=error: Cannot load a SolverResults object with bad status: error emb=73564.63 rec=73564.63 gap=+0.00 prod=2.7e-08
+[   607s] rho=50.0 I2 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=75791.63 rec=75778.53 gap=+13.10 prod=1.0e-03
+[   623s] rho=100.0 I2 incumbent            strong_duality_tol1e-8         term=optimal emb=75790.47 rec=75790.43 gap=+0.04 prod=1.6e-10
+[   630s] rho=100.0 I2 replace_N3_10mw_2h   run_eps1e-3_tol1e-4            term=optimal emb=75790.78 rec=75764.69 gap=+26.09 prod=1.0e-03
+[   632s] rho=25.0 I2 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=75792.67 rec=75785.34 gap=+7.33 prod=1.0e-03
+[   654s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-3_tol1e-6                term=optimal emb=75790.79 rec=75764.07 gap=+26.72 prod=1.0e-03
+[   658s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-3_tol1e-8                term=optimal emb=75790.79 rec=75764.07 gap=+26.72 prod=1.0e-03
+[   670s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-4_tol1e-4                term=optimal emb=75790.52 rec=75774.80 gap=+15.72 prod=9.9e-05
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I2, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[   736s] rho=100.0 I2 incumbent            eps1e-6_tol1e-8                term=maxIterations emb=75790.47 rec=75790.22 gap=+0.26 prod=8.6e-07
+[   745s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-5_tol1e-6                term=error: Cannot load a SolverResults object with bad status: error emb=74984.56 rec=74984.56 gap=-0.00 prod=1.4e-07
+[   808s] rho=100.0 I2 replace_N3_10mw_2h   strong_duality_tol1e-4         term=optimal emb=75790.47 rec=75790.47 gap=+0.00 prod=3.1e-08
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I2, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[   834s] rho=100.0 I2 incumbent            eps1e-8_tol1e-8                term=maxIterations emb=75722.40 rec=75722.41 gap=-0.00 prod=1.2e-07
+[   838s] rho=100.0 I2 incumbent            strong_duality_tol1e-6         term=optimal emb=75790.47 rec=75790.24 gap=+0.23 prod=5.2e-09
+[   861s] rho=50.0 I2 replace_N3_10mw_2h   run_eps1e-3_tol1e-4            term=optimal emb=75791.63 rec=75778.52 gap=+13.10 prod=1.0e-03
+[   874s] rho=100.0 I2 replace_N3_10mw_2h   strong_duality_tol1e-6         term=optimal emb=75790.47 rec=75790.24 gap=+0.23 prod=2.3e-10
+[   886s] rho=25.0 I2 replace_N3_10mw_2h   run_eps1e-3_tol1e-4            term=optimal emb=75789.18 rec=75737.14 gap=+52.04 prod=1.0e-03
+[   893s] rho=100.0 I3 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=122794.94 rec=122773.61 gap=+21.32 prod=1.0e-03
+[   904s] rho=100.0 I3 incumbent            eps1e-4_tol1e-4                term=optimal emb=122794.65 rec=122794.62 gap=+0.03 prod=1.0e-04
+[   914s] rho=100.0 I3 incumbent            eps1e-3_tol1e-6                term=optimal emb=122794.94 rec=122758.92 gap=+36.02 prod=1.0e-03
+[   937s] rho=100.0 I3 incumbent            eps1e-3_tol1e-8                term=optimal emb=122794.94 rec=122757.75 gap=+37.20 prod=1.0e-03
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I2, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I2, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[   975s] rho=100.0 I3 incumbent            eps1e-5_tol1e-6                term=optimal emb=122794.64 rec=122792.29 gap=+2.35 prod=1.0e-05
+[   975s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-6_tol1e-6                term=maxIterations emb=75785.57 rec=75785.54 gap=+0.03 prod=1.3e-06
+[   987s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-6_tol1e-8                term=maxIterations emb=75785.56 rec=75785.56 gap=+0.00 prod=1.3e-06
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I2, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[  1046s] rho=100.0 I2 replace_N3_10mw_2h   eps1e-8_tol1e-8                term=maxIterations emb=75790.47 rec=75790.45 gap=+0.03 prod=9.8e-09
+[  1046s] rho=100.0 I3 incumbent            strong_duality_tol1e-4         term=optimal emb=126162.83 rec=126162.72 gap=+0.10 prod=6.3e-09
+[  1099s] rho=100.0 I3 incumbent            strong_duality_tol1e-6         term=optimal emb=126162.83 rec=126162.68 gap=+0.15 prod=2.7e-07
+[  1135s] rho=100.0 I3 incumbent            strong_duality_tol1e-8         term=optimal emb=126162.83 rec=126160.42 gap=+2.40 prod=8.5e-11
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I2, strong-duality]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[  1138s] rho=50.0 I3 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=122790.62 rec=122779.76 gap=+10.86 prod=1.0e-03
+[  1144s] rho=100.0 I2 replace_N3_10mw_2h   strong_duality_tol1e-8         term=maxIterations emb=75790.47 rec=75790.46 gap=+0.02 prod=4.5e-07
+[  1151s] rho=100.0 I3 incumbent            eps1e-6_tol1e-6                term=optimal emb=122794.63 rec=122794.02 gap=+0.61 prod=1.0e-06
+[  1162s] rho=25.0 I3 incumbent            run_eps1e-3_tol1e-4            term=optimal emb=122781.38 rec=122776.87 gap=+4.51 prod=1.0e-03
+[  1166s] rho=100.0 I3 duration_8h          run_eps1e-3_tol1e-4            term=optimal emb=126166.48 rec=125941.73 gap=+224.76 prod=1.0e-03
+[  1167s] rho=100.0 I3 duration_8h          eps1e-3_tol1e-6                term=optimal emb=126166.49 rec=125936.86 gap=+229.63 prod=1.0e-03
+[  1178s] rho=100.0 I3 duration_8h          eps1e-3_tol1e-8                term=optimal emb=126166.49 rec=125936.62 gap=+229.88 prod=1.0e-03
+[  1181s] rho=100.0 I3 incumbent            eps1e-8_tol1e-8                term=optimal emb=122794.63 rec=122793.80 gap=+0.84 prod=9.9e-09
+[  1197s] rho=100.0 I3 incumbent            eps1e-6_tol1e-8                term=optimal emb=122794.63 rec=122793.63 gap=+1.01 prod=1.0e-06
+[  1199s] rho=100.0 I3 duration_8h          eps1e-4_tol1e-4                term=optimal emb=126165.89 rec=126148.62 gap=+17.27 prod=1.0e-04
+[  1239s] rho=100.0 I3 duration_8h          eps1e-5_tol1e-6                term=optimal emb=126165.84 rec=126160.58 gap=+5.25 prod=1.0e-05
+[  1257s] rho=100.0 I3 duration_8h          eps1e-6_tol1e-6                term=optimal emb=126165.83 rec=126162.13 gap=+3.70 prod=9.9e-07
+[  1265s] rho=100.0 I3 duration_8h          strong_duality_tol1e-4         term=optimal emb=126162.82 rec=126162.72 gap=+0.10 prod=5.4e-08
+[  1281s] rho=25.0 I3 duration_8h          run_eps1e-3_tol1e-4            term=optimal emb=126124.63 rec=126068.48 gap=+56.15 prod=1.0e-03
+[  1284s] rho=50.0 I3 duration_8h          run_eps1e-3_tol1e-4            term=optimal emb=126152.52 rec=126040.29 gap=+112.23 prod=1.0e-03
+[  1331s] rho=100.0 I3 duration_8h          strong_duality_tol1e-6         term=optimal emb=126162.83 rec=126160.06 gap=+2.77 prod=6.7e-10
+[  1343s] rho=100.0 I3 duration_8h          eps1e-6_tol1e-8                term=optimal emb=126165.83 rec=126161.62 gap=+4.21 prod=1.0e-06
+[  1347s] rho=100.0 I3 duration_8h          strong_duality_tol1e-8         term=optimal emb=126162.83 rec=126162.42 gap=+0.41 prod=5.4e-09
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I3, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum CPU Time Exceeded.
+[  1488s] rho=100.0 I3 duration_8h          eps1e-8_tol1e-8                term=maxIterations emb=126162.22 rec=126162.11 gap=+0.10 prod=1.0e-08
+[  1603s] rho=100.0 I1 incumbent            chain0_eps1e-3_tol1e-4         term=optimal emb=3581.62 rec=3572.68 gap=+8.94 prod=1.0e-03
+[  1603s] rho=100.0 I1 incumbent            chain1_eps1e-4_tol1e-6         term=optimal emb=3581.50 rec=3580.62 gap=+0.88 prod=1.0e-04
+[  1603s] rho=100.0 I1 incumbent            chain2_eps1e-5_tol1e-7         term=error: Cannot load a SolverResults object with bad status: error emb=3580.62 rec=3580.62 gap=+0.00 prod=1.1e-03
+[  1603s] rho=100.0 I1 incumbent            chain3_eps1e-6_tol1e-8         term=optimal emb=3581.49 rec=3581.43 gap=+0.06 prod=1.0e-06
+[  1603s] rho=100.0 I1 incumbent            chain4_strong_duality_tol1e-8  term=optimal emb=3581.49 rec=3581.46 gap=+0.03 prod=4.3e-09
+[  1633s] rho=100.0 I3 incumbent            chain0_eps1e-3_tol1e-4         term=optimal emb=122794.94 rec=122773.61 gap=+21.32 prod=1.0e-03
+[  1633s] rho=100.0 I3 incumbent            chain1_eps1e-4_tol1e-6         term=optimal emb=122794.66 rec=122787.65 gap=+7.01 prod=1.0e-04
+[  1633s] rho=100.0 I3 incumbent            chain2_eps1e-5_tol1e-7         term=optimal emb=122794.64 rec=122793.75 gap=+0.89 prod=1.0e-05
+[  1633s] rho=100.0 I3 incumbent            chain3_eps1e-6_tol1e-8         term=optimal emb=122794.63 rec=122793.65 gap=+0.98 prod=1.0e-06
+[  1633s] rho=100.0 I3 incumbent            chain4_strong_duality_tol1e-8  term=optimal emb=126162.83 rec=126160.97 gap=+1.86 prod=5.2e-10
+[  1716s] rho=100.0 I1 replace_N6_10mw_4h   chain0_eps1e-3_tol1e-4         term=optimal emb=3581.62 rec=3572.68 gap=+8.94 prod=1.0e-03
+[  1716s] rho=100.0 I1 replace_N6_10mw_4h   chain1_eps1e-4_tol1e-6         term=optimal emb=3581.50 rec=3580.62 gap=+0.88 prod=1.0e-04
+[  1716s] rho=100.0 I1 replace_N6_10mw_4h   chain2_eps1e-5_tol1e-7         term=error: Cannot load a SolverResults object with bad status: error emb=3580.62 rec=3580.62 gap=+0.00 prod=1.1e-03
+[  1716s] rho=100.0 I1 replace_N6_10mw_4h   chain3_eps1e-6_tol1e-8         term=optimal emb=3581.49 rec=3581.47 gap=+0.02 prod=1.0e-06
+[  1716s] rho=100.0 I1 replace_N6_10mw_4h   chain4_strong_duality_tol1e-8  term=optimal emb=3581.49 rec=3581.49 gap=+0.00 prod=2.3e-11
+[  1781s] rho=100.0 I3 duration_8h          chain0_eps1e-3_tol1e-4         term=optimal emb=126166.48 rec=125941.73 gap=+224.76 prod=1.0e-03
+[  1781s] rho=100.0 I3 duration_8h          chain1_eps1e-4_tol1e-6         term=optimal emb=126165.89 rec=126144.67 gap=+21.23 prod=1.0e-04
+[  1781s] rho=100.0 I3 duration_8h          chain2_eps1e-5_tol1e-7         term=optimal emb=126165.84 rec=126162.84 gap=+2.99 prod=1.0e-05
+[  1781s] rho=100.0 I3 duration_8h          chain3_eps1e-6_tol1e-8         term=optimal emb=126165.83 rec=126161.61 gap=+4.22 prod=1.0e-06
+[  1781s] rho=100.0 I3 duration_8h          chain4_strong_duality_tol1e-8  term=optimal emb=126162.83 rec=126162.80 gap=+0.03 prod=2.6e-11
+[  1828s] rho=100.0 I2 incumbent            chain0_eps1e-3_tol1e-4         term=optimal emb=75790.78 rec=75764.68 gap=+26.10 prod=1.0e-03
+[  1828s] rho=100.0 I2 incumbent            chain1_eps1e-4_tol1e-6         term=optimal emb=75790.53 rec=75774.43 gap=+16.10 prod=1.0e-04
+[  1828s] rho=100.0 I2 incumbent            chain2_eps1e-5_tol1e-7         term=optimal emb=75790.48 rec=75789.33 gap=+1.15 prod=1.0e-05
+[  1828s] rho=100.0 I2 incumbent            chain3_eps1e-6_tol1e-8         term=optimal emb=75790.47 rec=75790.32 gap=+0.16 prod=1.0e-06
+[  1828s] rho=100.0 I2 incumbent            chain4_strong_duality_tol1e-8  term=optimal emb=75790.47 rec=75790.47 gap=+0.01 prod=2.6e-10
+[  1994s] rho=100.0 I2 replace_N3_10mw_2h   chain0_eps1e-3_tol1e-4         term=optimal emb=75790.78 rec=75764.69 gap=+26.09 prod=1.0e-03
+[  1994s] rho=100.0 I2 replace_N3_10mw_2h   chain1_eps1e-4_tol1e-6         term=optimal emb=75790.53 rec=75774.34 gap=+16.19 prod=1.0e-04
+[  1994s] rho=100.0 I2 replace_N3_10mw_2h   chain2_eps1e-5_tol1e-7         term=error: Cannot load a SolverResults object with bad status: error emb=75774.34 rec=75774.34 gap=-0.00 prod=1.1e-03
+[  1994s] rho=100.0 I2 replace_N3_10mw_2h   chain3_eps1e-6_tol1e-8         term=optimal emb=75790.47 rec=75790.32 gap=+0.16 prod=1.0e-06
+[  1994s] rho=100.0 I2 replace_N3_10mw_2h   chain4_strong_duality_tol1e-8  term=optimal emb=75790.47 rec=75790.46 gap=+0.01 prod=1.3e-07
+done 108 rows 2000s

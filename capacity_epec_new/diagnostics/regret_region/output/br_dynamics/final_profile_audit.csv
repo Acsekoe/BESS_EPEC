@@ -1,0 +1,4 @@
+investor,current_profit,best_profit,regret_lower_bound,relative_regret_lower_bound,best_source,best_label,I1_profit_upper_bound,I1_regret_upper_bound
+I1,791.593408440131,867.7855357841219,76.19212734399082,0.09625159397692648,mpec:strong_duality_tol1e-6,best_probe:scale_N8_-0.2,970.4548258667637,178.86141742663267
+I2,75514.83040974595,75514.83120056546,0.0007908195111667737,1.047237353081191e-08,probe:energy_only,energy_N9_down_0.1,,
+I3,82268.7992348173,125831.57904297426,43562.77980815696,0.5295176326059782,mpec:relaxed_eps1e-4_tol1e-4,best_probe:scale_N6_+0.5,,

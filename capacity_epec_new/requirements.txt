@@ -1,0 +1,3 @@
+# Python model construction and the IPOPT interface.
+pyomo>=6.7
+

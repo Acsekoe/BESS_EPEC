@@ -1,4 +1,0 @@
-# Model construction and IPOPT interface.
-pyomo>=6.7
-# Tests only.
-pytest>=8

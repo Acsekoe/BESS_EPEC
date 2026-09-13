@@ -1,0 +1,31 @@
+{
+  "rho": 100.0,
+  "data": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\capacity_epec_new\\model\\input\\market_data_smoothed.json",
+  "data_sha256": "b9837000839d168a81cb33181e6837a18a459f0e21848cbaf0a74b6b4af3d402",
+  "dynamics_profiles": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\capacity_epec_new\\diagnostics\\regret_region\\output\\br_dynamics\\profiles.csv",
+  "strategy_counts": {
+    "I1": 6,
+    "I2": 6,
+    "I3": 6
+  },
+  "cross_product_profiles": 216,
+  "feasible_cleared_profiles": 216,
+  "regime_count": 17,
+  "restricted_pure_equilibrium_count": 3,
+  "best_restricted_profile": {
+    "profile_id": 33,
+    "strategy_I1": "sweep100",
+    "strategy_I2": "exit",
+    "strategy_I3": "step7",
+    "lines_priced": "L46-@12;L46-@13;L46-@14;L78-@13;L78-@14;L78-@15",
+    "profit_I1": 2916.255571016865,
+    "profit_I2": 71731.13389523239,
+    "profit_I3": 89944.01585977853,
+    "menu_regret_I1": 0.0,
+    "menu_regret_I2": 0.0,
+    "menu_regret_I3": 0.0,
+    "max_menu_regret": 0.0,
+    "max_menu_relative_regret": 0.0
+  },
+  "qualification": "All payoffs use exact procedural reclearing. Regrets are restricted to the finite observed-strategy menu and are lower bounds on continuous-game regret."
+}

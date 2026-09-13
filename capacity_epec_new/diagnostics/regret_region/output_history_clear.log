@@ -1,0 +1,24 @@
+I3 N3 energy range=80.440 mean=34.95 |press|=10.850 signchg=0.24 press_ac1=0.35 lag*=2 ac=0.98
+I1 N3 energy range=69.333 mean=43.53 |press|=7.624 signchg=0.16 press_ac1=0.31 lag*=2 ac=0.98
+I3 N8 energy range=49.434 mean=77.57 |press|=6.725 signchg=0.24 press_ac1=0.34 lag*=2 ac=0.98
+I1 N8 energy range=38.445 mean=36.46 |press|=4.476 signchg=0.18 press_ac1=0.24 lag*=2 ac=0.97
+I2 N9 energy range=27.536 mean=80.24 |press|=4.005 signchg=0.33 press_ac1=0.32 lag*=2 ac=0.97
+I3 N3 power  range=21.308 mean=9.61 |press|=2.956 signchg=0.24 press_ac1=0.31 lag*=2 ac=0.98
+I1 N6 energy range=20.668 mean=45.42 |press|=2.772 signchg=0.16 press_ac1=0.25 lag*=2 ac=0.96
+I3 N6 energy range=20.238 mean=105.07 |press|=3.491 signchg=0.27 press_ac1=0.35 lag*=2 ac=0.96
+I1 N3 power  range=18.596 mean=11.71 |press|=2.004 signchg=0.16 press_ac1=0.34 lag*=2 ac=0.98
+I2 N8 energy range=18.092 mean=16.05 |press|=2.460 signchg=0.29 press_ac1=0.35 lag*=2 ac=0.97
+I3 N8 power  range=13.942 mean=31.43 |press|=1.895 signchg=0.24 press_ac1=0.32 lag*=2 ac=0.98
+I1 N8 power  range=10.537 mean=14.64 |press|=1.217 signchg=0.27 press_ac1=0.23 lag*=2 ac=0.97
+{'investor': 'I1', 'regret_mean': 1372.860132908589, 'regret_min': 1040.7014122871112, 'regret_max': 1938.7355263747684, 'regret_lag1_autocorr': 0.7984695823398821, 'regret_lag2_autocorr': 0.7502030025072649, 'relative_regret_mean': 0.8812679692212637, 'incumbent_profit_range': 671.6448650538691}
+{'investor': 'I2', 'regret_mean': 1687.6127571332054, 'regret_min': 1202.2799626491033, 'regret_max': 2403.662337702306, 'regret_lag1_autocorr': 0.7695665353256573, 'regret_lag2_autocorr': 0.572063735684148, 'relative_regret_mean': 0.023031278717833444, 'incumbent_profit_range': 1470.9789404132753}
+{'investor': 'I3', 'regret_mean': 26603.811152612747, 'regret_min': 22266.323652027088, 'regret_max': 32984.922646874955, 'regret_lag1_autocorr': 0.974696761349561, 'regret_lag2_autocorr': 0.9417758296993388, 'relative_regret_mean': 0.27943352919942155, 'incumbent_profit_range': 10757.374884066317}
+N3 power  total_range=8.33 sum_indiv_ranges=41.16 ratio=0.20 corr(dI1,dI3)=-0.33 corr(dI1,dI2)=-0.32 corr(dI2,dI3)=0.09 dAC1 I1/I2/I3=0.34/0.41/0.31
+N3 energy total_range=32.05 sum_indiv_ranges=152.31 ratio=0.21 corr(dI1,dI3)=-0.33 corr(dI1,dI2)=-0.31 corr(dI2,dI3)=0.08 dAC1 I1/I2/I3=0.30/0.41/0.34
+N6 power  total_range=4.18 sum_indiv_ranges=11.49 ratio=0.36 corr(dI1,dI3)=-0.27 corr(dI1,dI2)=0.00 corr(dI2,dI3)=-0.17 dAC1 I1/I2/I3=0.26/0.38/0.34
+N6 energy total_range=15.59 sum_indiv_ranges=47.03 ratio=0.33 corr(dI1,dI3)=-0.27 corr(dI1,dI2)=0.05 corr(dI2,dI3)=-0.13 dAC1 I1/I2/I3=0.25/0.36/0.34
+N8 power  total_range=6.89 sum_indiv_ranges=29.56 ratio=0.23 corr(dI1,dI3)=-0.27 corr(dI1,dI2)=-0.00 corr(dI2,dI3)=-0.16 dAC1 I1/I2/I3=0.23/0.38/0.32
+N8 energy total_range=26.16 sum_indiv_ranges=105.97 ratio=0.25 corr(dI1,dI3)=-0.26 corr(dI1,dI2)=0.02 corr(dI2,dI3)=-0.15 dAC1 I1/I2/I3=0.23/0.35/0.33
+N9 power  total_range=5.25 sum_indiv_ranges=10.59 ratio=0.50 corr(dI1,dI3)=-0.10 corr(dI1,dI2)=-0.26 corr(dI2,dI3)=0.07 dAC1 I1/I2/I3=0.16/0.32/0.03
+N9 energy total_range=22.30 sum_indiv_ranges=34.61 ratio=0.64 corr(dI1,dI3)=-0.13 corr(dI1,dI2)=-0.18 corr(dI2,dI3)=0.08 dAC1 I1/I2/I3=0.19/0.32/0.01
+regime hashes over late window: 5

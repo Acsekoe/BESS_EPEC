@@ -1,0 +1,27 @@
+coarse done: 1029 clears in 680s
+trace level 1: 61 clears, t=733s
+trace level 2: 61 clears, t=785s
+trace level 3: 61 clears, t=840s
+trace level 4: 61 clears, t=894s
+trace level 5: 61 clears, t=945s
+trace level 6: 61 clears, t=996s
+trace level 7: 61 clears, t=1044s
+trace level 8: 61 clears, t=1095s
+trace level 9: 61 clears, t=1138s
+trace level 10: 61 clears, t=1182s
+trace level 11: 61 clears, t=1229s
+trace level 12: 61 clears, t=1278s
+trace level 13: 61 clears, t=1329s
+trace level 14: 61 clears, t=1376s
+trace level 15: 61 clears, t=1423s
+trace level 16: 61 clears, t=1474s
+trace level 17: 61 clears, t=1523s
+trace level 18: 61 clears, t=1574s
+trace level 19: 60 clears, t=1621s
+trace level 20: 60 clears, t=1662s
+trace level 21: 60 clears, t=1705s
+trace level 22: 57 clears, t=1743s
+trace level 23: 56 clears, t=1781s
+trace level 24: 55 clears, t=1847s
+scan complete in 1848s
+export complete: {'samples': 2475, 'transitions': 2454, 'bracket_levels': 1446, 'brackets': 61}

@@ -1,0 +1,81 @@
+[   15s] I1 incumbent            relaxed_sd_delta10_tol1e-06    term=optimal emb=3592.23 rec=2819.87 gap=+772.36 pd=10 prod=3.9e+00 t=9s
+[   22s] I1 replace_N6_10mw_4h   relaxed_sd_delta0.1_tol1e-06   term=optimal emb=3581.61 rec=3564.21 gap=+17.39 pd=0.1 prod=5.0e-02 t=12s
+[   25s] I1 incumbent            relaxed_sd_delta0.1_tol1e-06   term=optimal emb=3581.61 rec=3564.22 gap=+17.39 pd=0.1 prod=5.0e-02 t=17s
+[   26s] I1 replace_N6_10mw_4h   relaxed_sd_delta1_tol1e-06     term=optimal emb=3582.65 rec=3407.79 gap=+174.86 pd=1 prod=5.1e-01 t=12s
+[   33s] I1 incumbent            relaxed_sd_delta0.01_tol1e-06  term=optimal emb=3581.50 rec=3579.83 gap=+1.67 pd=0.00999 prod=4.8e-03 t=23s
+[   37s] I1 incumbent            relaxed_sd_delta1_tol1e-06     term=optimal emb=3582.65 rec=3407.77 gap=+174.89 pd=1 prod=5.1e-01 t=27s
+[   40s] I1 replace_N6_10mw_4h   relaxed_sd_delta0.01_tol1e-06  term=optimal emb=3581.50 rec=3579.82 gap=+1.68 pd=0.01 prod=4.8e-03 t=12s
+[   46s] I2 incumbent            relaxed_sd_delta1_tol1e-06     term=optimal emb=75797.61 rec=75775.25 gap=+22.36 pd=1 prod=1.0e+00 t=12s
+[   51s] I1 replace_N6_10mw_4h   relaxed_sd_delta10_tol1e-06    term=optimal emb=3592.24 rec=2819.87 gap=+772.37 pd=10 prod=3.9e+00 t=41s
+[   53s] I2 incumbent            relaxed_sd_delta0.1_tol1e-06   term=optimal emb=75791.19 rec=75775.27 gap=+15.92 pd=0.1 prod=9.7e-02 t=13s
+[   55s] I2 incumbent            relaxed_sd_delta10_tol1e-06    term=optimal emb=75861.59 rec=75775.12 gap=+86.47 pd=10 prod=8.0e+00 t=11s
+[   57s] I2 incumbent            relaxed_sd_delta0.01_tol1e-06  term=optimal emb=75790.54 rec=75775.09 gap=+15.45 pd=0.01 prod=5.6e-03 t=14s
+[   68s] I2 replace_N3_10mw_2h   relaxed_sd_delta10_tol1e-06    term=optimal emb=75861.59 rec=75775.27 gap=+86.32 pd=10 prod=8.0e+00 t=15s
+[   68s] I2 incumbent            relaxed_sd_delta0.001_tol1e-06 term=optimal emb=75790.48 rec=75786.57 gap=+3.92 pd=0.001 prod=2.3e-04 t=20s
+[   73s] I2 replace_N3_10mw_2h   relaxed_sd_delta1_tol1e-06     term=optimal emb=75797.61 rec=75775.24 gap=+22.36 pd=1 prod=1.0e+00 t=14s
+[   75s] I2 replace_N3_10mw_2h   relaxed_sd_delta0.1_tol1e-06   term=optimal emb=75791.19 rec=75775.24 gap=+15.95 pd=0.1 prod=9.7e-02 t=16s
+[   77s] I1 incumbent            relaxed_sd_delta0.001_tol1e-06 term=optimal emb=3581.49 rec=3581.32 gap=+0.17 pd=0.001 prod=3.1e-04 t=63s
+[   78s] I3 incumbent            relaxed_sd_delta1_tol1e-06     term=optimal emb=126207.36 rec=126164.45 gap=+42.91 pd=1 prod=1.0e+00 t=5s
+[   82s] I3 incumbent            relaxed_sd_delta10_tol1e-06    term=optimal emb=126537.29 rec=126160.84 gap=+376.44 pd=10 prod=7.0e+00 t=9s
+[   87s] I3 incumbent            relaxed_sd_delta0.1_tol1e-06   term=optimal emb=126169.98 rec=126162.46 gap=+7.52 pd=0.1 prod=1.0e-01 t=8s
+[   89s] I3 duration_8h          relaxed_sd_delta10_tol1e-06    term=optimal emb=126537.29 rec=126161.66 gap=+375.62 pd=10 prod=7.0e+00 t=4s
+[   90s] I2 replace_N3_10mw_2h   relaxed_sd_delta0.01_tol1e-06  term=optimal emb=75790.55 rec=75775.27 gap=+15.28 pd=0.01 prod=6.8e-03 t=29s
+[   91s] I1 replace_N6_10mw_4h   relaxed_sd_delta0.001_tol1e-06 term=optimal emb=3581.49 rec=3581.32 gap=+0.17 pd=0.001 prod=3.1e-04 t=64s
+[   93s] I3 duration_8h          relaxed_sd_delta1_tol1e-06     term=optimal emb=126204.36 rec=126161.51 gap=+42.85 pd=1 prod=1.0e+00 t=5s
+[   93s] I3 incumbent            relaxed_sd_delta0.01_tol1e-06  term=optimal emb=126166.24 rec=126163.47 gap=+2.77 pd=0.01 prod=1.0e-02 t=12s
+[  100s] I3 duration_8h          relaxed_sd_delta0.01_tol1e-06  term=optimal emb=126163.24 rec=126160.44 gap=+2.80 pd=0.01 prod=1.0e-02 t=6s
+[  101s] I3 duration_8h          relaxed_sd_delta0.1_tol1e-06   term=optimal emb=126166.98 rec=126162.12 gap=+4.86 pd=0.1 prod=1.0e-01 t=9s
+[  102s] I2 replace_N3_10mw_2h   relaxed_sd_delta0.001_tol1e-06 term=optimal emb=75790.48 rec=75786.51 gap=+3.97 pd=0.001 prod=2.3e-04 t=39s
+[  108s] I3 duration_8h          relaxed_sd_delta0.001_tol1e-06 term=optimal emb=126162.87 rec=126153.00 gap=+9.87 pd=0.001 prod=9.6e-04 t=13s
+[  109s] I3 incumbent            relaxed_sd_delta0.001_tol1e-06 term=optimal emb=126165.87 rec=126165.82 gap=+0.05 pd=0.001 prod=9.6e-04 t=20s
+
+inv start                formulation                      term              embedded     reclear      gap    pd gap      gain   sec
+I1  incumbent            eps1e-4_tol1e-4                  optimal            3581.50     3580.70     0.80     0.223    1659.8    25
+I1  incumbent            run_eps1e-3_tol1e-4              optimal            3581.62     3572.68     8.94      2.14    1651.8    20
+I1  incumbent            strong_duality_tol1e-6           optimal            3581.49     3581.49     0.00 -8.85e-08    1660.6    77
+I1  incumbent            relaxed_sd_delta10_tol1e-06      optimal            3592.23     2819.87   772.36        10     899.0     9
+I1  incumbent            relaxed_sd_delta1_tol1e-06       optimal            3582.65     3407.77   174.89         1    1486.8    27
+I1  incumbent            relaxed_sd_delta0.1_tol1e-06     optimal            3581.61     3564.22    17.39       0.1    1643.3    17
+I1  incumbent            relaxed_sd_delta0.01_tol1e-06    optimal            3581.50     3579.83     1.67   0.00999    1658.9    23
+I1  incumbent            relaxed_sd_delta0.001_tol1e-06   optimal            3581.49     3581.32     0.17     0.001    1660.4    63
+I1  replace_N6_10mw_4h   eps1e-4_tol1e-4                  optimal            3581.50     3580.70     0.80     0.223    1659.8    23
+I1  replace_N6_10mw_4h   run_eps1e-3_tol1e-4              optimal            3581.62     3572.68     8.94      2.18    1651.8    14
+I1  replace_N6_10mw_4h   strong_duality_tol1e-6           optimal            3581.49     3581.37     0.12  5.88e-07    1660.5    89
+I1  replace_N6_10mw_4h   relaxed_sd_delta10_tol1e-06      optimal            3592.24     2819.87   772.37        10     899.0    41
+I1  replace_N6_10mw_4h   relaxed_sd_delta1_tol1e-06       optimal            3582.65     3407.79   174.86         1    1486.9    12
+I1  replace_N6_10mw_4h   relaxed_sd_delta0.1_tol1e-06     optimal            3581.61     3564.21    17.39       0.1    1643.3    12
+I1  replace_N6_10mw_4h   relaxed_sd_delta0.01_tol1e-06    optimal            3581.50     3579.82     1.68      0.01    1658.9    12
+I1  replace_N6_10mw_4h   relaxed_sd_delta0.001_tol1e-06   optimal            3581.49     3581.32     0.17     0.001    1660.4    64
+I2  incumbent            eps1e-4_tol1e-4                  optimal           75790.52    75775.29    15.23      0.22    2210.7    28
+I2  incumbent            run_eps1e-3_tol1e-4              optimal           75790.78    75764.68    26.10      2.16    2200.1    17
+I2  incumbent            strong_duality_tol1e-6           optimal           75790.47    75790.24     0.23  6.52e-07    2225.6   297
+I2  incumbent            relaxed_sd_delta10_tol1e-06      optimal           75861.59    75775.12    86.47        10    2210.5    11
+I2  incumbent            relaxed_sd_delta1_tol1e-06       optimal           75797.61    75775.25    22.36         1    2210.6    12
+I2  incumbent            relaxed_sd_delta0.1_tol1e-06     optimal           75791.19    75775.27    15.92       0.1    2210.6    13
+I2  incumbent            relaxed_sd_delta0.01_tol1e-06    optimal           75790.54    75775.09    15.45      0.01    2210.5    14
+I2  incumbent            relaxed_sd_delta0.001_tol1e-06   optimal           75790.48    75786.57     3.92     0.001    2221.9    20
+I2  replace_N3_10mw_2h   eps1e-4_tol1e-4                  optimal           75790.52    75774.80    15.72      0.22    2210.2    39
+I2  replace_N3_10mw_2h   run_eps1e-3_tol1e-4              optimal           75790.78    75764.69    26.09      2.15    2200.1    15
+I2  replace_N3_10mw_2h   strong_duality_tol1e-6           optimal           75790.47    75790.24     0.23  1.84e-08    2225.6    59
+I2  replace_N3_10mw_2h   relaxed_sd_delta10_tol1e-06      optimal           75861.59    75775.27    86.32        10    2210.6    15
+I2  replace_N3_10mw_2h   relaxed_sd_delta1_tol1e-06       optimal           75797.61    75775.24    22.36         1    2210.6    14
+I2  replace_N3_10mw_2h   relaxed_sd_delta0.1_tol1e-06     optimal           75791.19    75775.24    15.95       0.1    2210.6    16
+I2  replace_N3_10mw_2h   relaxed_sd_delta0.01_tol1e-06    optimal           75790.55    75775.27    15.28      0.01    2210.6    29
+I2  replace_N3_10mw_2h   relaxed_sd_delta0.001_tol1e-06   optimal           75790.48    75786.51     3.97     0.001    2221.9    39
+I3  incumbent            eps1e-4_tol1e-4                  optimal          122794.65   122794.62     0.03     0.194   32694.8    12
+I3  incumbent            run_eps1e-3_tol1e-4              optimal          122794.94   122773.61    21.32      1.98   32673.8     8
+I3  incumbent            strong_duality_tol1e-6           optimal          126162.83   126162.68     0.15  8.47e-09   36062.9    48
+I3  incumbent            relaxed_sd_delta10_tol1e-06      optimal          126537.29   126160.84   376.44        10   36061.1     9
+I3  incumbent            relaxed_sd_delta1_tol1e-06       optimal          126207.36   126164.45    42.91         1   36064.7     5
+I3  incumbent            relaxed_sd_delta0.1_tol1e-06     optimal          126169.98   126162.46     7.52       0.1   36062.7     8
+I3  incumbent            relaxed_sd_delta0.01_tol1e-06    optimal          126166.24   126163.47     2.77      0.01   36063.7    12
+I3  incumbent            relaxed_sd_delta0.001_tol1e-06   optimal          126165.87   126165.82     0.05     0.001   36066.0    20
+I3  duration_8h          eps1e-4_tol1e-4                  optimal          126165.89   126148.62    17.27     0.204   36048.8    22
+I3  duration_8h          run_eps1e-3_tol1e-4              optimal          126166.48   125941.73   224.76      2.01   35841.9     6
+I3  duration_8h          strong_duality_tol1e-6           optimal          126162.83   126160.06     2.77  7.86e-10   36060.3   124
+I3  duration_8h          relaxed_sd_delta10_tol1e-06      optimal          126537.29   126161.66   375.62        10   36061.9     4
+I3  duration_8h          relaxed_sd_delta1_tol1e-06       optimal          126204.36   126161.51    42.85         1   36061.7     5
+I3  duration_8h          relaxed_sd_delta0.1_tol1e-06     optimal          126166.98   126162.12     4.86       0.1   36062.3     9
+I3  duration_8h          relaxed_sd_delta0.01_tol1e-06    optimal          126163.24   126160.44     2.80      0.01   36060.7     6
+I3  duration_8h          relaxed_sd_delta0.001_tol1e-06   optimal          126162.87   126153.00     9.87     0.001   36053.2    13
+done in 109s

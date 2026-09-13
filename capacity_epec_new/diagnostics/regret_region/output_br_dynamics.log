@@ -1,0 +1,18 @@
+[   159s] step1_round1_I3: current=90099.8 best=126162.7 gain=+36062.9 via mpec:strong_duality_tol1e-6:incumbent
+[   528s] step2_round1_I1: current=-450.6 best=2237.6 gain=+2688.2 via mpec:strong_duality_tol1e-6:incumbent I1-bound=2534.1
+[  1142s] step3_round1_I2: current=74037.4 best=75273.5 gain=+1236.2 via mpec:relaxed_eps1e-4_tol1e-4:near_exit_1mw
+WARNING: Loading a SolverResults object with a warning status into
+model.name="'Capacity MPEC [I3, relaxed-kkt]'";
+    - termination condition: maxIterations
+    - message from solver: Ipopt 3.13.2\x3a Maximum Number of Iterations
+      Exceeded.
+[  1762s] step4_round2_I3: current=79483.2 best=125906.7 gain=+46423.5 via mpec:strong_duality_tol1e-6:best_probe:scale_N3_+0.5
+[  2364s] step5_round2_I1: current=-304.3 best=946.4 gain=+1250.7 via mpec:relaxed_eps1e-4_tol1e-4:best_probe:portfolio_-0.5 I1-bound=1356.7
+[  2722s] step6_round2_I2: current=74250.8 best=75564.2 gain=+1313.4 via mpec:strong_duality_tol1e-6:near_exit_1mw
+[  3362s] step7_round3_I3: current=84059.9 best=125865.9 gain=+41806.0 via mpec:strong_duality_tol1e-6:incumbent
+[  3862s] step8_round3_I1: current=-150.9 best=868.4 gain=+1019.3 via mpec:relaxed_eps1e-4_tol1e-4:near_exit_1mw I1-bound=1047.8
+[  4480s] step9_round3_I2: current=74669.1 best=75514.8 gain=+845.7 via mpec:strong_duality_tol1e-6:best_probe:energy_N6_down_1
+[  4995s] final audit I1: current=791.6 best=867.8 gain=+76.2 via mpec:strong_duality_tol1e-6:best_probe:scale_N8_-0.2 I1-bound=970.5
+[  5649s] final audit I2: current=75514.8 best=75514.8 gain=+0.0 via probe:energy_only:energy_N9_down_0.1
+[  6229s] final audit I3: current=82268.8 best=125831.6 gain=+43562.8 via mpec:relaxed_eps1e-4_tol1e-4:best_probe:scale_N6_+0.5
+done in 6229s

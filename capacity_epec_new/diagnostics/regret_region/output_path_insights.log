@@ -1,0 +1,97 @@
+I1_incumbent_start                 rho=25   I1: end=   +126.8 max|.|=   126.8 I2: end=   +465.4 max|.|=   465.4 I3: end=  -1543.0 max|.|=  1543.0
+I1_incumbent_start                 rho=50   I1: end=   +338.2 max|.|=   338.2 I2: end=   +824.1 max|.|=   824.1 I3: end=  -4466.0 max|.|=  4466.0
+I1_incumbent_start                 rho=100  I1: end=  +1651.8 max|.|=  1651.8 I2: end=  +1918.8 max|.|=  1918.8 I3: end= -22900.1 max|.|= 22900.1
+I1_selected_replace_N6_10mw_4h     rho=25   I1: end=   +126.8 max|.|=   126.8 I2: end=   +465.4 max|.|=   465.4 I3: end=  -1543.0 max|.|=  1543.0
+I1_selected_replace_N6_10mw_4h     rho=50   I1: end=   +338.2 max|.|=   338.2 I2: end=   +824.1 max|.|=   824.1 I3: end=  -4466.0 max|.|=  4466.0
+I1_selected_replace_N6_10mw_4h     rho=100  I1: end=  +1651.8 max|.|=  1651.8 I2: end=  +1918.8 max|.|=  1918.8 I3: end= -22900.2 max|.|= 22900.2
+I2_bridge_between_responses        rho=25   I1: end=     -0.0 max|.|=     0.0 I2: end=     -0.0 max|.|=     0.0 I3: end=     +0.1 max|.|=     0.1
+I2_bridge_between_responses        rho=50   I1: end=     +0.1 max|.|=     0.1 I2: end=     -0.0 max|.|=     0.0 I3: end=     -1.4 max|.|=     1.4
+I2_bridge_between_responses        rho=100  I1: end=     +0.0 max|.|=     0.0 I2: end=     +0.0 max|.|=     0.0 I3: end=     -0.1 max|.|=     0.2
+I2_incumbent_start                 rho=25   I1: end=   +230.4 max|.|=   230.4 I2: end=   +699.0 max|.|=   699.0 I3: end=  -2359.3 max|.|=  2359.3
+I2_incumbent_start                 rho=50   I1: end=   +475.6 max|.|=   475.6 I2: end=  +1217.1 max|.|=  1217.1 I3: end=  -5379.5 max|.|=  5379.5
+I2_incumbent_start                 rho=100  I1: end=  +1124.4 max|.|=  1124.4 I2: end=  +2200.1 max|.|=  2200.1 I3: end= -14497.0 max|.|= 14497.0
+I2_selected_replace_N3_10mw_2h     rho=25   I1: end=   +230.4 max|.|=   230.4 I2: end=   +698.9 max|.|=   698.9 I3: end=  -2359.1 max|.|=  2359.1
+I2_selected_replace_N3_10mw_2h     rho=50   I1: end=   +475.7 max|.|=   475.7 I2: end=  +1217.1 max|.|=  1217.1 I3: end=  -5380.9 max|.|=  5380.9
+I2_selected_replace_N3_10mw_2h     rho=100  I1: end=  +1124.4 max|.|=  1124.4 I2: end=  +2200.1 max|.|=  2200.1 I3: end= -14497.1 max|.|= 14497.1
+I3_incumbent_start                 rho=25   I1: end=   -131.8 max|.|=   131.8 I2: end=   -170.3 max|.|=   170.3 I3: end=  +1749.7 max|.|=  1749.7
+I3_incumbent_start                 rho=50   I1: end=  -1205.9 max|.|=  1205.9 I2: end=   -922.4 max|.|=   922.4 I3: end= +16349.8 max|.|= 16349.8
+I3_incumbent_start                 rho=100  I1: end=  -2323.1 max|.|=  2323.1 I2: end=  -2521.6 max|.|=  2521.6 I3: end= +32673.8 max|.|= 32673.8
+I3_selected_duration_8h            rho=25   I1: end=  -2182.2 max|.|=  2182.2 I2: end=  -1101.9 max|.|=  1101.9 I3: end= +39886.2 max|.|= 39951.3
+I3_selected_duration_8h            rho=50   I1: end=  -2530.2 max|.|=  2530.2 I2: end=  -2068.7 max|.|=  2068.7 I3: end= +39525.7 max|.|= 39525.7
+I3_selected_duration_8h            rho=100  I1: end=  -2368.6 max|.|=  2368.6 I2: end=  -2181.6 max|.|=  2524.4 I3: end= +35841.9 max|.|= 35841.9
+
+I1_incumbent_start         s~1e-06   gain=      0.0 stor=     0.0 deg=    0.0 rent=      0.0 capex=    0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.0001  gain=      0.2 stor=     0.2 deg=    0.0 rent=      0.0 capex=    0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.001   gain=      1.5 stor=     1.5 deg=    0.0 rent=      0.0 capex=    0.0 N6= 12.41 N8= 13.68 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.0025  gain=      3.9 stor=     3.8 deg=    0.0 rent=      0.0 capex=    0.0 N6= 12.40 N8= 13.67 N3= 13.20 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.005   gain=      7.7 stor=     7.7 deg=    0.1 rent=      0.0 capex=    0.0 N6= 12.39 N8= 13.65 N3= 13.18 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.01    gain=     15.5 stor=    15.3 deg=    0.1 rent=      0.0 capex=    0.0 N6= 12.37 N8= 13.61 N3= 13.15 N5eve= 45.80 DA= 25.78 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.02    gain=     30.9 stor=    30.6 deg=    0.2 rent=      0.0 capex=    0.1 N6= 12.33 N8= 13.54 N3= 13.09 N5eve= 45.80 DA= 25.78 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.05    gain=     77.3 stor=    76.5 deg=    0.6 rent=      0.0 capex=    0.2 N6= 12.20 N8= 13.32 N3= 12.90 N5eve= 45.80 DA= 25.75 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.1     gain=    160.4 stor=   158.8 deg=    1.2 rent=      0.0 capex=    0.4 N6= 11.85 N8= 12.99 N3= 12.57 N5eve= 45.80 DA= 25.71 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.25    gain=    410.0 stor=   406.0 deg=    2.9 rent=      0.0 capex=    1.1 N6= 10.77 N8= 12.03 N3= 11.56 N5eve= 45.80 DA= 25.59 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~0.5     gain=    825.1 stor=   817.2 deg=    5.8 rent=      0.0 capex=    2.2 N6=  8.97 N8= 10.43 N3=  9.89 N5eve= 45.80 DA= 25.40 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start         s~1       gain=   1651.8 stor=  1635.8 deg=   11.5 rent=      0.0 capex=    4.4 N6=  5.38 N8=  7.22 N3=  6.53 N5eve= 45.80 DA= 25.00 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~1e-06   gain=      0.0 stor=     0.0 deg=    0.0 rent=     -0.0 capex=    0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.0001  gain=      0.2 stor=     0.1 deg=    0.0 rent=      0.1 capex=    0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.001   gain=      1.3 stor=     0.9 deg=    0.0 rent=      0.4 capex=    0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.0025  gain=      3.3 stor=     2.2 deg=    0.0 rent=      1.1 capex=    0.0 N6= 12.40 N8= 13.68 N3= 13.20 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.005   gain=      6.6 stor=     4.4 deg=    0.0 rent=      2.1 capex=    0.0 N6= 12.39 N8= 13.68 N3= 13.20 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.01    gain=     13.1 stor=     8.8 deg=    0.1 rent=      4.1 capex=    0.0 N6= 12.36 N8= 13.66 N3= 13.18 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.02    gain=     26.1 stor=    17.7 deg=    0.2 rent=      8.2 capex=    0.1 N6= 12.31 N8= 13.64 N3= 13.15 N5eve= 45.80 DA= 25.78 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.05    gain=     67.8 stor=    46.9 deg=    0.4 rent=     20.3 capex=    0.2 N6= 12.17 N8= 13.54 N3= 13.03 N5eve= 45.80 DA= 25.77 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.1     gain=    181.2 stor=   102.2 deg=    0.8 rent=     77.8 capex=    0.4 N6= 11.81 N8= 13.40 N3= 12.81 N5eve= 45.80 DA= 25.75 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.25    gain=    521.0 stor=   267.7 deg=    2.1 rent=    250.3 capex=    1.0 N6= 10.74 N8= 12.98 N3= 12.15 N5eve= 45.80 DA= 25.68 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~0.5     gain=   1086.7 stor=   542.9 deg=    4.2 rent=    537.7 capex=    1.9 N6=  8.95 N8= 12.28 N3= 11.04 N5eve= 45.80 DA= 25.57 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start         s~1       gain=   2200.1 stor=  1092.5 deg=    8.4 rent=   1095.3 capex=    3.9 N6=  5.42 N8= 10.85 N3=  8.83 N5eve= 45.80 DA= 25.35 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~1e-06   gain=      0.0 stor=    -0.0 deg=   -0.0 rent=      0.0 capex=   -0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.0001  gain=      3.3 stor=    -0.3 deg=   -0.0 rent=      3.6 capex=   -0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.001   gain=     32.9 stor=    -3.5 deg=   -0.0 rent=     36.5 capex=   -0.0 N6= 12.42 N8= 13.70 N3= 13.22 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.0025  gain=     82.4 stor=    -8.7 deg=   -0.0 rent=     91.2 capex=   -0.0 N6= 12.43 N8= 13.71 N3= 13.24 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.005   gain=    164.7 stor=   -17.4 deg=   -0.1 rent=    182.3 capex=   -0.0 N6= 12.46 N8= 13.74 N3= 13.26 N5eve= 45.80 DA= 25.80 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.01    gain=    329.5 stor=   -34.9 deg=   -0.2 rent=    364.6 capex=   -0.1 N6= 12.50 N8= 13.79 N3= 13.31 N5eve= 45.80 DA= 25.80 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.02    gain=    658.9 stor=   -69.8 deg=   -0.4 rent=    729.3 capex=   -0.2 N6= 12.59 N8= 13.89 N3= 13.41 N5eve= 45.80 DA= 25.82 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.05    gain=   1647.3 stor=  -174.5 deg=   -1.0 rent=   1823.2 capex=   -0.4 N6= 12.86 N8= 14.19 N3= 13.69 N5eve= 45.80 DA= 25.85 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.1     gain=   3294.6 stor=  -349.0 deg=   -2.0 rent=   3646.4 capex=   -0.8 N6= 13.31 N8= 14.69 N3= 14.18 N5eve= 45.80 DA= 25.91 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.25    gain=   8219.2 stor=  -840.1 deg=   -5.0 rent=   9066.4 capex=   -2.1 N6= 14.81 N8= 16.13 N3= 15.64 N5eve= 45.80 DA= 26.08 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~0.5     gain=  16383.7 stor= -1613.6 deg=   -9.9 rent=  18011.4 capex=   -4.1 N6= 17.54 N8= 18.42 N3= 18.09 N5eve= 45.80 DA= 26.37 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start         s~1       gain=  32673.8 stor= -3165.5 deg=  -19.9 rent=  35867.5 capex=   -8.3 N6= 22.99 N8= 23.00 N3= 22.99 N5eve= 45.80 DA= 26.94 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@14;L78-@15
+I3_selected_duration_8h    s~1e-06   gain=      3.9 stor=    -0.3 deg=   -0.0 rent=      4.2 capex=   -0.0 N6= 12.41 N8= 13.69 N3= 13.21 N5eve= 45.80 DA= 25.79 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.0001  gain=    388.9 stor=   -31.3 deg=   -0.2 rent=    420.4 capex=   -0.1 N6= 12.46 N8= 13.83 N3= 13.32 N5eve= 45.80 DA= 25.81 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.001   gain=   3524.0 stor=  -343.5 deg=   -1.9 rent=   3870.3 capex=   -0.8 N6= 13.20 N8= 14.84 N3= 14.23 N5eve= 45.80 DA= 25.92 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.0025  gain=   8490.4 stor=  -809.3 deg=   -4.8 rent=   9306.4 capex=   -1.9 N6= 14.55 N8= 16.36 N3= 15.69 N5eve= 45.80 DA= 26.10 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.005   gain=  16421.5 stor= -1512.9 deg=   -9.6 rent=  17947.8 capex=   -3.8 N6= 16.91 N8= 18.73 N3= 18.05 N5eve= 45.80 DA= 26.38 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.01    gain=  23849.0 stor= -2166.3 deg=  -19.2 rent=  26042.2 capex=   -7.7 N6= 19.12 N8= 20.95 N3= 20.27 N5eve= 45.80 DA= 26.65 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.02    gain=  31340.7 stor= -2990.6 deg=  -38.4 rent=  34385.1 capex=  -15.4 N6= 22.47 N8= 22.66 N3= 22.59 N5eve= 45.80 DA= 26.89 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@14;L78-@15
+I3_selected_duration_8h    s~0.05    gain=  32181.8 stor= -3013.0 deg=  -96.0 rent=  35329.2 capex=  -38.4 N6= 22.91 N8= 22.83 N3= 22.86 N5eve= 45.80 DA= 26.92 priced=L78-@14
+I3_selected_duration_8h    s~0.1     gain=  32200.2 stor= -2892.2 deg= -192.0 rent=  35361.2 capex=  -76.8 N6= 22.91 N8= 22.84 N3= 22.87 N5eve= 45.80 DA= 26.92 priced=L78-@14
+I3_selected_duration_8h    s~0.25    gain=  32255.4 stor= -2529.7 deg= -480.1 rent=  35457.1 capex= -192.0 N6= 22.93 N8= 22.87 N3= 22.89 N5eve= 45.80 DA= 26.93 priced=L78-@14
+I3_selected_duration_8h    s~0.5     gain=  32347.3 stor= -1925.6 deg= -960.1 rent=  35617.0 capex= -384.0 N6= 22.96 N8= 22.92 N3= 22.93 N5eve= 45.80 DA= 26.93 priced=L78-@14
+I3_selected_duration_8h    s~1       gain=  35841.9 stor= -1051.7 deg=-1920.2 rent=  39581.9 capex= -768.0 N6= 24.28 N8= 24.28 N3= 24.28 N5eve= 45.80 DA= 27.17 priced=
+
+I1_incumbent_start                 [0,0.005] pi 1920.9->1928.7 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start                 [0.01,0.01] pi 1936.4->1936.4 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_incumbent_start                 [0.02,1] pi 1951.8->3572.7 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_selected_replace_N6_10mw_4h     [0,0.005] pi 1920.9->1928.6 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_selected_replace_N6_10mw_4h     [0.01,0.01185] pi 1936.4->1939.2 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I1_selected_replace_N6_10mw_4h     [0.01185,1] pi 1939.2->3572.7 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_bridge_between_responses        [0,1] pi 75764.7->75764.7 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start                 [0,0.005] pi 73564.6->73571.2 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start                 [0.0075,0.009411] pi 73574.4->73576.9 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_incumbent_start                 [0.009411,1] pi 73576.9->75764.7 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_selected_replace_N3_10mw_2h     [0,0.0075] pi 73564.6->73574.5 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_selected_replace_N3_10mw_2h     [0.00875,0.009877] pi 73576.1->73577.5 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I2_selected_replace_N3_10mw_2h     [0.009877,1] pi 73577.5->75764.7 priced=L46-@11;L46-@12;L46-@13;L46-@14;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0,0.9215] pi 90099.8->120242.9 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0.9215,0.925] pi 120242.8->120358.4 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0.95,0.9668] pi 121174.4->121718.9 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0.9668,0.975] pi 121718.9->121980.5 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0.9875,0.9938] pi 122384.9->122588.9 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0.9969,0.998] pi 122690.6->122726.5 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_incumbent_start                 [0.998,1] pi 122726.6->122773.6 priced=L46-@11;L46-@12;L46-@13;L46-@15;L46-@16;L78-@14;L78-@15
+I3_selected_duration_8h            [0,0.00625] pi 90099.8->110489.9 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@12;L78-@13;L78-@14;L78-@15
+I3_selected_duration_8h            [0.0075,0.02086] pi 113948.8->122270.9 priced=L46-@11;L46-@12;L46-@13;L46-@16;L78-@14;L78-@15
+I3_selected_duration_8h            [0.02086,0.925] pi 122270.9->122603.4 priced=L78-@14
+I3_selected_duration_8h            [0.95,0.9983] pi 122599.8->122589.8 priced=
+I3_selected_duration_8h            [0.9983,0.9983] pi 122591.0->122591.0 priced=L46-@14;L78-@14
+I3_selected_duration_8h            [0.9983,1] pi 122590.1->125941.7 priced=

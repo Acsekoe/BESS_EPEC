@@ -1,0 +1,37 @@
+{
+  "rho": 100.0,
+  "data": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\capacity_epec_new\\model\\input\\market_data_smoothed.json",
+  "data_sha256": "b9837000839d168a81cb33181e6837a18a459f0e21848cbaf0a74b6b4af3d402",
+  "dynamics_profiles": "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\capacity_epec_new\\diagnostics\\regret_region\\output\\br_dynamics\\profiles.csv",
+  "strategy_counts": {
+    "I1": 9,
+    "I2": 10,
+    "I3": 11
+  },
+  "cross_product_profiles": 990,
+  "feasible_cleared_profiles": 990,
+  "regime_count": 45,
+  "restricted_pure_equilibrium_count": 1,
+  "oracle_round": 2,
+  "includes_continuous_oracle_responses": true,
+  "oracle_response_sources": [
+    "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\capacity_epec_new\\diagnostics\\regret_region\\output\\regime_menu\\continuous_audit\\response_capacities.csv",
+    "D:\\Alexander\\Studium\\EEG\\Complementarity Modelling\\BESS_EPEC\\capacity_epec_new\\diagnostics\\regret_region\\output\\regime_menu_oracle1\\continuous_audit\\response_capacities.csv"
+  ],
+  "best_restricted_profile": {
+    "profile_id": 406,
+    "strategy_I1": "step8",
+    "strategy_I2": "oracle_p33",
+    "strategy_I3": "oracle1_p195",
+    "lines_priced": "L46-@13;L46-@14;L78-@14",
+    "profit_I1": 342.02684442314836,
+    "profit_I2": 72323.6638545019,
+    "profit_I3": 115646.2790600968,
+    "menu_regret_I1": 0.0,
+    "menu_regret_I2": 0.0,
+    "menu_regret_I3": 0.0,
+    "max_menu_regret": 0.0,
+    "max_menu_relative_regret": 0.0
+  },
+  "qualification": "All payoffs use exact procedural reclearing. Regrets are restricted to the finite observed-strategy menu and are lower bounds on continuous-game regret."
+}

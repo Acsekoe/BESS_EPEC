@@ -1,0 +1,67 @@
+{
+  "nodes": [
+    "N"
+  ],
+  "generators": [
+    "cheap",
+    "peak"
+  ],
+  "times": [
+    1,
+    2
+  ],
+  "soc_times": [
+    0,
+    1,
+    2
+  ],
+  "lines": [],
+  "line_limit": {},
+  "ptdf": [],
+  "eta": 1.0,
+  "voll": 1000.0,
+  "generators_at_node": {
+    "N": [
+      "cheap",
+      "peak"
+    ]
+  },
+  "generation_cost": {
+    "cheap": 10.0,
+    "peak": 40.0
+  },
+  "generation_capacity": [
+    {
+      "generator": "cheap",
+      "hour": 1,
+      "capacity_mw": 10.0
+    },
+    {
+      "generator": "cheap",
+      "hour": 2,
+      "capacity_mw": 0.0
+    },
+    {
+      "generator": "peak",
+      "hour": 1,
+      "capacity_mw": 20.0
+    },
+    {
+      "generator": "peak",
+      "hour": 2,
+      "capacity_mw": 20.0
+    }
+  ],
+  "demand_el": [
+    {
+      "node": "N",
+      "hour": 1,
+      "demand_mw": 5.0
+    },
+    {
+      "node": "N",
+      "hour": 2,
+      "demand_mw": 10.0
+    }
+  ]
+}

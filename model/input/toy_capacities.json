@@ -1,0 +1,14 @@
+{
+  "I": {
+    "wacc": 0.0,
+    "lifetime_years": 1,
+    "cost_power_eur_per_mw": 365.25,
+    "cost_energy_eur_per_mwh": 365.25,
+    "degradation_eur_per_mwh": 0.0,
+    "ratio_min": 1.0,
+    "ratio_max": 1.0,
+    "power_mw": {},
+    "energy_mwh": {},
+    "owned_generation_shares": {}
+  }
+}

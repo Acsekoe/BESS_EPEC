@@ -10,8 +10,8 @@ import pyomo.environ as pyo
 from prepare_input import INPUT, load_case
 from primal_llp import build_primal, dispatch_variables
 from dual_llp import build_dual, dual_profit
-from solve import require_optimal, residual, solve
-from mpec import build_mpec, chosen_profile, direct_profit, complementarity_pairs
+from solve import make_solver, require_optimal, residual, solve, solver_version
+from mpec import build_mpec, chosen_profile, complementarity_pairs
 from solution_space import analyze, extrema, face_models
 
 
@@ -46,6 +46,8 @@ def main(argv=None):
     parser.add_argument("--nodes", nargs="+", help="Restrict the active investor's possible investment locations.")
     parser.add_argument("--node-limit", type=float, default=1000)
     parser.add_argument("--dual-m", type=float, default=100000)
+    parser.add_argument("--objective", choices=("bilinear", "linear"), default="bilinear",
+                        help="MPEC objective: direct nodal settlement, or its strong-duality linear form.")
     parser.add_argument("--seconds", type=float, default=60)
     parser.add_argument("--mip-gap", type=float, default=1e-6)
     parser.add_argument("--face-tolerance", type=float, default=1e-6, help="Absolute market objective tolerance in EUR.")
@@ -59,6 +61,7 @@ def main(argv=None):
     args.output.mkdir(parents=True, exist_ok=True)
     config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     config["data_sha256"] = hashlib.sha256(args.data.read_bytes()).hexdigest()
+    config["solver"], config["solver_version"] = "gurobi", solver_version()
     write_json(args.output / "run_config.json", config)
     write_json(args.output / "input_profile.json", profile)
     if args.command == "market":
@@ -77,13 +80,17 @@ def main(argv=None):
         write_csv(args.output / "ranges.csv", records)
     else:
         m = build_mpec(data, profile, args.investor, nodes=args.nodes,
-                            node_limit=args.node_limit, dual_m=args.dual_m)
+                            node_limit=args.node_limit, dual_m=args.dual_m, objective=args.objective)
         market_variable_count = sum(1 for _ in dispatch_variables(m))
         binary_count = sum(v.is_binary() for v in m.component_data_objects(pyo.Var))
-        print(f"Solving one-investor MPEC: {market_variable_count} market variables, {binary_count} binaries", flush=True)
-        result = solve(m, seconds=args.seconds, mip_gap=args.mip_gap)
+        print(f"Solving one-investor MPEC ({args.objective} objective): "
+              f"{market_variable_count} market variables, {binary_count} binaries", flush=True)
+        solver = make_solver()
+        solver.options["LogFile"] = str(args.output / "gurobi.log")
+        result = solve(m, seconds=args.seconds, mip_gap=args.mip_gap, solver=solver)
         status = str(result.solver.termination_condition)
         summary = dict(status=status, investor=args.investor, dual_big_m=args.dual_m,
+                       objective=args.objective, solver="gurobi", solver_version=config["solver_version"],
                        investment_nodes=args.nodes or data["nodes"],
                        solver_lower_bound=float(result.problem.lower_bound) if result.problem.lower_bound is not None and abs(result.problem.lower_bound) < float("inf") else None,
                        solver_upper_bound=float(result.problem.upper_bound) if result.problem.upper_bound is not None and abs(result.problem.upper_bound) < float("inf") else None)
@@ -100,8 +107,9 @@ def main(argv=None):
         # the full payoff interval before interpreting a settlement difference.
         payoff = extrema(dual, dual_profit(dual, args.investor))
         pairs = list(complementarity_pairs(m))
-        summary.update(profit_eur_per_day=pyo.value(m.profit), direct_profit_eur_per_day=direct_profit(m),
-            profit_identity_error_eur=abs(pyo.value(m.profit) - direct_profit(m)),
+        # Direct settlement and strong-duality profit agree only at an exact KKT point.
+        summary.update(profit_eur_per_day=pyo.value(m.profit), linear_profit_eur_per_day=pyo.value(m.profit_linear),
+            profit_identity_error_eur=abs(pyo.value(m.profit - m.profit_linear)),
             embedded_market_cost_eur=pyo.value(m.market_cost), recleared_market_cost_eur=face_summary["market_cost_eur"],
             reclear_cost_gap_eur=pyo.value(m.market_cost) - face_summary["market_cost_eur"],
             primal_dual_gap_eur=pyo.value(m.market_cost - m.dual_value),

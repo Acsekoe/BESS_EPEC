@@ -3,7 +3,7 @@ import pyomo.environ as pyo
 
 from primal_llp import build_primal, dispatch_variables
 from dual_llp import build_dual, dual_profit
-from solve import require_optimal, residual, solve
+from solve import make_solver, require_optimal, residual, solve
 
 
 def face_models(data, profile, tolerance=1e-6):
@@ -24,6 +24,9 @@ def face_models(data, profile, tolerance=1e-6):
 
 
 def extrema(model, expression, solver=None):
+    solver = solver or make_solver()
+    # The faces are feasible, so report "unbounded" rather than "infeasibleOrUnbounded".
+    solver.options["DualReductions"] = 0
     values, statuses = [], []
     for sense in (pyo.minimize, pyo.maximize):
         model.objective.set_value(expression)
@@ -39,19 +42,14 @@ def extrema(model, expression, solver=None):
 def analyze(data, profile, *, tolerance=1e-6, dispatch="storage", progress=None):
     primal, dual, summary = face_models(data, profile, tolerance)
     output = []
-    solver = pyo.SolverFactory("highs")
     targets = [("price", f"{n}|{t}", dual.price[n, t], dual)
                for n in data["nodes"] for t in data["times"]]
     targets += [("profit", i, dual_profit(dual, i), dual) for i in profile]
     if dispatch != "none":
         targets += [("dispatch", name, variable, primal) for name, variable in dispatch_variables(primal)
                     if dispatch == "all" or name.startswith(("charge|", "discharge|", "soc|"))]
-    current_model = dual
     for j, (kind, name, expression, model) in enumerate(targets):
-        if model is not current_model:
-            solver = pyo.SolverFactory("highs")
-            current_model = model
-        output.append(dict(kind=kind, coordinate=name, **extrema(model, expression, solver)))
+        output.append(dict(kind=kind, coordinate=name, **extrema(model, expression)))
         if progress and (j + 1) % 100 == 0:
             progress(f"Completed {j + 1}/{len(targets)} coordinate ranges", flush=True)
     summary["range_count"] = len(output)

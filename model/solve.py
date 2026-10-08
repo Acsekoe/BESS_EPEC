@@ -1,10 +1,25 @@
-"""HiGHS solve and numerical feasibility checks shared by the model runners."""
+"""Gurobi solve and numerical feasibility checks shared by the model runners.
+
+Every LP, MILP, and bilinear MPEC in model/ is solved by Gurobi.
+"""
 import pyomo.environ as pyo
 
 
+def make_solver():
+    return pyo.SolverFactory("gurobi_direct")
+
+
+def solver_version():
+    return ".".join(map(str, make_solver().version()))
+
+
 def solve(m, *, seconds=60, mip_gap=1e-6, solver=None):
-    solver = solver or pyo.SolverFactory("highs")
-    solver.options.update({"time_limit": seconds, "mip_rel_gap": mip_gap})
+    solver = solver or make_solver()
+    # NonConvex=2: spatial branch-and-bound proves global optimality for price*quantity.
+    # IntFeasTol=1e-9: a binary within 1e-5 of integral times dual_m=1e5 would
+    # otherwise leave complementarity products of about 1e-3.
+    solver.options.update({"TimeLimit": seconds, "MIPGap": mip_gap, "NonConvex": 2,
+                           "IntFeasTol": 1e-9})
     result = solver.solve(m, load_solutions=False)
     if result.solver.termination_condition == pyo.TerminationCondition.optimal:
         m.solutions.load_from(result)

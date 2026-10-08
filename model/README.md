@@ -20,7 +20,24 @@ Read the files in this order:
 1. `prepare_input.py`: JSON loading, validation, indexed input parameters and sets.
 2. `primal_llp.py`: dispatch variables, physical constraints, and market objective.
 3. `dual_llp.py`: named multipliers, each stationarity equation, and dual objective.
-4. `mpec.py`: investment variables, duration limits, explicit Big-M pairs, and profit.
+4. `mpec.py`: the MPEC in named blocks, in this order: investor constraints,
+   LLP primal feasibility, LLP stationarity, Big-M complementarity, variable
+   bounds, the investor objective, and the profit identity cut.
+
+The MPEC objective is the investor's direct nodal settlement,
+`price * (discharge - charge) - degradation + owned generation margin - capex`.
+It is bilinear (price times quantity) and is solved by Gurobi with
+`NonConvex=2`. `--objective linear` instead maximizes the strong-duality form
+`profit_linear`, which equals the same profit at every KKT point and is a MILP.
+Every run reports both values and their difference.
+
+With the bilinear objective, `profit_identity` adds `profit == profit_linear`
+as a constraint. Their difference is a weighted sum of slack*multiplier products
+of all other assets and lines, so complementarity already implies the
+constraint and it removes no feasible point. It bounds Gurobi's relaxation of
+price*quantity by the linear form. On I1/N6 the bilinear model is proven
+optimal in under 1 s with it; without it, the bound is still about 1e4 times the
+profit after 15 minutes.
 
 For example, the shared-inverter equation is literally:
 
@@ -38,8 +55,10 @@ explicit in `dual_llp.py` and `mpec.py`.
 
 ## Run
 
-Run from the repository root, using Python with `pyomo` and `highspy`
-(`python -m pip install -r requirements.txt` if needed):
+Run from the repository root, using Python with `pyomo` and `gurobipy`
+(`python -m pip install -r requirements.txt` if needed). Gurobi solves every
+model: market LPs, ranges, and MPECs. The IEEE-9 MPEC needs a full Gurobi
+licence; the pip licence is too small:
 
 ```powershell
 python model/primal_llp.py --output model/output/no_storage
@@ -78,7 +97,11 @@ selection, not a calibrated investment example.
 elsewhere to zero. It changes the strategy set. `--node-limit` bounds total
 installed MW per node. `--dual-m` bounds inequality multipliers only in the
 MPEC. `--seconds` limits each main market/MPEC solve. Range subproblems use a
-60-second limit individually. `--mip-gap` controls MILP proof tolerance.
+60-second limit individually. `--mip-gap` controls the MPEC proof tolerance.
+`--objective {bilinear,linear}` selects the MPEC objective (default bilinear).
+HiGHS was replaced on 2026-10-08: it had not solved the all-nodes I1 linear
+MPEC after 25 minutes, which Gurobi proves optimal in 2 s. `run_config.json`
+records the Gurobi version.
 
 ## Outputs and limits
 
@@ -89,14 +112,20 @@ default quantity ranges cover storage, `--dispatch all` includes every market
 variable, and `--dispatch none` covers prices and profits only.
 
 MPEC runs with proven optimal status export the chosen `capacities.json`,
-embedded dispatch/prices, independently recleared dispatch/prices, direct-profit
-identity error, optimality residuals, and the fixed-capacity profit interval.
+embedded dispatch/prices, independently recleared dispatch/prices, bilinear and
+linear profit with their identity error, optimality residuals, the solver and
+its version, and the fixed-capacity profit interval.
 Time-limited runs report status and objective bounds and return a nonzero exit
 code; no unproven incumbent is presented as an optimal best response.
 
 The dual face has no artificial price or multiplier bounds. The MPEC is a
-bounded KKT/Big-M MILP and is **optimistic**, subject to the validity of its
-multiplier bound. An arbitrary reclear need not reproduce its selected profit.
+bounded KKT/Big-M MIQP (MILP with `--objective linear`) and is **optimistic**,
+subject to the validity of its multiplier bound. Its price bounds follow from
+load-shed and generator stationarity with multipliers in `[0, dual_m]`, so they
+remove nothing beyond the Big-M assumption itself. Gurobi may set degenerate
+multiplier pairs to `dual_m`, e.g. both generator bounds at zero capacity or
+both shedding bounds at zero demand. These pairs do not affect profit, so a
+nonzero `dual_m_saturation_count` alone does not mean the bound is binding. An arbitrary reclear need not reproduce its selected profit.
 The full IEEE-9 MPEC may require substantially more than 60 seconds. Neither a
 single best response nor coordinate ranges enumerate market equilibria.
 
@@ -109,12 +138,13 @@ duality and complementary-slackness basis, see
 - `prepare_input.py`: input loading/validation, sets, parameters and annualized costs.
 - `primal_llp.py`: named physical variables, explicit market equations and objective.
 - `dual_llp.py`: explicit stationarity, dual objective and fixed-capacity profit.
-- `mpec.py`: explicit capacity investment and binary complementarity; settlement check.
-- `solve.py`: HiGHS interface and numerical feasibility checks.
+- `mpec.py`: capacity investment, binary complementarity, bounds, and bilinear/linear profit.
+- `solve.py`: Gurobi interface and numerical feasibility checks.
 - `solution_space.py`: optimal-face coordinate ranges.
 - `run.py`: three commands and results export.
 - `../scripts/tests/test_core.py`: analytical cases that check signs, degeneracy, settlement,
-  physical storage constraints, and independent reclearing.
+  physical storage constraints, independent reclearing, and that the bilinear
+  optimum matches the linear form.
 
 ```powershell
 python -m unittest discover -s scripts/tests -v

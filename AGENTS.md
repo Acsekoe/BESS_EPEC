@@ -18,11 +18,12 @@ commands outside `scripts/`. Essential reproduction logic belongs in the
 maintained model or a saved run specification, not solely in a helper script.
 
 Use `workflow/` for ongoing notes. Whenever the user asks to summarize something,
-create or update `workflow/summary.md`, with the date and time in Europe/Vienna
-inside the document. Keep it brief and actionable: latest findings, important
-decisions, changed files, verification or limitations, and next steps. A chat
-response alone does not fulfill a summary request. For a new-chat handoff,
-also retain a dated copy as `workflow/summary_YYYY-MM-DD_HH-mm.md`.
+write `workflow/summary_YYYY-MM-DD_HH-mm.md`, always stamped with the date and
+time in Europe/Vienna, both in the file name and inside the document. Later
+updates to the same summary also note their time inside the document. Keep it
+brief and actionable: latest findings, important decisions, changed files,
+verification or limitations, and next steps. A chat response alone does not
+fulfill a summary request.
 
 Do not commit LaTeX auxiliary build files; clean them after local compilation.
 Keep intentional PDFs, figures, bibliography, and sources. Do not create

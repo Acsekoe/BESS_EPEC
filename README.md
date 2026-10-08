@@ -25,8 +25,8 @@ Current verification and research findings are recorded in `workflow/`.
 
 ## Workflow conventions
 
-When I ask to summarize something, create or update `workflow/summary.md`.
-Include the date and time in the document, using the Europe/Vienna timezone.
+When I ask to summarize something, write `workflow/summary_YYYY-MM-DD_HH-mm.md`.
+Always stamp the date and time (Europe/Vienna) in the file name and in the document.
 Briefly describe the latest findings, important decisions, changed files,
 verification results or limitations, and next steps. Write the summary to the
 file rather than providing it only in chat.

@@ -11,7 +11,7 @@ from primal_llp import build_primal
 from dual_llp import dual_profit
 from prepare_input import INPUT, load_case
 from solve import require_optimal, residual
-from mpec import build_mpec, chosen_profile, direct_profit
+from mpec import build_mpec, chosen_profile
 from solution_space import extrema, face_models
 
 
@@ -59,12 +59,12 @@ class CoreTests(unittest.TestCase):
 
     def test_optimistic_mpec_and_independent_reclear(self):
         data, profile = case(two_hours=True)
-        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000)
+        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective="linear")
         require_optimal(m)
         self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5., places=5)
         self.assertAlmostEqual(pyo.value(m.X_energy["N"]), 5., places=5)
         self.assertAlmostEqual(pyo.value(m.profit), 140., places=5)
-        self.assertAlmostEqual(pyo.value(m.profit), direct_profit(m), places=5)
+        self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=5)
         selected = chosen_profile(m)
         p, d, _ = face_models(data, selected, tolerance=0)
         self.assertAlmostEqual(pyo.value(m.market_cost), pyo.value(p.market_cost), places=5)
@@ -78,11 +78,29 @@ class CoreTests(unittest.TestCase):
         rival = copy.deepcopy(profile["I"])
         rival.update(power_mw={"N": 1.}, energy_mwh={"N": 1.}, degradation_eur_per_mwh=2., owned_generation_shares={})
         profile["R"] = rival
-        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000)
+        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective="linear")
         require_optimal(m)
-        self.assertAlmostEqual(pyo.value(m.profit), direct_profit(m), places=5)
+        self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=5)
         self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
         self.assertLess(residual(m), 1e-5)
+
+    def test_bilinear_objective_matches_linear_form(self):
+        data, profile = case(two_hours=True)
+        profile["I"]["owned_generation_shares"] = {"cheap": .4}
+        rival = copy.deepcopy(profile["I"])
+        rival.update(power_mw={"N": 1.}, energy_mwh={"N": 1.}, degradation_eur_per_mwh=2., owned_generation_shares={})
+        profile["R"] = rival
+        solved = {}
+        for objective in ("linear", "bilinear"):
+            m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective=objective)
+            require_optimal(m)
+            self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=5)
+            self.assertLess(residual(m), 1e-5)
+            solved[objective] = m
+        linear, bilinear = solved["linear"], solved["bilinear"]
+        self.assertAlmostEqual(pyo.value(bilinear.profit), pyo.value(linear.profit), places=4)
+        self.assertAlmostEqual(pyo.value(bilinear.X_power["N"]), pyo.value(linear.X_power["N"]), places=4)
+        self.assertAlmostEqual(pyo.value(bilinear.X_energy["N"]), pyo.value(linear.X_energy["N"]), places=4)
 
     def test_shared_inverter_and_cyclic_soc(self):
         data, profile = case(two_hours=True)

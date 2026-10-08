@@ -1,2 +1,2 @@
 pyomo>=6.9,<7
-highspy>=1.10,<2
+gurobipy>=13,<14

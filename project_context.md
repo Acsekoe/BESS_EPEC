@@ -62,15 +62,30 @@ The MPEC reuses the same primal rule functions, replacing only the active
 investor's capacity expressions by investment variables. Binary Big-M disjunctions enforce
 slack/multiplier complementarity. Primal slack bounds follow from physical
 capacity limits; the user-specified multiplier bound is a numerical assumption,
-not an economic price cap. Global optimality of this bounded MILP does not prove
+not an economic price cap. Global optimality of this bounded MPEC does not prove
 that the chosen multiplier bound preserves every economically relevant solution.
 Check bound sensitivity; no saturated multiplier is not itself a proof.
 
-Strong duality isolates the active storage's operating rent as a linear
-expression: demand payments less market costs and all other assets' scarcity
-rents. Owned truthful generation earns its capacity scarcity rent. The runner
-checks this identity against direct nodal settlement, reports primal/dual and
-complementarity residuals, and independently reclears the selected capacity.
+Since 2026-10-08 the MPEC is organized as investor objective + investor
+constraints + LLP primal feasibility + LLP stationarity + Big-M complementarity
++ variable bounds. The default objective is the direct nodal settlement
+(price times quantity, bilinear), solved to global optimality by Gurobi with
+`NonConvex=2`. Price bounds are derived from load-shed and generator
+stationarity with multipliers in `[0, dual_m]`, so they add no assumption
+beyond the Big-M.
+
+Strong duality gives the same profit as a linear expression (`profit_linear`):
+demand payments less market costs and all other assets' scarcity rents. Owned
+truthful generation earns its capacity scarcity rent. The two forms are equal at
+every KKT point, so both objectives have the same optimum; `--objective linear`
+solves the MILP form. Gurobi solves every model (LPs, MILPs, bilinear MPECs).
+The bilinear model also contains
+`profit == profit_linear` as a valid cut: the difference is a weighted sum of
+other assets' complementarity products, so the cut removes no feasible point but
+makes Gurobi's bound usable (I1/N6: global optimum in under 1 s instead of no
+usable bound after 15 minutes). The runner reports both values and their
+difference, primal/dual and complementarity residuals, and independently
+reclears the selected capacity.
 
 The single-investor MPEC is **optimistic**: it can choose the market optimum
 and supporting dual prices most favorable to that investor. It is not a unique

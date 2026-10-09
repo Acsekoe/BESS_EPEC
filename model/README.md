@@ -1,10 +1,11 @@
 # Capacity-only model
 
-One shared fixed-demand market LP supports three independent commands:
+One shared fixed-demand market LP supports four independent commands:
 
 - `market`: clear an explicit fixed-capacity profile and verify its dual.
 - `ranges`: find dispatch, SOC, price, and investor-profit ranges at that profile.
 - `mpec`: optimize one investor's MW/MWh against the profile's fixed rivals.
+- `mpec_relaxed`: the same MPEC with relaxed complementarity, solved locally by Ipopt.
 
 ## Read the equations
 
@@ -23,6 +24,8 @@ Read the files in this order:
 4. `mpec.py`: the MPEC in named blocks, in this order: investor constraints,
    LLP primal feasibility, LLP stationarity, Big-M complementarity, variable
    bounds, the investor objective, and the profit identity cut.
+5. `mpec_relaxed.py`: the same blocks, with Big-M complementarity replaced by
+   `slack * mu <= epsilon` (see "Relaxed MPEC" below).
 
 The MPEC objective is the investor's direct nodal settlement,
 `price * (discharge - charge) - degradation + owned generation margin - capex`.
@@ -103,6 +106,71 @@ HiGHS was replaced on 2026-10-08: it had not solved the all-nodes I1 linear
 MPEC after 25 minutes, which Gurobi proves optimal in 2 s. `run_config.json`
 records the Gurobi version.
 
+## Relaxed MPEC (Ipopt)
+
+`mpec_relaxed.py` keeps every block of `mpec.py` except complementarity. Each
+pair is relaxed as `0 <= slack * mu <= epsilon` (Scholtes), with explicit
+`comp_*_rule` functions, so the model has no binaries and is a smooth NLP.
+`epsilon -> 0` approaches the exact KKT system. The equality
+`slack * mu = epsilon` is not used: pairs whose slack is fixed at zero (zero
+capacity, zero demand) make it infeasible. The `mu <= dual_m` bounds and the
+price bounds are kept, so both versions share the same multiplier assumption.
+There is no profit identity cut; with `epsilon > 0` it would not be valid.
+
+Ipopt solves a decreasing epsilon sequence (`--epsilons`, default
+`1 0.1 0.01 0.001 0.0001`), each step warm-started from the last. The first
+step starts from the exact fixed-capacity market optimum with `--start-power`
+MW (minimum duration) at each investment node; from the all-zero point
+stationarity is violated by about VOLL and Ipopt does not regain feasibility.
+`--seconds` limits each step. Ipopt must be on `PATH`; it also solves the two
+start LPs. Gurobi still reclears the selected capacity exactly.
+
+```powershell
+python model/mpec_relaxed.py --investor I1 --nodes N6 --output model/output/relaxed_i1_n6
+python model/run.py mpec_relaxed --investor I1 --start-power 10 --output model/output/relaxed_i1
+```
+
+**Limits.** Ipopt returns a local optimum of the relaxed problem from one
+start. It does not prove a best response, and each product is only below
+epsilon, not zero. `summary.json` records the continuation history, the
+largest product, the embedded primal-dual gap (at most pairs * epsilon), and
+the exact fixed-capacity profit range at the selected capacity with
+`relaxed_minus_exact_optimistic_profit_eur`. `verification_passed` checks
+feasibility and these epsilon bounds only, not global optimality.
+
+## Unique prices: nodal balancing (`--balancing-eps`)
+
+`--balancing-eps eps` (MW per EUR/MWh, default 0) adds a free balancing
+injection `b[n,t]` to every nodal balance with cost `b^2/(2 eps)`:
+
+```
+min  market_cost + sum b^2/(2 eps)    s.t.  ... + b[n,t] - injection = demand   (price)
+stationarity:  b[n,t] = eps * price[n,t]
+dual:          ... - (eps/2) * sum price^2
+```
+
+The dual is strictly concave in price, so every nodal price is unique and the
+investor's profit is unique at every capacity: optimistic and pessimistic
+selection coincide, and profit is continuous in capacity. Supply steps become
+ramps about `eps * price jump * nodes` MW wide. As eps -> 0 the prices tend to
+the minimum-norm LP prices. `eps = 0` omits `b` and reproduces the LP exactly.
+The MPECs add only the linear stationarity equation; `profit_linear` gains
+`-(eps/2) sum price^2` (concave). `b` is exported as `balancing|n|t`.
+
+Numerics: small eps pins prices only weakly. Moving a price by d changes the
+dual objective by only `(eps/2) d^2`, so the dual QP with ordinary tolerances
+can be far off (900 EUR/MWh on IEEE-9 at eps = 1e-4). MPEC reclears with
+eps > 0 therefore take `price = b/eps` from the primal QP solved by Ipopt with
+tolerance 1e-12 (`unique_price_reclear`) and report the investor's settlement
+at those prices as a one-point profit range. Gurobi's size-limited licence
+cannot solve QPs with more than about 200 variables. `ranges` with eps > 0
+reflects solver tolerance, not price multiplicity.
+
+```powershell
+python model/run.py mpec --data model/input/toy_market.json --profile model/input/toy_capacities.json --investor I --node-limit 10 --dual-m 10000 --balancing-eps 1e-4 --output model/output/toy_mpec_balancing
+python model/mpec_relaxed.py --investor I1 --nodes N3 N6 N8 N9 --balancing-eps 1e-4 --output model/output/relaxed_i1_pocket_balancing
+```
+
 ## Outputs and limits
 
 Every command writes `run_config.json`, `input_profile.json`, and `summary.json`.
@@ -139,8 +207,9 @@ duality and complementary-slackness basis, see
 - `primal_llp.py`: named physical variables, explicit market equations and objective.
 - `dual_llp.py`: explicit stationarity, dual objective and fixed-capacity profit.
 - `mpec.py`: capacity investment, binary complementarity, bounds, and bilinear/linear profit.
-- `solve.py`: Gurobi interface and numerical feasibility checks.
-- `solution_space.py`: optimal-face coordinate ranges.
+- `mpec_relaxed.py`: relaxed complementarity, market start point, and epsilon continuation.
+- `solve.py`: Gurobi and Ipopt interfaces and numerical feasibility checks.
+- `solution_space.py`: optimal-face coordinate ranges; unique-price reclear and settlement with balancing.
 - `run.py`: three commands and results export.
 - `../scripts/tests/test_core.py`: analytical cases that check signs, degeneracy, settlement,
   physical storage constraints, independent reclearing, and that the bilinear

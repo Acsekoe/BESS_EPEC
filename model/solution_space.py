@@ -1,16 +1,54 @@
-"""Coordinate ranges on primal and dual optimal faces at fixed capacities."""
+"""Coordinate ranges on primal and dual optimal faces at fixed capacities, and
+the unique-price reclear used with nodal balancing (eps > 0)."""
 import pyomo.environ as pyo
 
 from primal_llp import build_primal, dispatch_variables
 from dual_llp import build_dual, dual_profit
-from solve import make_solver, require_optimal, residual, solve
+from solve import make_nlp_solver, make_solver, require_optimal, residual, solve, solve_nlp
 
 
-def face_models(data, profile, tolerance=1e-6):
+def unique_price_reclear(data, profile, balancing_eps, seconds=600):
+    """With balancing, prices are unique: recover them from the primal QP as
+    price = b/eps. The dual QP is not used: its curvature in price is only eps,
+    so ordinary tolerances leave prices far from the unique ones (900 EUR/MWh
+    off on IEEE-9 at a supply step). The QP is convex, so Ipopt's local
+    optimum is global; tight tolerances pin b to about 1e-12 MW."""
+    if balancing_eps <= 0:
+        raise ValueError("The unique-price reclear needs balancing_eps > 0.")
+    primal = build_primal(data, profile, balancing_eps)
+    solver = make_nlp_solver()
+    solver.options.update({"tol": 1e-12, "constr_viol_tol": 1e-12, "dual_inf_tol": 1e-12,
+                           "compl_inf_tol": 1e-12})
+    result = solve_nlp(primal, seconds=seconds, solver=solver)
+    if result.solver.termination_condition != pyo.TerminationCondition.optimal:
+        raise RuntimeError(f"Unique-price reclear not solved: {result.solver.termination_condition}")
+    price = {(n, t): pyo.value(primal.balancing[n, t]) / balancing_eps
+             for n in primal.nodes for t in primal.timesteps}
+    return primal, price
+
+
+def settlement_profit(m, investor, price):
+    """Investor's nodal settlement at the given prices and m's dispatch: storage
+    arbitrage less degradation, owned generation margin, less capex. At unique
+    prices every optimal dispatch gives the same value (each asset is then a
+    price taker), so this is the investor's unique profit."""
+    storage = sum(price[n, t] * (pyo.value(m.discharge[i, n, t]) - pyo.value(m.charge[i, n, t]))
+                  - 0.5 * pyo.value(m.degradation[i]) * (pyo.value(m.charge[i, n, t]) + pyo.value(m.discharge[i, n, t]))
+                  for i, n in m.storage_pairs if i == investor for t in m.timesteps)
+    generation = sum(pyo.value(m.owned_share[investor, g])
+                     * (price[pyo.value(m.generator_node[g]), t] - pyo.value(m.generation_cost[g]))
+                     * pyo.value(m.generation[g, t])
+                     for g in m.generators for t in m.timesteps)
+    capex = sum(pyo.value(m.cost_power_daily[investor] * m.installed_power[investor, n]
+                          + m.cost_energy_daily[investor] * m.installed_energy[investor, n]) for n in m.nodes)
+    return storage + generation - capex
+
+
+def face_models(data, profile, tolerance=1e-6, balancing_eps=0.0):
     if tolerance < 0:
         raise ValueError("The objective tolerance must be nonnegative.")
-    primal = build_primal(data, profile)
-    dual = build_dual(data, profile)
+    primal = build_primal(data, profile, balancing_eps)
+    dual = build_dual(data, profile, balancing_eps)
     require_optimal(primal)
     require_optimal(dual)
     z = pyo.value(primal.market_cost)
@@ -39,8 +77,8 @@ def extrema(model, expression, solver=None):
                 width=values[1] - values[0] if None not in values else None)
 
 
-def analyze(data, profile, *, tolerance=1e-6, dispatch="storage", progress=None):
-    primal, dual, summary = face_models(data, profile, tolerance)
+def analyze(data, profile, *, tolerance=1e-6, dispatch="storage", progress=None, balancing_eps=0.0):
+    primal, dual, summary = face_models(data, profile, tolerance, balancing_eps)
     output = []
     targets = [("price", f"{n}|{t}", dual.price[n, t], dual)
                for n in data["nodes"] for t in data["times"]]

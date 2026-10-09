@@ -87,6 +87,27 @@ usable bound after 15 minutes). The runner reports both values and their
 difference, primal/dual and complementarity residuals, and independently
 reclears the selected capacity.
 
+Since 2026-10-09 `mpec_relaxed.py` is a second MPEC version for machines
+without a full Gurobi licence. It keeps all blocks of `mpec.py` and the same
+`mu <= dual_m` and price bounds, but replaces Big-M by `0 <= slack * mu <=
+epsilon` (Scholtes) and is solved by Ipopt over a decreasing epsilon sequence,
+starting from an exact fixed-capacity market optimum. It gives a **local**
+optimum with approximate complementarity: no global optimality proof. Its
+selected capacity is recleared exactly and its exact profit range reported.
+The equality `slack * mu = epsilon` is infeasible for pairs with structurally
+zero slack and is not used. An August Scholtes/Ipopt variant
+(`mpec_relaxed_kkt.py`, commit `45ceb8a`) was removed in the reset; this is a
+new implementation on the current model.
+
+Since 2026-10-09 `--balancing-eps eps` optionally adds a price-responsive
+balancing injection `b = eps * price` (cost `b^2/(2 eps)`) at every node and
+hour (option C of the 2026-10-08 summary). Prices, and hence each investor's
+profit, are then unique at every capacity and continuous in capacity; the
+market becomes a convex QP. Default `eps = 0` keeps the baseline LP, so the
+baseline assumption "no quadratic price selection" still holds by default.
+At eps = 1e-4 prices are only weakly pinned numerically, so reclears use
+`price = b/eps` from a tight primal QP (Ipopt), not the dual QP.
+
 The single-investor MPEC is **optimistic**: it can choose the market optimum
 and supporting dual prices most favorable to that investor. It is not a unique
 market selection rule, a pessimistic solution, or a multi-investor equilibrium.

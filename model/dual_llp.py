@@ -7,6 +7,11 @@ Sign convention: L = market_cost - price*nodal_balance_residual
 
 The standalone dual maximizes dual_value. The MPEC reuses these stationarity
 equations and adds complementarity in mpec.py.
+
+With balancing (eps > 0), stationarity of b gives b = eps * price. The
+standalone dual eliminates b, which adds -(eps/2) * sum(price^2) to dual_value:
+strictly concave in price, so prices are unique. The MPEC keeps b and the
+stationarity equation explicitly.
 """
 import pyomo.environ as pyo
 
@@ -14,8 +19,8 @@ from prepare_input import prepare_input
 from primal_llp import add_fixed_capacities
 
 
-def build_dual(data, profile):
-    m = prepare_input(data, profile)
+def build_dual(data, profile, balancing_eps=0.0):
+    m = prepare_input(data, profile, balancing_eps=balancing_eps)
     m.name = "Dual market LLP"
     add_fixed_capacities(m)
     add_dual(m)
@@ -73,6 +78,13 @@ def add_dual(m):
         m.soc_timesteps,
         rule=stationarity_soc_rule,
     )
+    # Balancing b exists only in models that also hold the primal (the MPECs).
+    if m.component("balancing") is not None:
+        m.stationarity_balancing = pyo.Constraint(
+            m.nodes,
+            m.timesteps,
+            rule=stationarity_balancing_rule,
+        )
 
     m.demand_payment = pyo.Expression(rule=demand_payment_rule)
     m.generation_scarcity_rent = pyo.Expression(rule=generation_scarcity_rent_rule)
@@ -80,6 +92,7 @@ def add_dual(m):
     m.transmission_scarcity_rent = pyo.Expression(rule=transmission_scarcity_rent_rule)
     m.storage_scarcity_rent = pyo.Expression(m.investors, rule=storage_scarcity_rent_rule)
     m.owned_generation_rent = pyo.Expression(m.investors, rule=owned_generation_rent_rule)
+    m.balancing_dual_term = pyo.Expression(rule=balancing_dual_term_rule)
     m.dual_value = pyo.Expression(rule=dual_value_rule)
 
 
@@ -125,6 +138,11 @@ def stationarity_soc_rule(m, i, n, t):
     return marginal_value == 0
 
 
+def stationarity_balancing_rule(m, n, t):
+    """dL/dBalancing = b/eps - price = 0, written as b - eps * price = 0."""
+    return m.balancing[n, t] - m.balancing_eps * m.price[n, t] == 0
+
+
 def demand_payment_rule(m):
     return sum(m.demand[n, t] * m.price[n, t] for n in m.nodes for t in m.timesteps)
 
@@ -156,9 +174,17 @@ def owned_generation_rent_rule(m, i):
                for g in m.generators for t in m.timesteps)
 
 
+def balancing_dual_term_rule(m):
+    """(eps/2) * sum(price^2): the conjugate of the balancing cost b^2/(2 eps)."""
+    if pyo.value(m.balancing_eps) == 0:
+        return 0
+    return sum(0.5 * m.balancing_eps * m.price[n, t] ** 2 for n in m.nodes for t in m.timesteps)
+
+
 def dual_value_rule(m):
     return (m.demand_payment - m.generation_scarcity_rent - m.shedding_scarcity_rent
-            - m.transmission_scarcity_rent - sum(m.storage_scarcity_rent[i] for i in m.investors))
+            - m.transmission_scarcity_rent - sum(m.storage_scarcity_rent[i] for i in m.investors)
+            - m.balancing_dual_term)
 
 
 def dual_profit(m, investor):

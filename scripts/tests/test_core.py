@@ -8,10 +8,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "model"))
 import pyomo.environ as pyo
 
 from primal_llp import build_primal
-from dual_llp import dual_profit
+from dual_llp import build_dual, dual_profit
 from prepare_input import INPUT, load_case
-from solve import require_optimal, residual
-from mpec import build_mpec, chosen_profile
+from solve import make_nlp_solver, make_solver, require_optimal, residual
+from mpec import build_mpec, chosen_profile, complementarity_pairs
+from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed
 from solution_space import extrema, face_models
 
 
@@ -101,6 +102,45 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(pyo.value(bilinear.profit), pyo.value(linear.profit), places=4)
         self.assertAlmostEqual(pyo.value(bilinear.X_power["N"]), pyo.value(linear.X_power["N"]), places=4)
         self.assertAlmostEqual(pyo.value(bilinear.X_energy["N"]), pyo.value(linear.X_energy["N"]), places=4)
+
+    def test_balancing_makes_price_unique_at_the_step(self):
+        # Exact LP: at X = 5 the hour-1 price is anywhere in [10, 40]. With
+        # balancing b = eps * price, the price stays 10 until X = 5 + 10 eps,
+        # then ramps to 40 by X = 5 + 40 eps. The MPEC optimum is the ramp start.
+        data, profile = case(two_hours=True)
+        eps = 1e-4
+        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective="linear", balancing_eps=eps)
+        require_optimal(m)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5 + 10 * eps, places=6)
+        self.assertAlmostEqual(pyo.value(m.profit), 28 * (5 + 10 * eps), places=4)
+        self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=4)
+        # Prices are pinned only to about FeasibilityTol / eps, so reclear tightly.
+        selected = chosen_profile(m)
+        solver = make_solver()
+        solver.options.update({"FeasibilityTol": 1e-9, "OptimalityTol": 1e-9,
+                               "BarConvTol": 1e-12, "BarQCPConvTol": 1e-12})
+        d = build_dual(data, selected, eps)
+        require_optimal(d, solver=solver)
+        self.assertAlmostEqual(pyo.value(d.price["N", 1]), 10., places=3)
+        self.assertAlmostEqual(pyo.value(dual_profit(d, "I")), pyo.value(m.profit), places=2)
+
+    @unittest.skipUnless(make_nlp_solver().available(exception_flag=False), "ipopt not on PATH")
+    def test_relaxed_mpec_approaches_exact_optimum(self):
+        data, profile = case(two_hours=True)
+        epsilons = [1, 1e-1, 1e-2, 1e-3, 1e-4]
+        m = build_mpec_relaxed(data, profile, "I", node_limit=10, dual_m=10000, epsilon=epsilons[0])
+        initialize_from_market(m, data, profile, 1.)
+        _, history = solve_relaxed(m, epsilons)
+        self.assertEqual([h["status"] for h in history], ["optimal"] * len(epsilons))
+        # Exact Big-M optimum: 5 MW / 5 MWh and 140 EUR (see test above).
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5., places=3)
+        self.assertAlmostEqual(pyo.value(m.X_energy["N"]), 5., places=3)
+        self.assertAlmostEqual(pyo.value(m.profit), 140., delta=1e-2)
+        products = [pyo.value(slack * mu) for slack, mu in complementarity_pairs(m)]
+        # Ipopt relaxes bounds by ~1e-8, times multipliers of up to 1e4.
+        self.assertLessEqual(max(products), 1e-4 + 1e-6)
+        self.assertGreaterEqual(min(products), -1e-6)
+        self.assertLess(residual(m), 1e-6)
 
     def test_shared_inverter_and_cyclic_soc(self):
         data, profile = case(two_hours=True)

@@ -55,14 +55,17 @@ def capital_recovery_factor(wacc, years):
 
 
 def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
-                  node_limit=1000.0):
+                  node_limit=1000.0, balancing_eps=0.0):
     """Return a model containing only input sets and numerical parameters.
 
     For a fixed-capacity market, omit active_investor. For an MPEC, include all
     permitted investment locations even when their starting capacity is zero.
     Zero-capacity rival storage is omitted, as in the original formulation.
+    balancing_eps > 0 adds price-responsive nodal balancing (see primal_llp.py).
     """
     validate(data, profile)
+    if not math.isfinite(balancing_eps) or balancing_eps < 0:
+        raise ValueError("The balancing slope must be finite and nonnegative.")
     nodes = data["nodes"]
     investment_nodes = nodes if investment_nodes is None else investment_nodes
     if active_investor is not None:
@@ -128,6 +131,8 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     m.ptdf = pyo.Param(m.lines, m.nodes, initialize=ptdf)
     m.eta = pyo.Param(initialize=data["eta"], doc="Efficiency in each direction")
     m.voll = pyo.Param(initialize=data["voll"], doc="Lost-load cost [EUR/MWh]")
+    m.balancing_eps = pyo.Param(initialize=balancing_eps,
+                                doc="Nodal balancing slope; 0 is the pure LP [MW per EUR/MWh]")
     generator_node = {g: n for n in nodes for g in data["generators_at_node"][n]}
     m.generator_node = pyo.Param(m.generators, within=pyo.Any, initialize=generator_node)
     m.installed_power = pyo.Param(m.investors, m.nodes, initialize=power)

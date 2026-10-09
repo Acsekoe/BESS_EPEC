@@ -25,15 +25,16 @@ from dual_llp import add_dual
 
 
 def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, dual_m=100000.0,
-               objective="bilinear"):
+               objective="bilinear", balancing_eps=0.0):
     """objective="bilinear" maximizes the investor's nodal settlement directly;
-    "linear" maximizes the strong-duality form, which is equal at every KKT point."""
+    "linear" maximizes the strong-duality form, which is equal at every KKT point.
+    balancing_eps > 0 makes LLP prices unique (see primal_llp.py)."""
     if not math.isfinite(dual_m) or dual_m <= 0:
         raise ValueError("The multiplier Big-M must be positive and finite.")
     if objective not in ("bilinear", "linear"):
         raise ValueError("The objective must be 'bilinear' or 'linear'.")
-    m = prepare_input(data, profile, active_investor=investor,
-                      investment_nodes=nodes, node_limit=node_limit)
+    m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
+                      balancing_eps=balancing_eps)
     m.name = f"Capacity MPEC: {investor}"
 
     # 1. Investor constraints: MW and MWh of the active investor only.
@@ -54,7 +55,8 @@ def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, dual_m
     # 2. LLP primal feasibility: balances, SOC dynamics, and all capacity limits.
     add_primal(m)
 
-    # 3. LLP stationarity: named multipliers (mu >= 0) and dL/d(dispatch) = 0.
+    # 3. LLP stationarity: named multipliers (mu >= 0) and dL/d(dispatch) = 0,
+    # including balancing = eps * price when eps > 0 (free, so no complementarity).
     add_dual(m)
 
     # 4. LLP complementarity: explicit binary Big-M disjunction for each bound family.
@@ -346,8 +348,14 @@ def profit_linear_rule(m):
     + storage rents. Subtracting the fixed rival storage rents leaves the active
     storage rent without the bilinear X*mu terms. Owned generation earns its
     capacity scarcity rent.
+
+    With balancing, market_cost includes b^2/(2 eps) = (eps/2) sum(price^2) at
+    b = eps * price, and the balancing payment price * b = eps * sum(price^2)
+    is not an investor's revenue; together that is -balancing_dual_term. Both
+    quadratic terms enter with a minus sign, so the objective stays concave.
     """
-    return (m.demand_payment - m.market_cost - m.generation_scarcity_rent
+    return (m.demand_payment - m.market_cost - m.balancing_dual_term
+            - m.generation_scarcity_rent
             - m.shedding_scarcity_rent - m.transmission_scarcity_rent
             - sum(m.storage_scarcity_rent[i] for i in m.investors if i != m.active_investor)
             + m.owned_generation_rent[m.active_investor] - m.capex)

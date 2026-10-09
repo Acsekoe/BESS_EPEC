@@ -3,6 +3,11 @@
 Read add_primal() for named variables/constraints, then the *_rule functions
 for their equations. The MPEC reuses these exact physical equations.
 
+Optional price-responsive balancing (balancing_eps = eps > 0): a free nodal
+injection b[n,t] with cost b^2/(2 eps). Its stationarity gives b = eps * price,
+the dual gains -(eps/2) * sum(price^2), and every nodal price becomes unique.
+The market becomes a convex QP. eps = 0 omits b: the original LP.
+
 Run independently: python model/primal_llp.py --output model/output/market_run
 """
 import pyomo.environ as pyo
@@ -10,8 +15,8 @@ import pyomo.environ as pyo
 from prepare_input import prepare_input
 
 
-def build_primal(data, profile):
-    m = prepare_input(data, profile)
+def build_primal(data, profile, balancing_eps=0.0):
+    m = prepare_input(data, profile, balancing_eps=balancing_eps)
     m.name = "Primal market LLP"
     add_fixed_capacities(m)
     add_primal(m)
@@ -64,6 +69,14 @@ def add_primal(m):
         doc="Net injection into the network [MW]",
     )
 
+    if pyo.value(m.balancing_eps) > 0:
+        m.balancing = pyo.Var(
+            m.nodes,
+            m.timesteps,
+            domain=pyo.Reals,
+            doc="Price-responsive balancing injection, eps * price [MW]",
+        )
+
     m.line_flow = pyo.Expression(m.lines, m.timesteps, rule=line_flow_rule)
 
     # Physical market equations. Each rule is written explicitly below.
@@ -85,6 +98,7 @@ def add_primal(m):
     m.generation_cost_total = pyo.Expression(rule=generation_cost_rule)
     m.load_shed_cost_total = pyo.Expression(rule=load_shed_cost_rule)
     m.degradation_cost_total = pyo.Expression(rule=degradation_cost_rule)
+    m.balancing_cost_total = pyo.Expression(rule=balancing_cost_rule)
     m.market_cost = pyo.Expression(rule=market_cost_rule)
 
 
@@ -97,11 +111,12 @@ def fixed_energy_capacity_rule(m, i, n):
 
 
 def nodal_balance_rule(m, n, t):
-    """Generation + discharge - charge + shedding - injection = demand."""
+    """Generation + discharge - charge + shedding + balancing - injection = demand."""
+    balancing = m.balancing[n, t] if pyo.value(m.balancing_eps) > 0 else 0
     return (
         sum(m.generation[g, t] for g in m.generators_at_node[n])
         + sum(m.discharge[i, n, t] - m.charge[i, n, t] for i in m.storage_at_node[n])
-        + m.load_shed[n, t] - m.net_injection[n, t]
+        + m.load_shed[n, t] + balancing - m.net_injection[n, t]
         == m.demand[n, t]
     )
 
@@ -166,8 +181,16 @@ def degradation_cost_rule(m):
                for i, n in m.storage_pairs for t in m.timesteps)
 
 
+def balancing_cost_rule(m):
+    """Area under the balancing supply curve price = b/eps: b^2/(2 eps)."""
+    if pyo.value(m.balancing_eps) == 0:
+        return 0
+    return sum(m.balancing[n, t] ** 2 / (2 * m.balancing_eps) for n in m.nodes for t in m.timesteps)
+
+
 def market_cost_rule(m):
-    return m.generation_cost_total + m.load_shed_cost_total + m.degradation_cost_total
+    return (m.generation_cost_total + m.load_shed_cost_total + m.degradation_cost_total
+            + m.balancing_cost_total)
 
 
 def dispatch_variables(m):
@@ -185,6 +208,9 @@ def dispatch_variables(m):
         yield f"discharge|{i}|{n}|{t}", m.discharge[i, n, t]
     for i, n, t in m.soc:
         yield f"soc|{i}|{n}|{t}", m.soc[i, n, t]
+    if pyo.value(m.balancing_eps) > 0:
+        for n, t in m.balancing:
+            yield f"balancing|{n}|{t}", m.balancing[n, t]
 
 
 if __name__ == "__main__":

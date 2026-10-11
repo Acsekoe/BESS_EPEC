@@ -122,7 +122,8 @@ Ipopt solves a decreasing epsilon sequence (`--epsilons`, default
 step starts from the exact fixed-capacity market optimum with `--start-power`
 MW (minimum duration) at each investment node; from the all-zero point
 stationarity is violated by about VOLL and Ipopt does not regain feasibility.
-`--seconds` limits each step. Ipopt must be on `PATH`; it also solves the two
+`--seconds` limits each step (wall time on Ipopt 3.14+, CPU time on older
+builds such as IDAES's 3.13.2). Ipopt must be on `PATH`; it also solves the two
 start LPs. Gurobi still reclears the selected capacity exactly.
 
 ```powershell

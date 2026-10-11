@@ -27,7 +27,9 @@ def solve_nlp(m, *, seconds=60, solver=None, log_file=None):
     solver = solver or make_nlp_solver()
     # Ipopt's default constr_viol_tol=1e-4 would allow products of 2*epsilon at
     # epsilon=1e-4, so constraint violations are held well below epsilon.
-    options = {"max_wall_time": seconds, "tol": 1e-8, "constr_viol_tol": 1e-8}
+    # max_wall_time exists from Ipopt 3.14; older builds (IDAES 3.13) only limit CPU time.
+    time_limit = "max_wall_time" if solver.version() >= (3, 14) else "max_cpu_time"
+    options = {time_limit: seconds, "tol": 1e-8, "constr_viol_tol": 1e-8}
     options.update(solver.options)  # options set on a passed solver take precedence
     if log_file is not None:
         options["output_file"] = str(log_file)

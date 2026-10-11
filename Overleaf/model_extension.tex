@@ -14,6 +14,8 @@
 \usepackage{float}
 \usepackage{tikz}
 \usetikzlibrary{calc,arrows.meta}
+\usepackage[backend=biber,style=authoryear,maxcitenames=2,doi=false,isbn=true,url=true]{biblatex}
+\addbibresource{bibliography.bib}
 \usepackage[hidelinks]{hyperref}
 
 \setlength{\mathindent}{0pt}
@@ -109,8 +111,8 @@ $\eta$ & -- & One-way BESS charging and discharging efficiency.\\
 $\overline X_n$ & MW & Shared BESS connection limit at node $n$.\\
 $r^{\min},r^{\max}$ & h & Lower and upper energy-to-power duration bounds.\\
 $d_j$ & EUR/MWh & Full-cycle degradation-cost coefficient of investor $j$.\\
-$c_i^P$ & EUR/MW & Overnight power-capacity cost of investor $i$.\\
-$c_i^E$ & EUR/MWh & Overnight energy-capacity cost of investor $i$.\\
+$c_i^P$ & EUR/MW & One-off grid-access (connection) fee per MW of BESS power capacity of investor $i$.\\
+$c_i^E$ & EUR/MWh & Overnight BESS system cost per MWh of usable energy capacity of investor $i$, including power conversion.\\
 $w_i$ & -- & Weighted average cost of capital (WACC) of investor $i$.\\
 $L_i$ & year & Economic lifetime of investor $i$.\\
 $s_{i,g}$ & -- & Share of generator $g$ owned by investor $i$.\\
@@ -931,5 +933,75 @@ PV   & N8 & 436 & 0.00 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Investment-cost data}
+\label{sec:cost-data}
+
+The investment cost follows the split in \eqref{eq:daily-capital-cost}: the
+energy coefficient $c_i^E$ carries the cost of the BESS itself, and the power
+coefficient $c_i^P$ carries the fee for access to the grid at the connection
+node. Table~\ref{tab:cost-data} lists the values used and their daily
+equivalents.
+
+\paragraph{Energy-capacity cost.}
+Cost data are taken from \textcite{IRENA2026costs}, whose turnkey prices are
+based on BloombergNEF survey data. All values are 2025 prices in USD per kWh
+of usable capacity, which matches the role of $X^E_{i,n}$ as the bound on the
+stored energy in \eqref{eq:soc-bound}. The global average turnkey price of a
+BESS was USD~117/kWh, ranging from USD~125/kWh for 2-hour to USD~111/kWh for
+4-hour systems. Turnkey prices cover the equipment supplied by battery
+providers and system integrators, including power conversion, but exclude
+engineering, procurement and construction (EPC), grid connection, and
+development costs. European turnkey prices were 1.45 times (2-hour) and 1.55
+times (4-hour) the global average, that is, USD~181/kWh and USD~172/kWh. The
+global weighted-average total installed cost of a 4-hour utility-scale BESS,
+which includes these items, was USD~140/kWh. At the 2025 average reference
+rate of 1.1300~USD/EUR \parencite{ECB2026exr}, these figures correspond to
+EUR~152--160/kWh for European turnkey systems and EUR~124/kWh for the global
+total installed cost. Two cases are therefore used: a European case with
+$c^E=155\,000$~EUR/MWh and a low case with $c^E=120\,000$~EUR/MWh. The low
+case lies below the European turnkey price even though it already contains
+EPC and grid-connection costs.
+
+Power conversion systems account for 13\% of total installed costs on
+average and for 17\% in Germany \parencite{IRENA2026costs}. They scale with
+power rather than energy capacity, but they are kept in $c^E$ here, so that
+$c^P$ represents grid access alone.
+
+\paragraph{Grid-access fee.}
+The value $c^P=1$~EUR/MW is a placeholder for testing, uniform across nodes
+and not taken from a source. It is to be replaced by a regulated connection
+fee or by an endogenous nodal access price.
+
+\paragraph{Annualization.}
+Both coefficients are one-off payments and are converted to a daily cost with
+\eqref{eq:capital-cost}. For a lifetime of $L_i=15$~years,
+$\operatorname{CRF}_i=0.11683$ at a WACC of 8\% (investors I1, I3, I4) and
+$\operatorname{CRF}_i=0.14682$ at 12\% (I2), so one EUR of overnight cost
+corresponds to $3.1986\cdot10^{-4}$ and $4.0198\cdot10^{-4}$~EUR per day. The
+WACC values, the lifetime, and the degradation cost $d_j=15$~EUR/MWh are
+carried over from the previous model version and are not yet backed by a
+source.
+
+\begin{table}[H]
+\centering
+\caption{Investment-cost data and daily equivalents
+$\operatorname{CRF}_i\,c/365.25$ for a 15-year lifetime. Daily values are in
+EUR/MWh per day for $c^E$ and in EUR/MW per day for $c^P$.}
+\label{tab:cost-data}
+\begin{tabular}{@{}llrrl@{}}
+\toprule
+Parameter & Overnight value & \multicolumn{2}{c}{Daily, by WACC} & Basis \\
+\cmidrule(lr){3-4}
+ & & 8\% & 12\% & \\
+\midrule
+$c^E$, European case & 155\,000 EUR/MWh & 49.58 & 62.31 & European turnkey price \\
+$c^E$, low case      & 120\,000 EUR/MWh & 38.38 & 48.24 & Global total installed cost \\
+$c^P$                & 1 EUR/MW & $3.2\cdot10^{-4}$ & $4.0\cdot10^{-4}$ & Test value \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\printbibliography
 
 \end{document}

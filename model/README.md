@@ -73,6 +73,17 @@ python model/run.py ranges --profile model/input/capacities_storage.json --outpu
 python model/mpec.py --investor I1 --seconds 60 --output model/output/mpec_i1
 ```
 
+`capacities.json` still carries the inherited, unsourced costs (6 600 EUR/MW,
+18 800 EUR/MWh). The sourced cost cases are `capacities_capex120.json` and
+`capacities_capex155.json`: `cost_energy_eur_per_mwh` 120 000 or 155 000
+(BESS system incl. power conversion; IRENA 2026, ECB 2025 USD/EUR rate) and
+`cost_power_eur_per_mw` 1 (placeholder grid-access fee). Derivation and
+daily values are in `Overleaf/model_extension.tex`, section "Investment-cost data".
+
+```powershell
+python model/run.py mpec --investor I1 --nodes N3 N6 N8 N9 --profile model/input/capacities_capex155.json --seconds 600 --output model/output/capex155_I1_pocket
+```
+
 The default IEEE-9 profile starts all four investors at zero capacity. The
 storage example installs 10 MW / 30 MWh each for I1 and I2 at N6. Only the
 active investor's capacities are replaced in `mpec`; all others remain fixed.

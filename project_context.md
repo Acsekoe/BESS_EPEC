@@ -33,7 +33,14 @@ The existing Overleaf documents are historical and have not yet been rewritten.
 - I1/I2 are merchants at 8%/12% WACC. I3 owns 80% of wind and 20% of PV; I4 owns
   the remainder. Lifetime 15 years, power cost 6600 EUR/MW, energy cost 18800
   EUR/MWh, and degradation 15 EUR/MWh are carried over from the previous core.
-  Capital recovery is divided by 365.25. The benchmark day is treated as
+  Capital recovery is divided by 365.25.
+- The inherited costs have no source and are about 5-7x too low (about
+  21 EUR/kWh all-in). Since 2026-10-11 the sourced cases are
+  `capacities_capex120.json` / `capacities_capex155.json`: the energy cost
+  carries the BESS system (120 000 or 155 000 EUR/MWh, IRENA 2026 converted at
+  the ECB 2025 rate), and the power cost is the grid-access fee (1 EUR/MW
+  placeholder). Inverter costs (13-17% of installed cost) stay in the energy
+  cost. WACC, lifetime, and degradation remain unsourced. The benchmark day is treated as
   representative; the two-hour toy is a mathematical test, not an annual study.
 - Capacity profiles are explicit JSON inputs. Missing capacity nodes mean zero.
   Old `x_power`/`x_energy` entries in the inherited market JSON are not used.

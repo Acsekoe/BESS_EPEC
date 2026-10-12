@@ -1,23 +1,38 @@
-"""Build the modified IEEE 5-bus case: model/input/ieee5_market_data.json and
-model/input/ieee5_capacities.json. The JSON files carry every number; this
-script only documents how they were made.
+"""Build the modified IEEE 5-bus cases: model/input/ieee5[_<variant>]_market_data.json
+and model/input/ieee5[_<variant>]_capacities.json. The JSON files carry every
+number; this script only documents how they were made.
 
-Topology (modified IEEE 5-bus figure): lines 1-2, 1-4, 2-3, 2-4, 3-5, 4-5;
-generators at buses 1, 2, 3, 5; loads at buses 1, 3, 4, 5. Reactances of 1-2,
-2-3, 2-4, 4-5 are the per-unit values of the IEEE 5-bus line table (Stagg &
-El-Abiad; Bhandakkar & Mathew 2018, 230 kV, 100 MVA, 60 Hz); 1-4 and 3-5 are
-assumed. Loads, generators, costs, and line limits are designed for two
-pockets: PV at bus 5 is export-constrained at midday (L35, L45), wind at bus 2
-at night (L12, L23). Hourly shapes are the IEEE-9 day
-(model/input/market_data.json), normalized to peak 1.
+current (default, files ieee5_*.json). Topology (modified IEEE 5-bus figure):
+lines 1-2, 1-4, 2-3, 2-4, 3-5, 4-5; generators at buses 1, 2, 3, 5; loads at
+buses 1, 3, 4, 5. Reactances of 1-2, 2-3, 2-4, 4-5 are the per-unit values of
+the IEEE 5-bus line table (Stagg & El-Abiad; Bhandakkar & Mathew 2018, 230 kV,
+100 MVA, 60 Hz); 1-4 and 3-5 are assumed. Loads, generators, costs, and line
+limits are designed for two pockets: PV at bus 5 is export-constrained at
+midday (L35, L45), wind at bus 2 at night (L12, L23).
 
-python scripts/data/build_ieee5.py .
+V5 (files ieee5_v5_*.json, workflow/summary_2026-10-12_18-47.md): radial
+pockets. Five of the seven IEEE 5-bus table lines (table 1-2, 2-3, 2-4, 3-4,
+4-5; table buses 1 and 2 relabeled N2 and N1), every reactance from the table:
+L12 wind corridor 140 MW, L45 PV corridor 120 MW, L13/L14/L34 300 MW. Wind
+200 MW, PV 300 MW, G1 250 MW at 52, G3 300 MW at 67; peak loads N1 120, N3 180,
+N4 150, N5 40 MW. The pocket lines (260 MW) stay below the minimum load
+outside the pockets, so G1 always runs and N1/N3/N4 stay within 52..67.
+V6 (files ieee5_v6_*.json): V5 with G1 600 MW, so N1/N3/N4 sit at 52.
+
+Hourly shapes are the IEEE-9 day (model/input/market_data.json), normalized
+to peak 1.
+
+python scripts/data/build_ieee5.py . [--variant current|V5|V6]
 """
+import argparse
 import json
-import sys
 from pathlib import Path
 
-root = Path(sys.argv[1])
+parser = argparse.ArgumentParser()
+parser.add_argument("root", type=Path)
+parser.add_argument("--variant", choices=("current", "V5", "V6"), default="current")
+args = parser.parse_args()
+root = args.root
 ieee9 = json.loads((root / "model/input/market_data.json").read_text(encoding="utf-8"))
 times = ieee9["times"]
 
@@ -29,22 +44,57 @@ wind_shape = {t: cap9["RES_Wind_N1", t] / max(cap9["RES_Wind_N1", s] for s in ti
 pv_shape = {t: cap9["RES_PV_N8", t] / max(cap9["RES_PV_N8", s] for s in times) for t in times}
 
 nodes = ["N1", "N2", "N3", "N4", "N5"]
-lines = {  # name: (from, to, reactance p.u., limit MW)
-    "L12": ("N1", "N2", 0.06, 80.0),   # wind export corridor
-    "L14": ("N1", "N4", 0.24, 300.0),  # reactance assumed
-    "L23": ("N2", "N3", 0.18, 60.0),   # wind export corridor
-    "L24": ("N2", "N4", 0.18, 300.0),
-    "L35": ("N3", "N5", 0.12, 120.0),  # reactance assumed; PV export corridor
-    "L45": ("N4", "N5", 0.24, 100.0),  # PV export corridor
-}
-generators = {  # name: (node, cost EUR/MWh, peak MW, shape)
-    "G1": ("N1", 52.0, 250.0, None),
-    "RES_Wind_N2": ("N2", 0.0, 250.0, wind_shape),
-    "G3": ("N3", 67.0, 250.0, None),
-    "RES_PV_N5": ("N5", 0.0, 350.0, pv_shape),
-}
-peak_load = {"N1": 96.0, "N2": 0.0, "N3": 144.0, "N4": 120.0, "N5": 40.0}
 slack = "N1"
+if args.variant == "current":
+    suffix = ""
+    lines = {  # name: (from, to, reactance p.u., limit MW)
+        "L12": ("N1", "N2", 0.06, 80.0),   # wind export corridor
+        "L14": ("N1", "N4", 0.24, 300.0),  # reactance assumed
+        "L23": ("N2", "N3", 0.18, 60.0),   # wind export corridor
+        "L24": ("N2", "N4", 0.18, 300.0),
+        "L35": ("N3", "N5", 0.12, 120.0),  # reactance assumed; PV export corridor
+        "L45": ("N4", "N5", 0.24, 100.0),  # PV export corridor
+    }
+    generators = {  # name: (node, cost EUR/MWh, peak MW, shape)
+        "G1": ("N1", 52.0, 250.0, None),
+        "RES_Wind_N2": ("N2", 0.0, 250.0, wind_shape),
+        "G3": ("N3", 67.0, 250.0, None),
+        "RES_PV_N5": ("N5", 0.0, 350.0, pv_shape),
+    }
+    peak_load = {"N1": 96.0, "N2": 0.0, "N3": 144.0, "N4": 120.0, "N5": 40.0}
+    description = ("Modified IEEE 5-bus case for BESS siting with two pockets. Lines 1-2, 1-4, 2-3, 2-4, 3-5, 4-5; "
+                   "G1 thermal 250 MW at 52 EUR/MWh (N1), wind 250 MW (N2), G3 thermal 250 MW at 67 EUR/MWh (N3), "
+                   "PV 350 MW (N5); peak loads N1 96, N3 144, N4 120, N5 40 MW. PV export corridor "
+                   "L35 120 MW and L45 100 MW (N5 export-constrained at midday), wind export corridor "
+                   "L12 80 MW and L23 60 MW (N2 export-constrained at night), L14 and L24 300 MW. "
+                   "Reactances of L12, L23, L24, L45 from the IEEE 5-bus table (Stagg & El-Abiad; "
+                   "Bhandakkar & Mathew 2018); L14 and L35 assumed. Hourly shapes: IEEE-9 day, peak 1. "
+                   "Loads, generators, costs, and limits are design choices. Built by scripts/data/build_ieee5.py.")
+else:
+    g1_mw = 250.0 if args.variant == "V5" else 600.0
+    suffix = "_" + args.variant.lower()
+    lines = {  # IEEE 5-bus table lines 1-2, 2-3, 2-4, 3-4, 4-5 with table buses 1, 2 relabeled N2, N1
+        "L12": ("N1", "N2", 0.06, 140.0),  # wind export corridor (radial pocket)
+        "L13": ("N1", "N3", 0.18, 300.0),
+        "L14": ("N1", "N4", 0.18, 300.0),
+        "L34": ("N3", "N4", 0.03, 300.0),
+        "L45": ("N4", "N5", 0.24, 120.0),  # PV export corridor (radial pocket)
+    }
+    generators = {
+        "G1": ("N1", 52.0, g1_mw, None),
+        "RES_Wind_N2": ("N2", 0.0, 200.0, wind_shape),
+        "G3": ("N3", 67.0, 300.0, None),
+        "RES_PV_N5": ("N5", 0.0, 300.0, pv_shape),
+    }
+    peak_load = {"N1": 120.0, "N2": 0.0, "N3": 180.0, "N4": 150.0, "N5": 40.0}
+    description = (f"Modified IEEE 5-bus case {args.variant} for BESS siting with two radial pockets "
+                   "(workflow/summary_2026-10-12_18-47.md). Lines 1-2, 1-3, 1-4, 3-4, 4-5 = IEEE 5-bus table lines "
+                   "1-2, 2-3, 2-4, 3-4, 4-5 with table buses 1 and 2 relabeled N2 and N1; all reactances from the "
+                   "table (Stagg & El-Abiad; Bhandakkar & Mathew 2018). Wind corridor L12 140 MW, PV corridor "
+                   f"L45 120 MW, L13/L14/L34 300 MW. G1 thermal {g1_mw:.0f} MW at 52 EUR/MWh (N1), wind 200 MW (N2), "
+                   "G3 thermal 300 MW at 67 EUR/MWh (N3), PV 300 MW (N5); peak loads N1 120, N3 180, N4 150, "
+                   "N5 40 MW. Hourly shapes: IEEE-9 day, peak 1. Loads, generators, costs, and limits are design "
+                   "choices. Built by scripts/data/build_ieee5.py.")
 
 
 def ptdf_matrix():
@@ -85,14 +135,7 @@ def solve_linear(a, rhs):
 ptdf = ptdf_matrix()
 data = {
     "metadata": {
-        "description": ("Modified IEEE 5-bus case for BESS siting with two pockets. Lines 1-2, 1-4, 2-3, 2-4, 3-5, 4-5; "
-                        "G1 thermal 250 MW at 52 EUR/MWh (N1), wind 250 MW (N2), G3 thermal 250 MW at 67 EUR/MWh (N3), "
-                        "PV 350 MW (N5); peak loads N1 96, N3 144, N4 120, N5 40 MW. PV export corridor "
-                        "L35 120 MW and L45 100 MW (N5 export-constrained at midday), wind export corridor "
-                        "L12 80 MW and L23 60 MW (N2 export-constrained at night), L14 and L24 300 MW. "
-                        "Reactances of L12, L23, L24, L45 from the IEEE 5-bus table (Stagg & El-Abiad; "
-                        "Bhandakkar & Mathew 2018); L14 and L35 assumed. Hourly shapes: IEEE-9 day, peak 1. "
-                        "Loads, generators, costs, and limits are design choices. Built by scripts/data/build_ieee5.py."),
+        "description": description,
         "slack_node": slack,
         "line_reactance_pu": {line: x for line, (_, _, x, _) in lines.items()},
         "line_ends": {line: [frm, to] for line, (frm, to, _, _) in lines.items()},
@@ -112,7 +155,7 @@ data = {
     "ptdf": [dict(line=line, node=n, ptdf=round(ptdf[line, n], 12)) for line in lines for n in nodes],
     "eta": ieee9["eta"],
 }
-(root / "model/input/ieee5_market_data.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+(root / f"model/input/ieee5{suffix}_market_data.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 # Investors as in capacities_capex120_curtail_d3_slope1e-4.json; ownership mapped to the
 # 5-bus plants: I3 80 % wind / 20 % PV, I4 20 % wind / 80 % PV; curtailment slope 0.1 on both.
@@ -123,7 +166,7 @@ profile["I3"]["owned_generation_shares"] = {"RES_Wind_N2": 0.8, "RES_PV_N5": 0.2
 profile["I4"]["owned_generation_shares"] = {"RES_Wind_N2": 0.2, "RES_PV_N5": 0.8}
 for i in ("I3", "I4"):
     profile[i]["curtailment_slope_eur_per_mwh_per_mw"] = {"RES_Wind_N2": 0.1, "RES_PV_N5": 0.1}
-(root / "model/input/ieee5_capacities.json").write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+(root / f"model/input/ieee5{suffix}_capacities.json").write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
 print("PTDF (bus 1 reference):")
 for line in lines:
     print(f"  {line}: " + "  ".join(f"{n} {ptdf[line, n]:+.3f}" for n in nodes))

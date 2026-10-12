@@ -1,21 +1,23 @@
-"""Capacity-only optimistic MPEC: investor problem plus LLP KKT with Big-M.
+"""Capacity-only optimistic MPEC: investor problem plus LLP KKT with SOS1 complementarity.
 
-    max  investor objective                       (6, bilinear: price * quantity)
+    max  investor profit, strong-duality form     (6)
     s.t. investor constraints                     (1)
          LLP primal feasibility                   (2, primal_llp.py)
          LLP stationarity, multipliers mu >= 0    (3, dual_llp.py)
-         LLP complementarity via Big-M            (4)
-         variable bounds                          (5)
-         profit identity: valid cut               (7, bilinear objective only)
+         LLP complementarity via SOS1             (4)
+         physical variable bounds                 (5)
 
-Every complementarity pair is declared below: z=1 permits a positive multiplier
-and forces zero slack; z=0 permits a positive slack and forces the multiplier to
-zero. The bilinear objective needs Gurobi with NonConvex=2 (see solve.py).
+Each market inequality and its multiplier form one complementarity pair,
+declared below. Each pair {slack, multiplier} is a special ordered set of
+type 1: at most one member is nonzero, and Gurobi branches on the set directly
+(slack = 0 or mu = 0). There are no binaries and no bound on the multipliers.
+Prices are therefore unbounded too, so the objective is the strong-duality
+profit, which contains no price * quantity products; the direct nodal
+settlement is kept as an expression to check it.
 
-Run independently: python model/mpec.py --investor I1 --nodes N6 --output ...
+Run independently: python model/mpec.py --investor I1 --nodes N9 --output ...
 """
 import copy
-import math
 
 import pyomo.environ as pyo
 
@@ -24,15 +26,8 @@ from primal_llp import add_primal
 from dual_llp import add_dual
 
 
-def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, dual_m=100000.0,
-               objective="bilinear", balancing_eps=0.0):
-    """objective="bilinear" maximizes the investor's nodal settlement directly;
-    "linear" maximizes the strong-duality form, which is equal at every KKT point.
-    balancing_eps > 0 makes LLP prices unique (see primal_llp.py)."""
-    if not math.isfinite(dual_m) or dual_m <= 0:
-        raise ValueError("The multiplier Big-M must be positive and finite.")
-    if objective not in ("bilinear", "linear"):
-        raise ValueError("The objective must be 'bilinear' or 'linear'.")
+def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0):
+    """balancing_eps > 0 makes LLP prices unique (see primal_llp.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
                       balancing_eps=balancing_eps)
     m.name = f"Capacity MPEC: {investor}"
@@ -59,103 +54,64 @@ def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, dual_m
     # including balancing = eps * price when eps > 0 (free, so no complementarity).
     add_dual(m)
 
-    # 4. LLP complementarity: explicit binary Big-M disjunction for each bound family.
-    m.dual_m = pyo.Param(initialize=dual_m, doc="Assumed upper bound on inequality multipliers")
-    m.z_gen_lower = pyo.Var(m.generators, m.timesteps, domain=pyo.Binary)
-    m.z_gen_upper = pyo.Var(m.generators, m.timesteps, domain=pyo.Binary)
-    m.z_shed_lower = pyo.Var(m.nodes, m.timesteps, domain=pyo.Binary)
-    m.z_shed_upper = pyo.Var(m.nodes, m.timesteps, domain=pyo.Binary)
-    m.z_line_upper = pyo.Var(m.lines, m.timesteps, domain=pyo.Binary)
-    m.z_line_lower = pyo.Var(m.lines, m.timesteps, domain=pyo.Binary)
-    m.z_charge_lower = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.Binary)
-    m.z_discharge_lower = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.Binary)
-    m.z_power = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.Binary)
-    m.z_soc_lower = pyo.Var(m.storage_pairs, m.soc_timesteps, domain=pyo.Binary)
-    m.z_soc_upper = pyo.Var(m.storage_pairs, m.soc_timesteps, domain=pyo.Binary)
+    # 4. LLP complementarity: one SOS1 set {slack, multiplier} per market inequality.
+    add_sos1_complementarity(m)
 
-    m.comp_gen_lower_slack = pyo.Constraint(
-        m.generators,
-        m.timesteps,
-        rule=comp_gen_lower_slack_rule,
-    )
-    m.comp_gen_lower_dual = pyo.Constraint(m.generators, m.timesteps, rule=comp_gen_lower_dual_rule)
-    m.comp_gen_upper_slack = pyo.Constraint(
-        m.generators,
-        m.timesteps,
-        rule=comp_gen_upper_slack_rule,
-    )
-    m.comp_gen_upper_dual = pyo.Constraint(m.generators, m.timesteps, rule=comp_gen_upper_dual_rule)
-    m.comp_shed_lower_slack = pyo.Constraint(m.nodes, m.timesteps, rule=comp_shed_lower_slack_rule)
-    m.comp_shed_lower_dual = pyo.Constraint(m.nodes, m.timesteps, rule=comp_shed_lower_dual_rule)
-    m.comp_shed_upper_slack = pyo.Constraint(m.nodes, m.timesteps, rule=comp_shed_upper_slack_rule)
-    m.comp_shed_upper_dual = pyo.Constraint(m.nodes, m.timesteps, rule=comp_shed_upper_dual_rule)
-    m.comp_line_upper_slack = pyo.Constraint(m.lines, m.timesteps, rule=comp_line_upper_slack_rule)
-    m.comp_line_upper_dual = pyo.Constraint(m.lines, m.timesteps, rule=comp_line_upper_dual_rule)
-    m.comp_line_lower_slack = pyo.Constraint(m.lines, m.timesteps, rule=comp_line_lower_slack_rule)
-    m.comp_line_lower_dual = pyo.Constraint(m.lines, m.timesteps, rule=comp_line_lower_dual_rule)
-    m.comp_charge_lower_slack = pyo.Constraint(
-        m.storage_pairs,
-        m.timesteps,
-        rule=comp_charge_lower_slack_rule,
-    )
-    m.comp_charge_lower_dual = pyo.Constraint(
-        m.storage_pairs,
-        m.timesteps,
-        rule=comp_charge_lower_dual_rule,
-    )
-    m.comp_discharge_lower_slack = pyo.Constraint(
-        m.storage_pairs,
-        m.timesteps,
-        rule=comp_discharge_lower_slack_rule,
-    )
-    m.comp_discharge_lower_dual = pyo.Constraint(
-        m.storage_pairs,
-        m.timesteps,
-        rule=comp_discharge_lower_dual_rule,
-    )
-    m.comp_power_slack = pyo.Constraint(m.storage_pairs, m.timesteps, rule=comp_power_slack_rule)
-    m.comp_power_dual = pyo.Constraint(m.storage_pairs, m.timesteps, rule=comp_power_dual_rule)
-    m.comp_soc_lower_slack = pyo.Constraint(
-        m.storage_pairs,
-        m.soc_timesteps,
-        rule=comp_soc_lower_slack_rule,
-    )
-    m.comp_soc_lower_dual = pyo.Constraint(
-        m.storage_pairs,
-        m.soc_timesteps,
-        rule=comp_soc_lower_dual_rule,
-    )
-    m.comp_soc_upper_slack = pyo.Constraint(
-        m.storage_pairs,
-        m.soc_timesteps,
-        rule=comp_soc_upper_slack_rule,
-    )
-    m.comp_soc_upper_dual = pyo.Constraint(
-        m.storage_pairs,
-        m.soc_timesteps,
-        rule=comp_soc_upper_dual_rule,
-    )
+    # 5. Physical bounds implied by the market constraints, stated on the variables.
+    add_physical_bounds(m)
 
-    # 5. Bounds: finite ranges for both factors of every bilinear objective term.
-    # Each is implied by a physical limit, or by stationarity with mu <= dual_m.
-    add_bounds(m)
-
-    # 6. Investor objective: nodal settlement of the active investor's assets.
+    # 6. Investor objective. profit is the direct nodal settlement of the active
+    # investor's assets; profit_linear equals it at every KKT point and is maximized.
     m.storage_revenue = pyo.Expression(rule=storage_revenue_rule)
     m.storage_degradation = pyo.Expression(rule=storage_degradation_rule)
+    m.storage_dispatch_cost = pyo.Expression(rule=storage_dispatch_cost_rule)
     m.generation_margin = pyo.Expression(rule=generation_margin_rule)
     m.capex = pyo.Expression(rule=investment_cost_rule)
     m.profit = pyo.Expression(rule=profit_rule)
     m.profit_linear = pyo.Expression(rule=profit_linear_rule)
-    m.objective = pyo.Objective(expr=m.profit if objective == "bilinear" else m.profit_linear,
-                                sense=pyo.maximize)
-
-    # 7. Valid cut: both profit forms are equal at every KKT point, so it removes no
-    # feasible solution. It limits the relaxed bilinear objective by the linear form;
-    # without it, Gurobi's bound on the N6 case stays ~1e4 times too high.
-    if objective == "bilinear":
-        m.profit_identity = pyo.Constraint(rule=profit_identity_rule)
+    m.objective = pyo.Objective(expr=m.profit_linear, sense=pyo.maximize)
     return m
+
+
+def add_sos1_complementarity(m):
+    """SOS1 set {slack, multiplier} for each bound family. SOS members must be
+    variables, so a slack that is an expression gets an explicit nonnegative
+    slack variable and a defining equation; lower-bound slacks are the dispatch
+    variables themselves."""
+    m.slack_gen_upper = pyo.Var(m.generators, m.timesteps, domain=pyo.NonNegativeReals)
+    m.slack_shed_upper = pyo.Var(m.nodes, m.timesteps, domain=pyo.NonNegativeReals)
+    m.slack_line_upper = pyo.Var(m.lines, m.timesteps, domain=pyo.NonNegativeReals)
+    m.slack_line_lower = pyo.Var(m.lines, m.timesteps, domain=pyo.NonNegativeReals)
+    m.slack_power = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.NonNegativeReals)
+    m.slack_soc_upper = pyo.Var(m.storage_pairs, m.soc_timesteps, domain=pyo.NonNegativeReals)
+
+    m.slack_gen_upper_definition = pyo.Constraint(m.generators, m.timesteps, rule=slack_gen_upper_rule)
+    m.slack_shed_upper_definition = pyo.Constraint(m.nodes, m.timesteps, rule=slack_shed_upper_rule)
+    m.slack_line_upper_definition = pyo.Constraint(m.lines, m.timesteps, rule=slack_line_upper_rule)
+    m.slack_line_lower_definition = pyo.Constraint(m.lines, m.timesteps, rule=slack_line_lower_rule)
+    m.slack_power_definition = pyo.Constraint(m.storage_pairs, m.timesteps, rule=slack_power_rule)
+    m.slack_soc_upper_definition = pyo.Constraint(m.storage_pairs, m.soc_timesteps, rule=slack_soc_upper_rule)
+
+    m.sos_gen_lower = pyo.SOSConstraint(m.generators, m.timesteps, rule=sos_gen_lower_rule, sos=1)
+    m.sos_gen_upper = pyo.SOSConstraint(m.generators, m.timesteps, rule=sos_gen_upper_rule, sos=1)
+    m.sos_shed_lower = pyo.SOSConstraint(m.nodes, m.timesteps, rule=sos_shed_lower_rule, sos=1)
+    m.sos_shed_upper = pyo.SOSConstraint(m.nodes, m.timesteps, rule=sos_shed_upper_rule, sos=1)
+    m.sos_line_upper = pyo.SOSConstraint(m.lines, m.timesteps, rule=sos_line_upper_rule, sos=1)
+    m.sos_line_lower = pyo.SOSConstraint(m.lines, m.timesteps, rule=sos_line_lower_rule, sos=1)
+    m.sos_charge_lower = pyo.SOSConstraint(m.storage_pairs, m.timesteps, rule=sos_charge_lower_rule, sos=1)
+    m.sos_discharge_lower = pyo.SOSConstraint(m.storage_pairs, m.timesteps, rule=sos_discharge_lower_rule, sos=1)
+    m.sos_power = pyo.SOSConstraint(m.storage_pairs, m.timesteps, rule=sos_power_rule, sos=1)
+    m.sos_soc_lower = pyo.SOSConstraint(m.storage_pairs, m.soc_timesteps, rule=sos_soc_lower_rule, sos=1)
+    m.sos_soc_upper = pyo.SOSConstraint(m.storage_pairs, m.soc_timesteps, rule=sos_soc_upper_rule, sos=1)
+
+
+def add_physical_bounds(m):
+    for (g, t), generation in m.generation.items():
+        generation.setub(m.generation_capacity[g, t])
+    for (i, n, t), charge in m.charge.items():
+        charge.setub(m.power_max[i, n])
+    for (i, n, t), discharge in m.discharge.items():
+        discharge.setub(m.power_max[i, n])
 
 
 # Investment constraints and capacities seen by the ISO.
@@ -183,135 +139,81 @@ def energy_capacity_rule(m, i, n):
     return m.X_energy[n] if i == m.active_investor else m.installed_energy[i, n]
 
 
+# Slack variables of the upper-bound and line pairs.
+def slack_gen_upper_rule(m, g, t):
+    return m.slack_gen_upper[g, t] == m.generation_capacity[g, t] - m.generation[g, t]
+
+
+def slack_shed_upper_rule(m, n, t):
+    return m.slack_shed_upper[n, t] == m.demand[n, t] - m.load_shed[n, t]
+
+
+def slack_line_upper_rule(m, line, t):
+    return m.slack_line_upper[line, t] == m.line_limit[line] - m.line_flow[line, t]
+
+
+def slack_line_lower_rule(m, line, t):
+    return m.slack_line_lower[line, t] == m.line_limit[line] + m.line_flow[line, t]
+
+
+def slack_power_rule(m, i, n, t):
+    return m.slack_power[i, n, t] == m.power_capacity[i, n] - m.charge[i, n, t] - m.discharge[i, n, t]
+
+
+def slack_soc_upper_rule(m, i, n, t):
+    return m.slack_soc_upper[i, n, t] == m.energy_capacity[i, n] - m.soc[i, n, t]
+
+
 # Generation: 0 <= generation <= available capacity.
-def comp_gen_lower_slack_rule(m, g, t):
-    return m.generation[g, t] <= m.generation_capacity[g, t] * (1 - m.z_gen_lower[g, t])
+def sos_gen_lower_rule(m, g, t):
+    return [m.generation[g, t], m.mu_gen_lower[g, t]]
 
 
-def comp_gen_lower_dual_rule(m, g, t):
-    return m.mu_gen_lower[g, t] <= m.dual_m * m.z_gen_lower[g, t]
-
-
-def comp_gen_upper_slack_rule(m, g, t):
-    return m.generation_capacity[g, t] - m.generation[g, t] <= m.generation_capacity[g, t] * (1 - m.z_gen_upper[g, t])
-
-
-def comp_gen_upper_dual_rule(m, g, t):
-    return m.mu_gen_upper[g, t] <= m.dual_m * m.z_gen_upper[g, t]
+def sos_gen_upper_rule(m, g, t):
+    return [m.slack_gen_upper[g, t], m.mu_gen_upper[g, t]]
 
 
 # Load shedding: 0 <= load_shed <= demand.
-def comp_shed_lower_slack_rule(m, n, t):
-    return m.load_shed[n, t] <= m.demand[n, t] * (1 - m.z_shed_lower[n, t])
+def sos_shed_lower_rule(m, n, t):
+    return [m.load_shed[n, t], m.mu_shed_lower[n, t]]
 
 
-def comp_shed_lower_dual_rule(m, n, t):
-    return m.mu_shed_lower[n, t] <= m.dual_m * m.z_shed_lower[n, t]
-
-
-def comp_shed_upper_slack_rule(m, n, t):
-    return m.demand[n, t] - m.load_shed[n, t] <= m.demand[n, t] * (1 - m.z_shed_upper[n, t])
-
-
-def comp_shed_upper_dual_rule(m, n, t):
-    return m.mu_shed_upper[n, t] <= m.dual_m * m.z_shed_upper[n, t]
+def sos_shed_upper_rule(m, n, t):
+    return [m.slack_shed_upper[n, t], m.mu_shed_upper[n, t]]
 
 
 # Transmission: -line_limit <= line_flow <= line_limit.
-def comp_line_upper_slack_rule(m, line, t):
-    return m.line_limit[line] - m.line_flow[line, t] <= 2 * m.line_limit[line] * (1 - m.z_line_upper[line, t])
+def sos_line_upper_rule(m, line, t):
+    return [m.slack_line_upper[line, t], m.mu_line_upper[line, t]]
 
 
-def comp_line_upper_dual_rule(m, line, t):
-    return m.mu_line_upper[line, t] <= m.dual_m * m.z_line_upper[line, t]
-
-
-def comp_line_lower_slack_rule(m, line, t):
-    return m.line_limit[line] + m.line_flow[line, t] <= 2 * m.line_limit[line] * (1 - m.z_line_lower[line, t])
-
-
-def comp_line_lower_dual_rule(m, line, t):
-    return m.mu_line_lower[line, t] <= m.dual_m * m.z_line_lower[line, t]
+def sos_line_lower_rule(m, line, t):
+    return [m.slack_line_lower[line, t], m.mu_line_lower[line, t]]
 
 
 # Storage power: charge >= 0, discharge >= 0, charge + discharge <= power.
-def comp_charge_lower_slack_rule(m, i, n, t):
-    return m.charge[i, n, t] <= m.power_max[i, n] * (1 - m.z_charge_lower[i, n, t])
+def sos_charge_lower_rule(m, i, n, t):
+    return [m.charge[i, n, t], m.mu_charge_lower[i, n, t]]
 
 
-def comp_charge_lower_dual_rule(m, i, n, t):
-    return m.mu_charge_lower[i, n, t] <= m.dual_m * m.z_charge_lower[i, n, t]
+def sos_discharge_lower_rule(m, i, n, t):
+    return [m.discharge[i, n, t], m.mu_discharge_lower[i, n, t]]
 
 
-def comp_discharge_lower_slack_rule(m, i, n, t):
-    return m.discharge[i, n, t] <= m.power_max[i, n] * (1 - m.z_discharge_lower[i, n, t])
-
-
-def comp_discharge_lower_dual_rule(m, i, n, t):
-    return m.mu_discharge_lower[i, n, t] <= m.dual_m * m.z_discharge_lower[i, n, t]
-
-
-def comp_power_slack_rule(m, i, n, t):
-    return (m.power_capacity[i, n] - m.charge[i, n, t] - m.discharge[i, n, t]
-            <= m.power_max[i, n] * (1 - m.z_power[i, n, t]))
-
-
-def comp_power_dual_rule(m, i, n, t):
-    return m.mu_power[i, n, t] <= m.dual_m * m.z_power[i, n, t]
+def sos_power_rule(m, i, n, t):
+    return [m.slack_power[i, n, t], m.mu_power[i, n, t]]
 
 
 # Storage energy: 0 <= SOC <= energy capacity, including t=0 and t=T.
-def comp_soc_lower_slack_rule(m, i, n, t):
-    return m.soc[i, n, t] <= m.energy_max[i, n] * (1 - m.z_soc_lower[i, n, t])
+def sos_soc_lower_rule(m, i, n, t):
+    return [m.soc[i, n, t], m.mu_soc_lower[i, n, t]]
 
 
-def comp_soc_lower_dual_rule(m, i, n, t):
-    return m.mu_soc_lower[i, n, t] <= m.dual_m * m.z_soc_lower[i, n, t]
+def sos_soc_upper_rule(m, i, n, t):
+    return [m.slack_soc_upper[i, n, t], m.mu_soc_upper[i, n, t]]
 
 
-def comp_soc_upper_slack_rule(m, i, n, t):
-    return m.energy_capacity[i, n] - m.soc[i, n, t] <= m.energy_max[i, n] * (1 - m.z_soc_upper[i, n, t])
-
-
-def comp_soc_upper_dual_rule(m, i, n, t):
-    return m.mu_soc_upper[i, n, t] <= m.dual_m * m.z_soc_upper[i, n, t]
-
-
-# Bounds. Gurobi's spatial branch-and-bound needs finite ranges for price and for
-# the quantities it multiplies. None of these bounds removes a KKT point that
-# satisfies the Big-M assumption mu <= dual_m.
-def add_bounds(m):
-    for (n, t), price in m.price.items():
-        price.setlb(price_lower_bound(m, n))
-        price.setub(price_upper_bound(m, n))
-    for (g, t), generation in m.generation.items():
-        generation.setub(m.generation_capacity[g, t])
-    for (i, n, t), charge in m.charge.items():
-        charge.setub(m.power_max[i, n])
-    for (i, n, t), discharge in m.discharge.items():
-        discharge.setub(m.power_max[i, n])
-    for multiplier in (m.mu_gen_upper, m.mu_gen_lower, m.mu_shed_upper, m.mu_shed_lower,
-                       m.mu_line_upper, m.mu_line_lower, m.mu_power, m.mu_charge_lower,
-                       m.mu_discharge_lower, m.mu_soc_upper, m.mu_soc_lower):
-        for mu in multiplier.values():
-            mu.setub(pyo.value(m.dual_m))
-
-
-def price_lower_bound(m, n):
-    """Load-shed stationarity gives price = voll + mu_shed_upper - mu_shed_lower,
-    and each local generator gives price = cost + mu_gen_upper - mu_gen_lower."""
-    dual_m = pyo.value(m.dual_m)
-    return max([pyo.value(m.voll) - dual_m]
-               + [m.generation_cost[g] - dual_m for g in m.generators_at_node[n]])
-
-
-def price_upper_bound(m, n):
-    dual_m = pyo.value(m.dual_m)
-    return min([pyo.value(m.voll) + dual_m]
-               + [m.generation_cost[g] + dual_m for g in m.generators_at_node[n]])
-
-
-# Investor objective: nodal settlement of the active investor's storage and generation.
+# Investor profit: nodal settlement of the active investor's storage and generation.
 def storage_revenue_rule(m):
     """Bilinear: nodal price times net discharge."""
     return sum(m.price[n, t] * (m.discharge[i, n, t] - m.charge[i, n, t])
@@ -323,12 +225,25 @@ def storage_degradation_rule(m):
                for i, n in m.storage_pairs if i == m.active_investor for t in m.timesteps)
 
 
-def generation_margin_rule(m):
-    """Bilinear: owned share of (nodal price - marginal cost) times generation."""
+def storage_dispatch_cost_rule(m):
     i = m.active_investor
-    return sum(m.owned_share[i, g] * (m.price[pyo.value(m.generator_node[g]), t] - m.generation_cost[g])
-               * m.generation[g, t]
-               for g in m.generators if m.owned_share[i, g] > 0 for t in m.timesteps)
+    if pyo.value(m.dispatch_slope[i]) == 0:
+        return 0
+    return sum(0.5 * m.dispatch_slope[i] * (m.charge[i, n, t] ** 2 + m.discharge[i, n, t] ** 2)
+               for j, n in m.storage_pairs if j == i for t in m.timesteps)
+
+
+def generation_margin_rule(m):
+    """Bilinear: owned share of (nodal price - marginal cost) times generation,
+    less the investor's own curtailment cost share * 0.5 * owner slope * curtailment^2."""
+    i = m.active_investor
+    margin = sum(m.owned_share[i, g] * (m.price[pyo.value(m.generator_node[g]), t] - m.generation_cost[g])
+                 * m.generation[g, t]
+                 for g in m.generators if m.owned_share[i, g] > 0 for t in m.timesteps)
+    curtailment_cost = sum(m.owned_share[i, g] * 0.5 * m.owner_curtailment_slope[i, g] * m.curtailment[g, t] ** 2
+                           for g in m.generators if pyo.value(m.owned_share[i, g] * m.owner_curtailment_slope[i, g]) > 0
+                           for t in m.timesteps)
+    return margin - curtailment_cost
 
 
 def investment_cost_rule(m):
@@ -338,34 +253,41 @@ def investment_cost_rule(m):
 
 
 def profit_rule(m):
-    return m.storage_revenue - m.storage_degradation + m.generation_margin - m.capex
+    """Direct settlement; reported to check profit_linear, not maximized."""
+    return (m.storage_revenue - m.storage_degradation - m.storage_dispatch_cost
+            + m.generation_margin - m.capex)
 
 
 def profit_linear_rule(m):
-    """The same profit without products of variables; equal at every KKT point.
+    """The same profit without price * quantity products; equal at every KKT point.
 
     Strong duality: demand payment = market cost + generator/line/shedding rents
     + storage rents. Subtracting the fixed rival storage rents leaves the active
     storage rent without the bilinear X*mu terms. Owned generation earns its
-    capacity scarcity rent.
+    capacity scarcity rent. The difference to profit is a weighted sum of the
+    slack*multiplier products of all other assets and lines.
 
     With balancing, market_cost includes b^2/(2 eps) = (eps/2) sum(price^2) at
     b = eps * price, and the balancing payment price * b = eps * sum(price^2)
     is not an investor's revenue; together that is -balancing_dual_term. Both
     quadratic terms enter with a minus sign, so the objective stays concave.
+
+    With a curtailment cost, strong duality adds curtailment_dual_term, and the
+    owned margin carries -share * (slope * curtailment * generation + 0.5 * owner
+    slope * curtailment^2). Per plant the generation^2 coefficient is
+    -slope * (1 - share) - 0.5 * share * owner slope <= 0: still concave.
+
+    With a dispatch cost, strong duality subtracts every storage's dispatch rent
+    0.5 * slope * (charge^2 + discharge^2); the rivals' rents are removed as
+    their other rents are. The active storage's charge^2 coefficient is then
+    -0.5 * slope (from market_cost), a rival's -slope: still concave.
     """
-    return (m.demand_payment - m.market_cost - m.balancing_dual_term
+    return (m.demand_payment - m.market_cost - m.balancing_dual_term + m.curtailment_dual_term
             - m.generation_scarcity_rent
             - m.shedding_scarcity_rent - m.transmission_scarcity_rent
-            - sum(m.storage_scarcity_rent[i] for i in m.investors if i != m.active_investor)
+            - sum(m.storage_scarcity_rent[i] + m.storage_dispatch_rent[i]
+                  for i in m.investors if i != m.active_investor)
             + m.owned_generation_rent[m.active_investor] - m.capex)
-
-
-def profit_identity_rule(m):
-    """Settlement profit minus strong-duality profit is a weighted sum of the
-    slack*multiplier products of all other assets and lines, which is zero under
-    complementarity."""
-    return m.profit == m.profit_linear
 
 
 def complementarity_pairs(m):
@@ -393,11 +315,17 @@ def complementarity_pairs(m):
 
 
 def chosen_profile(m):
+    i = m.active_investor
     result = copy.deepcopy(m._profile)
     for field, variables in (("power_mw", m.X_power), ("energy_mwh", m.X_energy)):
-        result[m.active_investor][field] = {
+        result[i][field] = {
             n: max(0.0, pyo.value(variables[n])) if n in variables else 0.0 for n in m.nodes
         }
+    # Solver tolerances can leave energy just outside the duration bounds; snap
+    # it back so the exported profile satisfies them exactly.
+    power, energy = result[i]["power_mw"], result[i]["energy_mwh"]
+    for n in m.nodes:
+        energy[n] = min(max(energy[n], pyo.value(m.ratio_min[i]) * power[n]), pyo.value(m.ratio_max[i]) * power[n])
     return result
 
 

@@ -10,9 +10,8 @@ import pyomo.environ as pyo
 from primal_llp import build_primal
 from dual_llp import build_dual, dual_profit
 from prepare_input import INPUT, load_case
-from solve import make_nlp_solver, make_solver, require_optimal, residual
+from solve import make_solver, require_optimal, residual
 from mpec import build_mpec, chosen_profile, complementarity_pairs
-from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed
 from solution_space import extrema, face_models
 
 
@@ -60,12 +59,14 @@ class CoreTests(unittest.TestCase):
 
     def test_optimistic_mpec_and_independent_reclear(self):
         data, profile = case(two_hours=True)
-        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective="linear")
+        m = build_mpec(data, profile, "I", node_limit=10)
         require_optimal(m)
+        self.assertFalse(any(v.is_binary() for v in m.component_data_objects(pyo.Var)))
         self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5., places=5)
         self.assertAlmostEqual(pyo.value(m.X_energy["N"]), 5., places=5)
         self.assertAlmostEqual(pyo.value(m.profit), 140., places=5)
         self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=5)
+        self.assertLess(max(abs(pyo.value(s * mu)) for s, mu in complementarity_pairs(m)), 1e-6)
         selected = chosen_profile(m)
         p, d, _ = face_models(data, selected, tolerance=0)
         self.assertAlmostEqual(pyo.value(m.market_cost), pyo.value(p.market_cost), places=5)
@@ -79,29 +80,15 @@ class CoreTests(unittest.TestCase):
         rival = copy.deepcopy(profile["I"])
         rival.update(power_mw={"N": 1.}, energy_mwh={"N": 1.}, degradation_eur_per_mwh=2., owned_generation_shares={})
         profile["R"] = rival
-        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective="linear")
-        require_optimal(m)
-        self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=5)
-        self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
-        self.assertLess(residual(m), 1e-5)
-
-    def test_bilinear_objective_matches_linear_form(self):
-        data, profile = case(two_hours=True)
-        profile["I"]["owned_generation_shares"] = {"cheap": .4}
-        rival = copy.deepcopy(profile["I"])
-        rival.update(power_mw={"N": 1.}, energy_mwh={"N": 1.}, degradation_eur_per_mwh=2., owned_generation_shares={})
-        profile["R"] = rival
-        solved = {}
-        for objective in ("linear", "bilinear"):
-            m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective=objective)
+        for eps in (0., 1e-4):
+            m = build_mpec(data, profile, "I", node_limit=10, balancing_eps=eps)
             require_optimal(m)
+            # The optimistic profit is 112 for every X in [4, 5] at eps = 0.
+            self.assertAlmostEqual(pyo.value(m.profit), 112. if eps == 0 else 112.0361, places=4)
             self.assertAlmostEqual(pyo.value(m.profit), pyo.value(m.profit_linear), places=5)
+            self.assertLess(max(abs(pyo.value(s * mu)) for s, mu in complementarity_pairs(m)), 1e-5)
+            self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
             self.assertLess(residual(m), 1e-5)
-            solved[objective] = m
-        linear, bilinear = solved["linear"], solved["bilinear"]
-        self.assertAlmostEqual(pyo.value(bilinear.profit), pyo.value(linear.profit), places=4)
-        self.assertAlmostEqual(pyo.value(bilinear.X_power["N"]), pyo.value(linear.X_power["N"]), places=4)
-        self.assertAlmostEqual(pyo.value(bilinear.X_energy["N"]), pyo.value(linear.X_energy["N"]), places=4)
 
     def test_balancing_makes_price_unique_at_the_step(self):
         # Exact LP: at X = 5 the hour-1 price is anywhere in [10, 40]. With
@@ -109,7 +96,7 @@ class CoreTests(unittest.TestCase):
         # then ramps to 40 by X = 5 + 40 eps. The MPEC optimum is the ramp start.
         data, profile = case(two_hours=True)
         eps = 1e-4
-        m = build_mpec(data, profile, "I", node_limit=10, dual_m=10000, objective="linear", balancing_eps=eps)
+        m = build_mpec(data, profile, "I", node_limit=10, balancing_eps=eps)
         require_optimal(m)
         self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5 + 10 * eps, places=6)
         self.assertAlmostEqual(pyo.value(m.profit), 28 * (5 + 10 * eps), places=4)
@@ -124,23 +111,59 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(pyo.value(d.price["N", 1]), 10., places=3)
         self.assertAlmostEqual(pyo.value(dual_profit(d, "I")), pyo.value(m.profit), places=2)
 
-    @unittest.skipUnless(make_nlp_solver().available(exception_flag=False), "ipopt not on PATH")
-    def test_relaxed_mpec_approaches_exact_optimum(self):
+    def test_quadratic_curtailment_cost(self):
+        # Hour 1: 30 MW of cost-0 supply against 5 MW demand. Owner slopes 1 (I, 60%)
+        # and 2 (R, 40%) give a plant slope of 1.4, so curtailing u MW sets the
+        # price -1.4 * u. Without storage u = 25: price -35, market cost 0.5*1.4*25^2.
         data, profile = case(two_hours=True)
-        epsilons = [1, 1e-1, 1e-2, 1e-3, 1e-4]
-        m = build_mpec_relaxed(data, profile, "I", node_limit=10, dual_m=10000, epsilon=epsilons[0])
-        initialize_from_market(m, data, profile, 1.)
-        _, history = solve_relaxed(m, epsilons)
-        self.assertEqual([h["status"] for h in history], ["optimal"] * len(epsilons))
-        # Exact Big-M optimum: 5 MW / 5 MWh and 140 EUR (see test above).
-        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5., places=3)
-        self.assertAlmostEqual(pyo.value(m.X_energy["N"]), 5., places=3)
-        self.assertAlmostEqual(pyo.value(m.profit), 140., delta=1e-2)
-        products = [pyo.value(slack * mu) for slack, mu in complementarity_pairs(m)]
-        # Ipopt relaxes bounds by ~1e-8, times multipliers of up to 1e4.
-        self.assertLessEqual(max(products), 1e-4 + 1e-6)
-        self.assertGreaterEqual(min(products), -1e-6)
-        self.assertLess(residual(m), 1e-6)
+        data["generation_cost"]["cheap"] = 0.
+        data["generation_capacity"][0]["capacity_mw"] = 30.
+        profile["I"].update(owned_generation_shares={"cheap": .6},
+                            curtailment_slope_eur_per_mwh_per_mw={"cheap": 1.})
+        rival = copy.deepcopy(profile["I"])
+        rival.update(owned_generation_shares={"cheap": .4}, curtailment_slope_eur_per_mwh_per_mw={"cheap": 2.})
+        profile["R"] = rival
+        primal, dual, _ = face_models(data, profile)
+        self.assertAlmostEqual(pyo.value(primal.market_cost), 0.5 * 1.4 * 25 ** 2 + 40 * 10, places=4)
+        self.assertAlmostEqual(primal.dual[primal.nodal_balance["N", 1]], -35., places=4)
+        self.assertAlmostEqual(pyo.value(dual.price["N", 1]), -35., places=4)
+        # Storage X <= 10 shifts X MW to hour 2 (price 40), so u = 25 - X. I's profit
+        # X*(40 + 1.4u) - 2X + 0.6*(-1.4u*(30 - u) - 0.5u^2) rises in X: at X = 10,
+        # 610 - 20 - 256.5 = 333.5. Settlement and strong-duality profit must agree.
+        m = build_mpec(data, profile, "I", node_limit=10)
+        require_optimal(m)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 10., places=4)
+        self.assertAlmostEqual(pyo.value(m.price["N", 1]), -21., places=4)
+        self.assertAlmostEqual(pyo.value(m.profit), 333.5, places=4)
+        self.assertAlmostEqual(pyo.value(m.profit_linear), 333.5, places=4)
+        self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
+        self.assertLess(residual(m), 1e-5)
+
+    def test_quadratic_dispatch_cost(self):
+        # Prices stay 10 (hour 1) and 40 (hour 2). Storage with slope 10 shifts c MW
+        # at market cost -30c + 10c^2, so c = min(X, 1.5) is unique. Fixed X = 2 (an
+        # interior optimum; at X = 1.5 the power bound is weakly active and barrier
+        # accuracy drops): cost 65 + 340 + 22.5; profit = rent 0.5*10*(2*1.5^2) - capex 4.
+        data, profile = case(two_hours=True)
+        profile["I"]["dispatch_cost_slope_eur_per_mwh_per_mw"] = 10.
+        fixed = copy.deepcopy(profile)
+        fixed["I"].update(power_mw={"N": 2.}, energy_mwh={"N": 2.})
+        primal, dual, _ = face_models(data, fixed)
+        self.assertAlmostEqual(pyo.value(primal.market_cost), 427.5, places=4)
+        self.assertAlmostEqual(pyo.value(primal.charge["I", "N", 1]), 1.5, places=4)
+        self.assertAlmostEqual(pyo.value(dual_profit(dual, "I")), 18.5, places=4)
+        # MPEC: profit 28X - 10X^2 for X <= 1.5, maximal at X = 1.4 (19.6). A rival
+        # with a dispatch cost tests the rival rent term in profit_linear.
+        rival = copy.deepcopy(profile["I"])
+        rival.update(power_mw={"N": 1.}, energy_mwh={"N": 1.})
+        profile["R"] = rival
+        m = build_mpec(data, profile, "I", node_limit=10)
+        require_optimal(m)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 1.4, places=4)
+        self.assertAlmostEqual(pyo.value(m.profit), 19.6, places=4)
+        self.assertAlmostEqual(pyo.value(m.profit_linear), 19.6, places=4)
+        self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
+        self.assertLess(residual(m), 1e-5)
 
     def test_shared_inverter_and_cyclic_soc(self):
         data, profile = case(two_hours=True)

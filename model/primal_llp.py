@@ -8,6 +8,18 @@ injection b[n,t] with cost b^2/(2 eps). Its stationarity gives b = eps * price,
 the dual gains -(eps/2) * sum(price^2), and every nodal price becomes unique.
 The market becomes a convex QP. eps = 0 omits b: the original LP.
 
+Optional curtailment cost (profile key curtailment_slope_eur_per_mwh_per_mw):
+curtailing u = capacity - generation costs 0.5 * slope * u^2, so the plant
+offers its last MW at generation_cost - slope * u. Below a congestion step the
+price is then negative and rises continuously as curtailment falls. Slope 0
+omits the term.
+
+Optional dispatch cost (profile key dispatch_cost_slope_eur_per_mwh_per_mw):
+charging or discharging p MW for one hour costs 0.5 * slope * p^2 on top of
+the linear degradation, so the marginal cost rises by slope per MW (losses
+rising with current). It is strictly convex in charge and discharge, so the
+storage dispatch is unique. Slope 0 omits the term.
+
 Run independently: python model/primal_llp.py --output model/output/market_run
 """
 import pyomo.environ as pyo
@@ -78,6 +90,7 @@ def add_primal(m):
         )
 
     m.line_flow = pyo.Expression(m.lines, m.timesteps, rule=line_flow_rule)
+    m.curtailment = pyo.Expression(m.generators, m.timesteps, rule=curtailment_rule)
 
     # Physical market equations. Each rule is written explicitly below.
     m.nodal_balance = pyo.Constraint(m.nodes, m.timesteps, rule=nodal_balance_rule)
@@ -98,6 +111,8 @@ def add_primal(m):
     m.generation_cost_total = pyo.Expression(rule=generation_cost_rule)
     m.load_shed_cost_total = pyo.Expression(rule=load_shed_cost_rule)
     m.degradation_cost_total = pyo.Expression(rule=degradation_cost_rule)
+    m.dispatch_cost_total = pyo.Expression(rule=dispatch_cost_rule)
+    m.curtailment_cost_total = pyo.Expression(rule=curtailment_cost_rule)
     m.balancing_cost_total = pyo.Expression(rule=balancing_cost_rule)
     m.market_cost = pyo.Expression(rule=market_cost_rule)
 
@@ -136,6 +151,11 @@ def load_shed_limit_rule(m, n, t):
 
 def line_flow_rule(m, line, t):
     return sum(m.ptdf[line, n] * m.net_injection[n, t] for n in m.nodes)
+
+
+def curtailment_rule(m, g, t):
+    """Available but unused generation [MW]."""
+    return m.generation_capacity[g, t] - m.generation[g, t]
 
 
 def line_upper_limit_rule(m, line, t):
@@ -181,6 +201,18 @@ def degradation_cost_rule(m):
                for i, n in m.storage_pairs for t in m.timesteps)
 
 
+def dispatch_cost_rule(m):
+    """0.5 * slope * (charge^2 + discharge^2): the marginal cost rises by slope per MW."""
+    return sum(0.5 * m.dispatch_slope[i] * (m.charge[i, n, t] ** 2 + m.discharge[i, n, t] ** 2)
+               for i, n in m.storage_pairs if pyo.value(m.dispatch_slope[i]) > 0 for t in m.timesteps)
+
+
+def curtailment_cost_rule(m):
+    """0.5 * slope * curtailment^2: the marginal curtailment cost is slope * curtailment."""
+    return sum(0.5 * m.curtailment_slope[g] * m.curtailment[g, t] ** 2
+               for g in m.generators if pyo.value(m.curtailment_slope[g]) > 0 for t in m.timesteps)
+
+
 def balancing_cost_rule(m):
     """Area under the balancing supply curve price = b/eps: b^2/(2 eps)."""
     if pyo.value(m.balancing_eps) == 0:
@@ -190,7 +222,7 @@ def balancing_cost_rule(m):
 
 def market_cost_rule(m):
     return (m.generation_cost_total + m.load_shed_cost_total + m.degradation_cost_total
-            + m.balancing_cost_total)
+            + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total)
 
 
 def dispatch_variables(m):

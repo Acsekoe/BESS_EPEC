@@ -1,11 +1,10 @@
 # Capacity-only model
 
-One shared fixed-demand market LP supports four independent commands:
+One shared fixed-demand market supports three independent commands:
 
 - `market`: clear an explicit fixed-capacity profile and verify its dual.
 - `ranges`: find dispatch, SOC, price, and investor-profit ranges at that profile.
 - `mpec`: optimize one investor's MW/MWh against the profile's fixed rivals.
-- `mpec_relaxed`: the same MPEC with relaxed complementarity, solved locally by Ipopt.
 
 ## Read the equations
 
@@ -22,25 +21,8 @@ Read the files in this order:
 2. `primal_llp.py`: dispatch variables, physical constraints, and market objective.
 3. `dual_llp.py`: named multipliers, each stationarity equation, and dual objective.
 4. `mpec.py`: the MPEC in named blocks, in this order: investor constraints,
-   LLP primal feasibility, LLP stationarity, Big-M complementarity, variable
-   bounds, the investor objective, and the profit identity cut.
-5. `mpec_relaxed.py`: the same blocks, with Big-M complementarity replaced by
-   `slack * mu <= epsilon` (see "Relaxed MPEC" below).
-
-The MPEC objective is the investor's direct nodal settlement,
-`price * (discharge - charge) - degradation + owned generation margin - capex`.
-It is bilinear (price times quantity) and is solved by Gurobi with
-`NonConvex=2`. `--objective linear` instead maximizes the strong-duality form
-`profit_linear`, which equals the same profit at every KKT point and is a MILP.
-Every run reports both values and their difference.
-
-With the bilinear objective, `profit_identity` adds `profit == profit_linear`
-as a constraint. Their difference is a weighted sum of slack*multiplier products
-of all other assets and lines, so complementarity already implies the
-constraint and it removes no feasible point. It bounds Gurobi's relaxation of
-price*quantity by the linear form. On I1/N6 the bilinear model is proven
-optimal in under 1 s with it; without it, the bound is still about 1e4 times the
-profit after 15 minutes.
+   LLP primal feasibility, LLP stationarity, SOS1 complementarity, physical
+   variable bounds, and the investor objective.
 
 For example, the shared-inverter equation is literally:
 
@@ -51,17 +33,50 @@ def storage_power_limit_rule(m, i, n, t):
 
 `build_primal()` uses fixed capacities. `build_mpec()` reuses the same physical
 rule functions with active-investor capacity expressions and fixed rival
-capacities. Its `comp_power_slack_rule()` and `comp_power_dual_rule()` explicitly
-enforce complementarity for that inverter constraint. Nonnegativity is declared
-on each physical variable; its dual multipliers and complementarity pairs are
-explicit in `dual_llp.py` and `mpec.py`.
+capacities. Its `slack_power_rule()` and `sos_power_rule()` explicitly enforce
+complementarity for that inverter constraint. Nonnegativity is declared on each
+physical variable; its dual multipliers and complementarity pairs are explicit
+in `dual_llp.py` and `mpec.py`.
+
+## Complementarity: SOS1
+
+Each market inequality and its multiplier form one pair, and each pair
+`{slack, mu}` is a special ordered set of type 1: at most one member is
+nonzero, and Gurobi branches on the set (slack = 0 or mu = 0). Lower-bound
+pairs use the dispatch variable itself (`{generation, mu_gen_lower}`);
+upper-bound and line pairs get an explicit slack variable with a defining
+equation (`slack_*_rule`), since SOS members must be variables. Equalities
+have free multipliers and no pair. On IEEE-9 with I1 at four nodes there are
+1 640 sets. There are no binaries and no bound on the multipliers, so the
+result does not depend on a Big-M. `solve()` sets `PreSOS1BigM=0`; otherwise
+Gurobi presolve may rewrite the sets as Big-M binaries.
+
+Without multiplier bounds the prices are unbounded too, so the MPEC maximizes
+`profit_linear`, the strong-duality form of the investor's profit, which has no
+price * quantity products (MIQP with the quadratic costs, MILP without). The
+direct nodal settlement
+`price * (discharge - charge) - degradation - dispatch cost + owned generation margin - capex`
+is kept as `profit` and reported; at every KKT point the two are equal, and
+their difference is a weighted sum of slack*multiplier products of all other
+assets and lines.
+
+On 2026-10-12 SOS1 replaced Big-M binaries, bilinear products `slack * mu == 0`,
+relaxed products, a single strong-duality constraint, and the Ipopt relaxed
+MPEC (all removed; see git history and
+`workflow/complementarity_and_degradation_2026-10-12.md`). On I1/N9 every
+method has the same root relaxation; SOS1 proved the optimum fastest (7 s)
+without a multiplier bound. The relaxation stays weak: on four candidate nodes
+the bound does not leave its root value. Pyomo reports the incumbent as both
+bounds for models without integer variables, so the runner reads both from
+Gurobi (`objective_bounds()` in `solve.py`).
 
 ## Run
 
 Run from the repository root, using Python with `pyomo` and `gurobipy`
 (`python -m pip install -r requirements.txt` if needed). Gurobi solves every
-model: market LPs, ranges, and MPECs. The IEEE-9 MPEC needs a full Gurobi
-licence; the pip licence is too small:
+model: market LPs/QPs, ranges, and MPECs. The IEEE-9 MPEC needs a full Gurobi
+licence; the pip licence is too small. Ipopt (on `PATH`) solves the
+unique-price reclear when `--balancing-eps` > 0.
 
 ```powershell
 python model/primal_llp.py --output model/output/no_storage
@@ -70,7 +85,8 @@ python model/run.py ranges --dispatch all --output model/output/no_storage_range
 python model/primal_llp.py --profile model/input/capacities_storage.json --output model/output/fixed_storage
 python model/run.py ranges --profile model/input/capacities_storage.json --output model/output/fixed_storage_ranges
 
-python model/mpec.py --investor I1 --seconds 60 --output model/output/mpec_i1
+python model/mpec.py --investor I1 --nodes N9 --profile model/input/capacities_capex120_curtail_d3_slope1e-4.json --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
+python model/run.py mpec --investor I1 --nodes N3 N6 N8 N9 --profile model/input/capacities_capex120_curtail_d3_slope1e-4.json --balancing-eps 1e-4 --mip-gap 0.01 --seconds 600 --output model/output/<new_dir>
 ```
 
 `capacities.json` still carries the inherited, unsourced costs (6 600 EUR/MW,
@@ -79,10 +95,10 @@ python model/mpec.py --investor I1 --seconds 60 --output model/output/mpec_i1
 (BESS system incl. power conversion; IRENA 2026, ECB 2025 USD/EUR rate) and
 `cost_power_eur_per_mw` 1 (placeholder grid-access fee). Derivation and
 daily values are in `Overleaf/model_extension.tex`, section "Investment-cost data".
-
-```powershell
-python model/run.py mpec --investor I1 --nodes N3 N6 N8 N9 --profile model/input/capacities_capex155.json --seconds 600 --output model/output/capex155_I1_pocket
-```
+The current working case is `capacities_capex120_curtail_d3_slope1e-4.json`
+(curtailment cost, d = 3 EUR/MWh, dispatch slope 1e-4; see below and
+`project_context.md`); `_d0`, `_d10`, `_d15` vary d, `_d3` and `_d3_slope1e-3`
+vary the slope.
 
 The default IEEE-9 profile starts all four investors at zero capacity. The
 storage example installs 10 MW / 30 MWh each for I1 and I2 at N6. Only the
@@ -90,13 +106,10 @@ active investor's capacities are replaced in `mpec`; all others remain fixed.
 Use an exported `capacities.json` as `--profile` to independently clear or
 analyze a chosen investment.
 
-The previous `python model/run.py market ...` and `python model/run.py mpec ...`
-commands also remain valid. Both entry points use the same runner and exports.
-
 For a small, fully solved analytical example:
 
 ```powershell
-python model/run.py mpec --data model/input/toy_market.json --profile model/input/toy_capacities.json --investor I --node-limit 10 --dual-m 10000 --output model/output/toy_mpec
+python model/run.py mpec --data model/input/toy_market.json --profile model/input/toy_capacities.json --investor I --node-limit 10 --output model/output/toy_mpec
 python model/run.py ranges --data model/input/toy_market.json --profile model/output/toy_mpec/capacities.json --dispatch all --face-tolerance 0 --output model/output/toy_ranges
 ```
 
@@ -109,46 +122,38 @@ selection, not a calibrated investment example.
 
 `--nodes N6` restricts the active investor to N6 and forces its investment
 elsewhere to zero. It changes the strategy set. `--node-limit` bounds total
-installed MW per node. `--dual-m` bounds inequality multipliers only in the
-MPEC. `--seconds` limits each main market/MPEC solve. Range subproblems use a
-60-second limit individually. `--mip-gap` controls the MPEC proof tolerance.
-`--objective {bilinear,linear}` selects the MPEC objective (default bilinear).
-HiGHS was replaced on 2026-10-08: it had not solved the all-nodes I1 linear
-MPEC after 25 minutes, which Gurobi proves optimal in 2 s. `run_config.json`
-records the Gurobi version.
+installed MW per node. `--seconds` limits each main market/MPEC solve. Range
+subproblems use a 60-second limit individually. `--mip-gap` controls the MPEC
+proof tolerance. `run_config.json` records the Gurobi version.
 
-## Relaxed MPEC (Ipopt)
+## Modified IEEE 5-bus case
 
-`mpec_relaxed.py` keeps every block of `mpec.py` except complementarity. Each
-pair is relaxed as `0 <= slack * mu <= epsilon` (Scholtes), with explicit
-`comp_*_rule` functions, so the model has no binaries and is a smooth NLP.
-`epsilon -> 0` approaches the exact KKT system. The equality
-`slack * mu = epsilon` is not used: pairs whose slack is fixed at zero (zero
-capacity, zero demand) make it infeasible. The `mu <= dual_m` bounds and the
-price bounds are kept, so both versions share the same multiplier assumption.
-There is no profit identity cut; with `epsilon > 0` it would not be valid.
+`ieee5_market_data.json` / `ieee5_capacities.json` (built by
+`scripts/data/build_ieee5.py`; every number is in the JSON): lines 1-2, 1-4,
+2-3, 2-4, 3-5, 4-5; G1 thermal 250 MW at 52 EUR/MWh (N1), wind 250 MW (N2),
+G3 thermal 250 MW at 67 EUR/MWh (N3), PV 350 MW (N5); peak loads N1 96,
+N3 144, N4 120, N5 40 MW with the IEEE-9 hourly shapes. Reactances of 1-2, 2-3,
+2-4, 4-5 are the IEEE 5-bus per-unit values; 1-4 and 3-5 are assumed. Loads,
+generators, costs, and limits are design choices for two pockets: the PV
+corridor (L35 120 MW, L45 100 MW) binds at midday (N5 down to -12 EUR/MWh,
+406 MWh PV curtailed), the wind corridor (L12 80 MW, L23 60 MW) at night
+(N2 down to -5, 340 MWh wind curtailed). No price exceeds 67, no load is shed.
+Investors as in the IEEE-9 working case (I3 80 % wind / 20 % PV, I4 the rest,
+curtailment slope 0.1 on both plants).
 
-Ipopt solves a decreasing epsilon sequence (`--epsilons`, default
-`1 0.1 0.01 0.001 0.0001`), each step warm-started from the last. The first
-step starts from the exact fixed-capacity market optimum with `--start-power`
-MW (minimum duration) at each investment node; from the all-zero point
-stationarity is violated by about VOLL and Ipopt does not regain feasibility.
-`--seconds` limits each step (wall time on Ipopt 3.14+, CPU time on older
-builds such as IDAES's 3.13.2). Ipopt must be on `PATH`; it also solves the two
-start LPs. Gurobi still reclears the selected capacity exactly.
+Best responses against zero rivals, eps 1e-4, all five buses (2026-10-12):
+I2 is proven optimal in 53 s with 28.62 MW / 57.24 MWh at N2 and
+93.53 MW / 325.54 MWh at N5 (5553.16 EUR/day). I1 finds no feasible point in
+120 s; with the warm-start prototype `scripts/diagnostics/active_set_start.py`
+its incumbent after 120 s is 9352.15 (N2 22.9 / 74.0, N5 118.8 / 380.9),
+bound 10507. I3/I4 (owned generation) need that warm start too and are not
+proven (single-pocket design: gaps 5 % and 3 % after 120 s).
 
 ```powershell
-python model/mpec_relaxed.py --investor I1 --nodes N6 --output model/output/relaxed_i1_n6
-python model/run.py mpec_relaxed --investor I1 --start-power 10 --output model/output/relaxed_i1
+python scripts/data/build_ieee5.py .
+python model/run.py market --data model/input/ieee5_market_data.json --profile model/input/ieee5_capacities.json --output model/output/<new_dir>
+python model/run.py mpec --data model/input/ieee5_market_data.json --profile model/input/ieee5_capacities.json --investor I1 --nodes N1 N2 N3 N4 N5 --balancing-eps 1e-4 --seconds 600 --output model/output/<new_dir>
 ```
-
-**Limits.** Ipopt returns a local optimum of the relaxed problem from one
-start. It does not prove a best response, and each product is only below
-epsilon, not zero. `summary.json` records the continuation history, the
-largest product, the embedded primal-dual gap (at most pairs * epsilon), and
-the exact fixed-capacity profit range at the selected capacity with
-`relaxed_minus_exact_optimistic_profit_eur`. `verification_passed` checks
-feasibility and these epsilon bounds only, not global optimality.
 
 ## Unique prices: nodal balancing (`--balancing-eps`)
 
@@ -166,7 +171,7 @@ investor's profit is unique at every capacity: optimistic and pessimistic
 selection coincide, and profit is continuous in capacity. Supply steps become
 ramps about `eps * price jump * nodes` MW wide. As eps -> 0 the prices tend to
 the minimum-norm LP prices. `eps = 0` omits `b` and reproduces the LP exactly.
-The MPECs add only the linear stationarity equation; `profit_linear` gains
+The MPEC adds only the linear stationarity equation; `profit_linear` gains
 `-(eps/2) sum price^2` (concave). `b` is exported as `balancing|n|t`.
 
 Numerics: small eps pins prices only weakly. Moving a price by d changes the
@@ -179,8 +184,57 @@ cannot solve QPs with more than about 200 variables. `ranges` with eps > 0
 reflects solver tolerance, not price multiplicity.
 
 ```powershell
-python model/run.py mpec --data model/input/toy_market.json --profile model/input/toy_capacities.json --investor I --node-limit 10 --dual-m 10000 --balancing-eps 1e-4 --output model/output/toy_mpec_balancing
-python model/mpec_relaxed.py --investor I1 --nodes N3 N6 N8 N9 --balancing-eps 1e-4 --output model/output/relaxed_i1_pocket_balancing
+python model/run.py mpec --data model/input/toy_market.json --profile model/input/toy_capacities.json --investor I --node-limit 10 --balancing-eps 1e-4 --output model/output/toy_mpec_balancing
+```
+
+## Curtailment cost of owned generation
+
+An investor profile may give each owned plant a curtailment cost slope
+`curtailment_slope_eur_per_mwh_per_mw` (default none = 0). Curtailing
+`u = capacity - generation` MW costs the owner `share * 0.5 * slope * u^2`
+(for example support paid per MWh produced, with the cheapest plants of a
+portfolio curtailed first). The plant's slope is the share-weighted sum over
+its owners, so it offers its last MW at `generation_cost - slope * u`:
+
+```
+primal:        market_cost + sum 0.5 * slope * curtailment^2
+stationarity:  generation_cost - slope * curtailment - price + mu_upper - mu_lower = 0
+dual (Dorn):   ... + sum 0.5 * slope * (capacity^2 - generation^2)
+```
+
+While a plant is curtailed its price is `-slope * u`: negative and continuous
+in storage capacity. Once curtailment is zero the cost no longer acts, so a
+step from a curtailed price of 0 to a storage break-even price stays a step.
+The settlement margin subtracts the owner's curtailment cost; `profit_linear`
+stays concave (MIQP). The standalone dual keeps generation as a free Dorn
+variable. `capacities_capex120_curtail.json` is `capacities_capex120.json`
+with slope 0.1 EUR/MWh per MW on both PV plants for I3 and I4.
+
+## Storage dispatch cost
+
+Next to the linear degradation `0.5 * d * (charge + discharge)`, an investor
+profile may set `dispatch_cost_slope_eur_per_mwh_per_mw` (default 0):
+charging or discharging `p` MW for one hour costs `0.5 * slope * p^2`
+(losses rising with current). Its purpose is selection: the market objective
+becomes strictly convex in charge and discharge, so the storage dispatch is
+unique, as `--balancing-eps` makes prices unique. The slope is stylized.
+
+```
+primal:        market_cost + sum 0.5 * slope * (charge^2 + discharge^2)
+stationarity:  0.5 * d + slope * charge + price - eta * soc_value + mu_power - mu_lower = 0
+dual (Dorn):   ... - sum 0.5 * slope * (charge^2 + discharge^2)
+```
+
+The Dorn term is also each storage's rent from its rising marginal cost:
+settlement less degradation and dispatch cost equals scarcity rent plus this
+rent. `profit_linear` therefore subtracts the rivals' dispatch rents and stays
+concave. The chosen slope is 1e-4 EUR/MWh per MW: about 4 EUR/day for a
+173 MW battery, against about 40 EUR/day at 1e-3, which mostly penalizes
+full-power charging where no tie exists. The slope does not unstick the
+four-node MPEC bound. Evidence: `workflow/complementarity_and_degradation_2026-10-12.md`.
+
+```powershell
+python scripts/diagnostics/storage_dispatch_ranges.py . --profile <capacities.json> --degradation 3 --dispatch-slope 1e-4
 ```
 
 ## Outputs and limits
@@ -192,22 +246,20 @@ default quantity ranges cover storage, `--dispatch all` includes every market
 variable, and `--dispatch none` covers prices and profits only.
 
 MPEC runs with proven optimal status export the chosen `capacities.json`,
-embedded dispatch/prices, independently recleared dispatch/prices, bilinear and
-linear profit with their identity error, optimality residuals, the solver and
-its version, and the fixed-capacity profit interval.
+embedded dispatch/prices, independently recleared dispatch/prices, settlement
+and strong-duality profit with their identity error, optimality residuals, the
+solver and its version, and the fixed-capacity profit interval.
 Time-limited runs report status and objective bounds and return a nonzero exit
 code; no unproven incumbent is presented as an optimal best response.
 
-The dual face has no artificial price or multiplier bounds. The MPEC is a
-bounded KKT/Big-M MIQP (MILP with `--objective linear`) and is **optimistic**,
-subject to the validity of its multiplier bound. Its price bounds follow from
-load-shed and generator stationarity with multipliers in `[0, dual_m]`, so they
-remove nothing beyond the Big-M assumption itself. Gurobi may set degenerate
-multiplier pairs to `dual_m`, e.g. both generator bounds at zero capacity or
-both shedding bounds at zero demand. These pairs do not affect profit, so a
-nonzero `dual_m_saturation_count` alone does not mean the bound is binding. An arbitrary reclear need not reproduce its selected profit.
-The full IEEE-9 MPEC may require substantially more than 60 seconds. Neither a
-single best response nor coordinate ranges enumerate market equilibria.
+The dual face has no artificial price or multiplier bounds, and neither has the
+MPEC. It is **optimistic**: it may choose the market optimum and supporting
+prices most favorable to the investor. Degenerate pairs (both shedding bounds
+at zero demand, both generator bounds at zero capacity) leave their
+multipliers undetermined; `largest_dual_multiplier` shows how large they got.
+An arbitrary reclear need not reproduce the selected profit without
+`--balancing-eps`. Neither a single best response nor coordinate ranges
+enumerate market equilibria.
 
 See `../project_context.md` for all physical/economic assumptions. For the LP
 duality and complementary-slackness basis, see
@@ -218,14 +270,13 @@ duality and complementary-slackness basis, see
 - `prepare_input.py`: input loading/validation, sets, parameters and annualized costs.
 - `primal_llp.py`: named physical variables, explicit market equations and objective.
 - `dual_llp.py`: explicit stationarity, dual objective and fixed-capacity profit.
-- `mpec.py`: capacity investment, binary complementarity, bounds, and bilinear/linear profit.
-- `mpec_relaxed.py`: relaxed complementarity, market start point, and epsilon continuation.
+- `mpec.py`: capacity investment, SOS1 complementarity, physical bounds, and settlement/strong-duality profit.
 - `solve.py`: Gurobi and Ipopt interfaces and numerical feasibility checks.
 - `solution_space.py`: optimal-face coordinate ranges; unique-price reclear and settlement with balancing.
 - `run.py`: three commands and results export.
 - `../scripts/tests/test_core.py`: analytical cases that check signs, degeneracy, settlement,
-  physical storage constraints, independent reclearing, and that the bilinear
-  optimum matches the linear form.
+  physical storage constraints, the quadratic costs, independent reclearing, and
+  that the settlement profit matches the strong-duality form.
 
 ```powershell
 python -m unittest discover -s scripts/tests -v

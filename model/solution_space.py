@@ -29,15 +29,18 @@ def unique_price_reclear(data, profile, balancing_eps, seconds=600):
 
 def settlement_profit(m, investor, price):
     """Investor's nodal settlement at the given prices and m's dispatch: storage
-    arbitrage less degradation, owned generation margin, less capex. At unique
-    prices every optimal dispatch gives the same value (each asset is then a
-    price taker), so this is the investor's unique profit."""
+    arbitrage less degradation and dispatch cost, owned generation margin less
+    own curtailment cost, less capex. At unique prices every optimal dispatch gives
+    the same value (each asset is then a price taker), so this is the investor's unique profit."""
     storage = sum(price[n, t] * (pyo.value(m.discharge[i, n, t]) - pyo.value(m.charge[i, n, t]))
                   - 0.5 * pyo.value(m.degradation[i]) * (pyo.value(m.charge[i, n, t]) + pyo.value(m.discharge[i, n, t]))
+                  - 0.5 * pyo.value(m.dispatch_slope[i]) * (pyo.value(m.charge[i, n, t]) ** 2
+                                                            + pyo.value(m.discharge[i, n, t]) ** 2)
                   for i, n in m.storage_pairs if i == investor for t in m.timesteps)
     generation = sum(pyo.value(m.owned_share[investor, g])
-                     * (price[pyo.value(m.generator_node[g]), t] - pyo.value(m.generation_cost[g]))
-                     * pyo.value(m.generation[g, t])
+                     * ((price[pyo.value(m.generator_node[g]), t] - pyo.value(m.generation_cost[g]))
+                        * pyo.value(m.generation[g, t])
+                        - 0.5 * pyo.value(m.owner_curtailment_slope[investor, g]) * pyo.value(m.curtailment[g, t]) ** 2)
                      for g in m.generators for t in m.timesteps)
     capex = sum(pyo.value(m.cost_power_daily[investor] * m.installed_power[investor, n]
                           + m.cost_energy_daily[investor] * m.installed_energy[investor, n]) for n in m.nodes)

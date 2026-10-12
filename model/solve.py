@@ -1,8 +1,11 @@
 """Solver interfaces and numerical feasibility checks shared by the model runners.
 
-Gurobi solves every LP, MILP, and bilinear MPEC in model/. Ipopt solves only the
-relaxed-complementarity MPEC (mpec_relaxed.py); ipopt.exe must be on PATH.
+Gurobi solves every market LP/QP, range problem, and SOS1 MPEC in model/. Ipopt
+solves only the unique-price reclear with balancing (solution_space.py);
+ipopt.exe must be on PATH.
 """
+import math
+
 import pyomo.environ as pyo
 
 
@@ -41,15 +44,29 @@ def solve_nlp(m, *, seconds=60, solver=None, log_file=None):
 
 def solve(m, *, seconds=60, mip_gap=1e-6, solver=None):
     solver = solver or make_solver()
-    # NonConvex=2: spatial branch-and-bound proves global optimality for price*quantity.
-    # IntFeasTol=1e-9: a binary within 1e-5 of integral times dual_m=1e5 would
-    # otherwise leave complementarity products of about 1e-3.
-    solver.options.update({"TimeLimit": seconds, "MIPGap": mip_gap, "NonConvex": 2,
+    # PreSOS1BigM=0: presolve may otherwise rewrite the MPEC's SOS1 sets as Big-M
+    # binaries again. IntFeasTol=1e-9: an SOS1 member below IntFeasTol counts as
+    # zero; on I1/N9 1e-9 also cuts the search from 95 583 to 22 230 nodes.
+    # NonConvex=2: ranges may maximize a convex quadratic profit over a dual face
+    # (dispatch cost slope > 0).
+    solver.options.update({"TimeLimit": seconds, "MIPGap": mip_gap, "NonConvex": 2, "PreSOS1BigM": 0,
                            "IntFeasTol": 1e-9})
     result = solver.solve(m, load_solutions=False)
     if result.solver.termination_condition == pyo.TerminationCondition.optimal:
         m.solutions.load_from(result)
     return result
+
+
+def objective_bounds(solver):
+    """Gurobi's incumbent and best bound, read directly: Pyomo reports the incumbent
+    as both bounds for models without integer variables, including SOS1 MPECs."""
+    model = solver._solver_model
+    incumbent = model.ObjVal if model.SolCount > 0 else None
+    try:
+        bound = model.ObjBound if model.IsMIP else incumbent
+    except AttributeError:  # gurobipy: attribute not available (e.g. no bound computed)
+        bound = None
+    return tuple(value if value is not None and math.isfinite(value) else None for value in (incumbent, bound))
 
 
 def require_optimal(m, **kwargs):

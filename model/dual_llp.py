@@ -12,17 +12,38 @@ With balancing (eps > 0), stationarity of b gives b = eps * price. The
 standalone dual eliminates b, which adds -(eps/2) * sum(price^2) to dual_value:
 strictly concave in price, so prices are unique. The MPEC keeps b and the
 stationarity equation explicitly.
+
+With a curtailment cost 0.5 * slope * curtailment^2, generator stationarity
+gains -slope * curtailment. The standalone dual is then the Dorn dual of the QP:
+it keeps generation as a free variable and adds 0.5 * slope * (capacity^2 -
+generation^2) to dual_value. In the MPEC, generation is the primal variable.
+
+With a dispatch cost 0.5 * slope * (charge^2 + discharge^2), charge and
+discharge stationarity gain slope * charge and slope * discharge. The Dorn
+dual keeps charge and discharge as free variables and subtracts
+storage_dispatch_rent, 0.5 * slope * (charge^2 + discharge^2), from dual_value.
+At a KKT point the same term is the storage's rent from its rising marginal
+cost: settlement less degradation and dispatch cost = scarcity rent + this rent.
 """
 import pyomo.environ as pyo
 
 from prepare_input import prepare_input
-from primal_llp import add_fixed_capacities
+from primal_llp import add_fixed_capacities, curtailment_rule
 
 
 def build_dual(data, profile, balancing_eps=0.0):
     m = prepare_input(data, profile, balancing_eps=balancing_eps)
     m.name = "Dual market LLP"
     add_fixed_capacities(m)
+    if any(pyo.value(m.curtailment_slope[g]) > 0 for g in m.generators):
+        m.generation = pyo.Var(m.generators, m.timesteps, domain=pyo.Reals,
+                               doc="Dorn dual: generation of plants with a curtailment cost [MW]")
+        m.curtailment = pyo.Expression(m.generators, m.timesteps, rule=curtailment_rule)
+    if any(pyo.value(m.dispatch_slope[i]) > 0 for i, _ in m.storage_pairs):
+        m.charge = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.Reals,
+                           doc="Dorn dual: charging of storage with a dispatch cost [MW]")
+        m.discharge = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.Reals,
+                              doc="Dorn dual: discharging of storage with a dispatch cost [MW]")
     add_dual(m)
     m.objective = pyo.Objective(expr=m.dual_value, sense=pyo.maximize)
     return m
@@ -91,15 +112,22 @@ def add_dual(m):
     m.shedding_scarcity_rent = pyo.Expression(rule=shedding_scarcity_rent_rule)
     m.transmission_scarcity_rent = pyo.Expression(rule=transmission_scarcity_rent_rule)
     m.storage_scarcity_rent = pyo.Expression(m.investors, rule=storage_scarcity_rent_rule)
+    m.storage_dispatch_rent = pyo.Expression(m.investors, rule=storage_dispatch_rent_rule)
     m.owned_generation_rent = pyo.Expression(m.investors, rule=owned_generation_rent_rule)
     m.balancing_dual_term = pyo.Expression(rule=balancing_dual_term_rule)
+    m.curtailment_dual_term = pyo.Expression(rule=curtailment_dual_term_rule)
     m.dual_value = pyo.Expression(rule=dual_value_rule)
 
 
 def stationarity_generation_rule(m, g, t):
-    """dL/dGeneration = marginal cost - price + mu_upper - mu_lower = 0."""
+    """dL/dGeneration = marginal cost - slope * curtailment - price + mu_upper - mu_lower = 0.
+
+    One more MW generated avoids slope * curtailment of curtailment cost."""
     n = pyo.value(m.generator_node[g])
-    return m.generation_cost[g] - m.price[n, t] + m.mu_gen_upper[g, t] - m.mu_gen_lower[g, t] == 0
+    avoided_curtailment_cost = (m.curtailment_slope[g] * m.curtailment[g, t]
+                                if pyo.value(m.curtailment_slope[g]) > 0 else 0)
+    return (m.generation_cost[g] - avoided_curtailment_cost - m.price[n, t]
+            + m.mu_gen_upper[g, t] - m.mu_gen_lower[g, t] == 0)
 
 
 def stationarity_load_shed_rule(m, n, t):
@@ -115,12 +143,16 @@ def stationarity_injection_rule(m, n, t):
 
 
 def stationarity_charge_rule(m, i, n, t):
-    return (0.5 * m.degradation[i] + m.price[n, t] - m.eta * m.soc_value[i, n, t]
+    """dL/dCharge = 0.5 * degradation + slope * charge + price - eta * soc_value
+    + mu_power - mu_lower = 0."""
+    dispatch_cost = m.dispatch_slope[i] * m.charge[i, n, t] if pyo.value(m.dispatch_slope[i]) > 0 else 0
+    return (0.5 * m.degradation[i] + dispatch_cost + m.price[n, t] - m.eta * m.soc_value[i, n, t]
             + m.mu_power[i, n, t] - m.mu_charge_lower[i, n, t] == 0)
 
 
 def stationarity_discharge_rule(m, i, n, t):
-    return (0.5 * m.degradation[i] - m.price[n, t] + m.soc_value[i, n, t] / m.eta
+    dispatch_cost = m.dispatch_slope[i] * m.discharge[i, n, t] if pyo.value(m.dispatch_slope[i]) > 0 else 0
+    return (0.5 * m.degradation[i] + dispatch_cost - m.price[n, t] + m.soc_value[i, n, t] / m.eta
             + m.mu_power[i, n, t] - m.mu_discharge_lower[i, n, t] == 0)
 
 
@@ -169,9 +201,27 @@ def storage_scarcity_rent_rule(m, investor):
     )
 
 
+def storage_dispatch_rent_rule(m, investor):
+    """0.5 * slope * (charge^2 + discharge^2): the Dorn dual term of the dispatch
+    cost, and the storage's rent from its rising marginal dispatch cost."""
+    if pyo.value(m.dispatch_slope[investor]) == 0:
+        return 0
+    return sum(0.5 * m.dispatch_slope[i] * (m.charge[i, n, t] ** 2 + m.discharge[i, n, t] ** 2)
+               for i, n in m.storage_pairs if i == investor for t in m.timesteps)
+
+
 def owned_generation_rent_rule(m, i):
-    return sum(m.owned_share[i, g] * m.generation_capacity[g, t] * m.mu_gen_upper[g, t]
-               for g in m.generators for t in m.timesteps)
+    """Owned settlement margin share * ((price - cost) * generation - owner's
+    curtailment cost) at a KKT point. Stationarity and complementarity give
+    (price - cost) * generation = capacity * mu_upper - slope * curtailment * generation."""
+    scarcity_rent = sum(m.owned_share[i, g] * m.generation_capacity[g, t] * m.mu_gen_upper[g, t]
+                        for g in m.generators for t in m.timesteps)
+    curtailment_terms = sum(
+        m.owned_share[i, g] * (m.curtailment_slope[g] * m.curtailment[g, t] * m.generation[g, t]
+                               + 0.5 * m.owner_curtailment_slope[i, g] * m.curtailment[g, t] ** 2)
+        for g in m.generators if pyo.value(m.owned_share[i, g] * m.curtailment_slope[g]) > 0
+        for t in m.timesteps)
+    return scarcity_rent - curtailment_terms
 
 
 def balancing_dual_term_rule(m):
@@ -181,14 +231,24 @@ def balancing_dual_term_rule(m):
     return sum(0.5 * m.balancing_eps * m.price[n, t] ** 2 for n in m.nodes for t in m.timesteps)
 
 
+def curtailment_dual_term_rule(m):
+    """0.5 * slope * (capacity^2 - generation^2): the Dorn dual term of the
+    curtailment cost, concave in generation."""
+    return sum(0.5 * m.curtailment_slope[g] * (m.generation_capacity[g, t] ** 2 - m.generation[g, t] ** 2)
+               for g in m.generators if pyo.value(m.curtailment_slope[g]) > 0 for t in m.timesteps)
+
+
 def dual_value_rule(m):
     return (m.demand_payment - m.generation_scarcity_rent - m.shedding_scarcity_rent
-            - m.transmission_scarcity_rent - sum(m.storage_scarcity_rent[i] for i in m.investors)
-            - m.balancing_dual_term)
+            - m.transmission_scarcity_rent
+            - sum(m.storage_scarcity_rent[i] + m.storage_dispatch_rent[i] for i in m.investors)
+            - m.balancing_dual_term + m.curtailment_dual_term)
 
 
 def dual_profit(m, investor):
-    """Net daily payoff on a fixed-capacity dual optimal face (a linear expression)."""
+    """Net daily payoff on a fixed-capacity dual optimal face (linear without
+    dispatch or curtailment cost)."""
     capex = sum(m.cost_power_daily[investor] * m.installed_power[investor, n]
                 + m.cost_energy_daily[investor] * m.installed_energy[investor, n] for n in m.nodes)
-    return m.storage_scarcity_rent[investor] + m.owned_generation_rent[investor] - capex
+    return (m.storage_scarcity_rent[investor] + m.storage_dispatch_rent[investor]
+            + m.owned_generation_rent[investor] - capex)

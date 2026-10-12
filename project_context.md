@@ -24,6 +24,28 @@ The existing Overleaf documents are historical and have not yet been rewritten.
   cyclic. This represents a repeated day, not a prescribed starting charge.
 - Storage degradation costs `0.5 * degradation * (charge + discharge)` in both
   the market objective and investor profit. Each investor has its own parameter.
+  With eta = 0.936 this is 1.002 * d per MWh of a full cycle.
+- Since 2026-10-12 `capacities_capex120_curtail_d3.json` uses d = 3 EUR/MWh
+  instead of the inherited 15. Reason: capex already pays for the whole system
+  over a fixed 15-year life with constant usable MWh, and about 5 500 cycles
+  (one per day) lie within LFP cycle life. A per-MWh charge of cell replacement
+  cost (Xu et al. 2018; He et al. 2021: 7-17 $/MWh) would pay for the cells
+  twice. d prices only the capacity a cycle wears out, replaced by
+  augmentation: about 62 000 EUR/MWh (BNEF 2025 stationary pack, $70/kWh at
+  1.13 USD/EUR) * 30 % fade / 6 000 cycles = 3.1 EUR/MWh. Cycle counts are
+  datasheet values, not verified warranties. NREL ATB uses no variable O&M
+  (augmentation in fixed O&M), so d = 0 and d = 10 (replacement cost) are the
+  sensitivity bounds.
+- Optional `dispatch_cost_slope_eur_per_mwh_per_mw` (default 0) adds
+  `0.5 * slope * (charge^2 + discharge^2)` per storage and hour, kept separate
+  from d. It is a selection device that makes dispatch unique (like eps for
+  prices); physically it resembles current-dependent losses. Battery aging is
+  convex in cycle depth, not in power (Xu et al. 2018 neglect current rate for
+  grid-scale batteries), so it is not called degradation. The slope is stylized.
+  Chosen value 1e-4 EUR/MWh per MW (`capacities_capex120_curtail_d3_slope1e-4.json`):
+  about 4 EUR/day at a 173 MW battery (0.06 % of I1's profit); 1e-3 costs about
+  10x more, mostly from full-power charging where no tie exists. It does not
+  unstick the four-node MPEC bound (see `model/README.md`).
 - No demand adjustment, quadratic price selection, strategic bidding, access
   auction, proximal penalty, or equilibrium iteration.
 - Strategic decisions are nodal MW and MWh with continuous 2--8-hour duration in
@@ -40,8 +62,15 @@ The existing Overleaf documents are historical and have not yet been rewritten.
   carries the BESS system (120 000 or 155 000 EUR/MWh, IRENA 2026 converted at
   the ECB 2025 rate), and the power cost is the grid-access fee (1 EUR/MW
   placeholder). Inverter costs (13-17% of installed cost) stay in the energy
-  cost. WACC, lifetime, and degradation remain unsourced. The benchmark day is treated as
+  cost. WACC and lifetime remain unsourced; for degradation see above. The benchmark day is treated as
   representative; the two-hour toy is a mathematical test, not an annual study.
+- Since 2026-10-12 an owner may carry a quadratic PV curtailment cost
+  (`curtailment_slope_eur_per_mwh_per_mw`, default 0): `share * 0.5 * slope * u^2`
+  for `u` MW curtailed, offered truthfully into the market as `-slope * u`.
+  Justification: per-MWh support or pay-as-produced contracts lost when
+  curtailing, heterogeneous across a portfolio so the cheapest plants are
+  curtailed first. The value 0.1 EUR/MWh per MW (I3/I4, both PV plants,
+  `capacities_capex120_curtail.json`) is a stylized choice, not sourced.
 - Capacity profiles are explicit JSON inputs. Missing capacity nodes mean zero.
   Old `x_power`/`x_energy` entries in the inherited market JSON are not used.
 
@@ -51,10 +80,10 @@ The implementation follows the urbs convention of named Pyomo variables and
 constraints, with explicit equation rule functions. `prepare_input.py` handles
 input validation, sets and parameters; `primal_llp.py` defines physical market
 equations; `dual_llp.py` writes each stationarity equation and the dual objective;
-`mpec.py` writes investment and every Big-M complementarity pair explicitly.
+`mpec.py` writes investment and every SOS1 complementarity pair explicitly.
 `solve.py` contains the shared solver interface. The former matrix-assembly
-module `market.py` has been removed. CLI flags and CSV coordinate labels remain
-compatible; direct Python builders now return a model, not a `(model, rows)` pair.
+module `market.py` has been removed. CSV coordinate labels remain compatible;
+direct Python builders return a model, not a `(model, rows)` pair.
 
 Physical quantities have nonnegative Pyomo domains; net injections are free.
 The Lagrangian subtracts `price * nodal_balance_residual` and
@@ -66,45 +95,26 @@ nodal-balance dual also directly equals the LMP. The sign convention and the
 SOC boundary terms are written out in `dual_llp.py`.
 
 The MPEC reuses the same primal rule functions, replacing only the active
-investor's capacity expressions by investment variables. Binary Big-M disjunctions enforce
-slack/multiplier complementarity. Primal slack bounds follow from physical
-capacity limits; the user-specified multiplier bound is a numerical assumption,
-not an economic price cap. Global optimality of this bounded MPEC does not prove
-that the chosen multiplier bound preserves every economically relevant solution.
-Check bound sensitivity; no saturated multiplier is not itself a proof.
+investor's capacity expressions by investment variables. It is organized as
+investor constraints + LLP primal feasibility + LLP stationarity + SOS1
+complementarity + physical bounds + investor objective. Since 2026-10-12 each
+pair {slack, multiplier} is an SOS1 set (Gurobi branches on slack = 0 or
+mu = 0): no binaries and no multiplier bound, so no Big-M assumption. Big-M,
+bilinear products, relaxed products, a strong-duality constraint, and the
+Ipopt relaxed MPEC (`mpec_relaxed.py`) were compared that day and removed
+(evidence in `workflow/complementarity_and_degradation_2026-10-12.md`; code in
+git history). All share the same root relaxation; SOS1 solved I1/N9 fastest.
+The relaxation is weak: with four candidate nodes the bound stays at its root.
 
-Since 2026-10-08 the MPEC is organized as investor objective + investor
-constraints + LLP primal feasibility + LLP stationarity + Big-M complementarity
-+ variable bounds. The default objective is the direct nodal settlement
-(price times quantity, bilinear), solved to global optimality by Gurobi with
-`NonConvex=2`. Price bounds are derived from load-shed and generator
-stationarity with multipliers in `[0, dual_m]`, so they add no assumption
-beyond the Big-M.
-
-Strong duality gives the same profit as a linear expression (`profit_linear`):
-demand payments less market costs and all other assets' scarcity rents. Owned
-truthful generation earns its capacity scarcity rent. The two forms are equal at
-every KKT point, so both objectives have the same optimum; `--objective linear`
-solves the MILP form. Gurobi solves every model (LPs, MILPs, bilinear MPECs).
-The bilinear model also contains
-`profit == profit_linear` as a valid cut: the difference is a weighted sum of
-other assets' complementarity products, so the cut removes no feasible point but
-makes Gurobi's bound usable (I1/N6: global optimum in under 1 s instead of no
-usable bound after 15 minutes). The runner reports both values and their
-difference, primal/dual and complementarity residuals, and independently
-reclears the selected capacity.
-
-Since 2026-10-09 `mpec_relaxed.py` is a second MPEC version for machines
-without a full Gurobi licence. It keeps all blocks of `mpec.py` and the same
-`mu <= dual_m` and price bounds, but replaces Big-M by `0 <= slack * mu <=
-epsilon` (Scholtes) and is solved by Ipopt over a decreasing epsilon sequence,
-starting from an exact fixed-capacity market optimum. It gives a **local**
-optimum with approximate complementarity: no global optimality proof. Its
-selected capacity is recleared exactly and its exact profit range reported.
-The equality `slack * mu = epsilon` is infeasible for pairs with structurally
-zero slack and is not used. An August Scholtes/Ipopt variant
-(`mpec_relaxed_kkt.py`, commit `45ceb8a`) was removed in the reset; this is a
-new implementation on the current model.
+Without multiplier bounds the prices are unbounded, so the objective is the
+strong-duality profit `profit_linear`: demand payments less market costs and
+all other assets' scarcity rents (with the quadratic costs: also the balancing,
+curtailment, and rival dispatch-rent terms; concave, so the MPEC is a MIQP with
+SOS1 sets). Owned truthful generation earns its capacity scarcity rent. It
+equals the direct nodal settlement `profit` (price times quantity) at every
+KKT point; the difference is a weighted sum of other assets' complementarity
+products. The runner reports both values and their difference, primal/dual
+and complementarity residuals, and independently reclears the selected capacity.
 
 Since 2026-10-09 `--balancing-eps eps` optionally adds a price-responsive
 balancing injection `b = eps * price` (cost `b^2/(2 eps)`) at every node and

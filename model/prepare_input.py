@@ -32,6 +32,9 @@ def validate(data, profile):
                 raise ValueError(f"Invalid {field} for {investor}.")
         if config["lifetime_years"] <= 0:
             raise ValueError("Lifetime must be positive.")
+        slope = config.get("dispatch_cost_slope_eur_per_mwh_per_mw", 0.0)
+        if not math.isfinite(slope) or slope < 0:
+            raise ValueError(f"Invalid dispatch cost slope for {investor}.")
         for field in ("power_mw", "energy_mwh"):
             if set(config[field]) - set(data["nodes"]):
                 raise ValueError(f"Unknown capacity node for {investor}.")
@@ -45,6 +48,11 @@ def validate(data, profile):
         for g, share in config.get("owned_generation_shares", {}).items():
             if g not in data["generators"] or not 0 <= share <= 1:
                 raise ValueError("Invalid generation ownership.")
+        for g, slope in config.get("curtailment_slope_eur_per_mwh_per_mw", {}).items():
+            if config.get("owned_generation_shares", {}).get(g, 0) <= 0:
+                raise ValueError(f"{investor} has a curtailment slope for {g} but does not own it.")
+            if not math.isfinite(slope) or slope < 0:
+                raise ValueError(f"Invalid curtailment slope for {investor}, {g}.")
     for g in data["generators"]:
         if sum(c.get("owned_generation_shares", {}).get(g, 0) for c in profile.values()) > 1 + 1e-9:
             raise ValueError(f"Aggregate ownership exceeds 100% for {g}.")
@@ -138,15 +146,30 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     m.installed_power = pyo.Param(m.investors, m.nodes, initialize=power)
     m.installed_energy = pyo.Param(m.investors, m.nodes, initialize=energy)
     m.power_max = pyo.Param(m.storage_pairs, initialize={pair: power_max[pair] for pair in storage_pairs},
-                          doc="Physical upper bound used for primal Big-M [MW]")
+                          doc="Largest possible power: installed, or the active investor's headroom [MW]")
     m.energy_max = pyo.Param(m.storage_pairs, initialize={pair: energy_max[pair] for pair in storage_pairs},
-                           doc="Physical upper bound used for primal Big-M [MWh]")
+                           doc="Largest possible energy: installed, or ratio_max * headroom [MWh]")
     m.degradation = pyo.Param(m.investors, initialize={i: c["degradation_eur_per_mwh"] for i, c in profile.items()})
+    # Charging or discharging p MW for one hour costs 0.5 * slope * p^2 on top of the
+    # linear degradation (losses rising with current); slope > 0 makes dispatch unique.
+    m.dispatch_slope = pyo.Param(m.investors, initialize={
+        i: c.get("dispatch_cost_slope_eur_per_mwh_per_mw", 0.0) for i, c in profile.items()},
+        doc="Storage dispatch cost slope [EUR/MWh per MW]")
     m.ratio_min = pyo.Param(m.investors, initialize={i: c["ratio_min"] for i, c in profile.items()})
     m.ratio_max = pyo.Param(m.investors, initialize={i: c["ratio_max"] for i, c in profile.items()})
     m.owned_share = pyo.Param(m.investors, m.generators, initialize={
         (i, g): c.get("owned_generation_shares", {}).get(g, 0.0)
         for i, c in profile.items() for g in data["generators"]})
+    # Curtailing u MW costs an owner share * 0.5 * slope * u^2 (e.g. support lost per
+    # MWh not produced, cheapest plants of a portfolio curtailed first). The plant
+    # offers with the share-weighted slope: its marginal curtailment cost is slope * u.
+    owner_slope = {(i, g): c.get("curtailment_slope_eur_per_mwh_per_mw", {}).get(g, 0.0)
+                   for i, c in profile.items() for g in data["generators"]}
+    m.owner_curtailment_slope = pyo.Param(m.investors, m.generators, initialize=owner_slope,
+                                          doc="Owner's curtailment cost slope [EUR/MWh per MW]")
+    m.curtailment_slope = pyo.Param(m.generators, initialize={
+        g: sum(pyo.value(m.owned_share[i, g]) * owner_slope[i, g] for i in profile) for g in data["generators"]},
+        doc="Plant curtailment cost slope, share-weighted over owners [EUR/MWh per MW]")
     daily_crf = {i: capital_recovery_factor(c["wacc"], c["lifetime_years"]) / 365.25 for i, c in profile.items()}
     m.cost_power_daily = pyo.Param(m.investors, initialize={i: daily_crf[i] * c["cost_power_eur_per_mw"] for i, c in profile.items()})
     m.cost_energy_daily = pyo.Param(m.investors, initialize={i: daily_crf[i] * c["cost_energy_eur_per_mwh"] for i, c in profile.items()})

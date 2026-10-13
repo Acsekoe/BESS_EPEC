@@ -21,6 +21,11 @@ bids in the market (primal_llp.py). The bids enter only charge and discharge
 stationarity, linearly; the strong-duality profit does not contain them, so the
 MPEC keeps its structure. mpec_relaxed.py replaces block 4 by relaxed products.
 
+Many bids support the same optimum (an offer above every price withholds the
+storage at any level), so solve_mpec follows the first solve by select_bids:
+the same MPEC at the optimal capacity, own dispatch and prices, choosing the
+bids closest to truthful.
+
 Run independently: python model/mpec.py --investor I1 --nodes N9 --output ...
 """
 import copy
@@ -30,13 +35,15 @@ import pyomo.environ as pyo
 from prepare_input import prepare_input
 from primal_llp import add_primal
 from dual_llp import add_dual
+from solve import make_solver, objective_bounds, solve
 
 
 def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0,
-               strategic_bids=False):
-    """balancing_eps > 0 makes LLP prices unique (see primal_llp.py)."""
+               strategic_bids=False, capacity_price=None):
+    """balancing_eps > 0 makes LLP prices unique (see primal_llp.py). With
+    capacity_price the investor pays for hosting capacity (prepare_input.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
-                      balancing_eps=balancing_eps)
+                      balancing_eps=balancing_eps, capacity_price=capacity_price)
     m.name = f"{'Capacity and bid' if strategic_bids else 'Capacity'} MPEC: {investor}"
 
     # 1. Investor decisions: MW and MWh (and bids) of the active investor only.
@@ -61,6 +68,67 @@ def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balanc
     add_investor_profit(m)
     m.objective = pyo.Objective(expr=m.profit_linear, sense=pyo.maximize)
     return m
+
+
+def solve_mpec(m, *, seconds=60, mip_gap=1e-6, solver=None, hold_tolerances=(1e-6, 1e-5, 1e-4)):
+    """Solve the MPEC with Gurobi; with strategic bids, then select the bids.
+
+    Returns the first solve's result, its (incumbent, bound), and the selection
+    report (None without bids or without a proven optimum)."""
+    solver = solver or make_solver()
+    result = solve(m, seconds=seconds, mip_gap=mip_gap, solver=solver)
+    bounds = objective_bounds(solver)
+    selection = None
+    if m.component("X_charge_bid") is not None and result.solver.termination_condition == pyo.TerminationCondition.optimal:
+        selection = select_bids(m, seconds=seconds, solver=solver, hold_tolerances=hold_tolerances)
+    return result, bounds, selection
+
+
+def select_bids(m, *, seconds=60, solver=None, hold_tolerances=(1e-6, 1e-5, 1e-4)):
+    """Second, lexicographic step: among the optima, the bids closest to truthful.
+
+    Keeps the solved capacity (X fixed), holds the investor's own charge and
+    discharge [MW] and every nodal price [EUR/MWh] within a tolerance of the
+    solved values, and minimizes the squared bid markup subject to every LLP KKT
+    condition and SOS1 pair. Holding own dispatch and prices holds the profit
+    (owned generation follows from the prices), with linear constraints only:
+    a quadratic profit floor made the root relaxation numerically unstable on
+    V6. Holding values instead of fixing them lets Gurobi settle each SOS1 pair
+    itself (no active set guessed by threshold). The objective is strictly
+    convex in the bids, so the bids are unique for this market outcome.
+    Capacity stays fixed because profit is nearly flat in MW.
+
+    The solved point lies inside the hold only up to the first solve's
+    tolerances; with large multipliers Gurobi can then call the selection
+    infeasible (V6 I4 behind I3 at 1e-6). The tolerances are therefore tried
+    in turn, each from the original bounds. If none is proven optimal, the
+    first solve's values stay loaded and the report says so."""
+    i = m.active_investor
+    profit_before, markup_before = pyo.value(m.profit_linear), pyo.value(bid_markup_rule(m))
+    m.X_power.fix()
+    m.X_energy.fix()
+    held = [m.charge[j, n, t] for j, n in m.storage_pairs if j == i for t in m.timesteps]
+    held += [m.discharge[j, n, t] for j, n in m.storage_pairs if j == i for t in m.timesteps]
+    held += list(m.price.values())
+    original = [(variable, pyo.value(variable), variable.lb, variable.ub) for variable in held]
+    m.bid_markup = pyo.Expression(rule=bid_markup_rule)
+    m.objective.deactivate()
+    m.selection_objective = pyo.Objective(expr=m.bid_markup, sense=pyo.minimize)
+    attempts = []
+    for tolerance in hold_tolerances:
+        for variable, value, lb, ub in original:
+            variable.setlb(value - tolerance if lb is None else max(lb, value - tolerance))
+            variable.setub(value + tolerance if ub is None else min(ub, value + tolerance))
+        result = solve(m, seconds=seconds, solver=solver)
+        attempts.append(dict(hold_tolerance=tolerance, status=str(result.solver.termination_condition)))
+        if attempts[-1]["status"] == "optimal":
+            break
+    return dict(status=attempts[-1]["status"],
+                rule="closest to truthful at the optimal capacity, own dispatch and prices",
+                hold_tolerance=attempts[-1]["hold_tolerance"], attempts=attempts,
+                profit_before_eur_per_day=profit_before, profit_after_eur_per_day=pyo.value(m.profit_linear),
+                squared_markup_before=markup_before, squared_markup_after=pyo.value(m.bid_markup),
+                largest_absolute_markup_eur_per_mwh=max(abs(pyo.value(markup)) for markup in bid_markups(m)))
 
 
 def add_investment(m, strategic_bids=False):
@@ -185,6 +253,19 @@ def bid_no_loop_rule(m, n, t):
     return m.eta ** 2 * m.X_discharge_offer[n, t] >= m.X_charge_bid[n, t]
 
 
+def bid_markups(m):
+    """Bids minus truthful bids (charge -0.5 d, discharge 0.5 d) of the active investor."""
+    half_degradation = 0.5 * m.degradation[m.active_investor]
+    for n in m.investment_nodes:
+        for t in m.timesteps:
+            yield m.X_charge_bid[n, t] + half_degradation
+            yield m.X_discharge_offer[n, t] - half_degradation
+
+
+def bid_markup_rule(m):
+    return sum(markup ** 2 for markup in bid_markups(m))
+
+
 # Slack variables of the upper-bound and line pairs.
 def slack_gen_upper_rule(m, g, t):
     return m.slack_gen_upper[g, t] == m.generation_capacity[g, t] - m.generation[g, t]
@@ -294,8 +375,9 @@ def generation_margin_rule(m):
 
 
 def investment_cost_rule(m):
+    """Daily capex plus the hosting capacity price per MW (0 unless priced)."""
     i = m.active_investor
-    return sum(m.cost_power_daily[i] * m.X_power[n] + m.cost_energy_daily[i] * m.X_energy[n]
+    return sum((m.cost_power_daily[i] + m.capacity_price[n]) * m.X_power[n] + m.cost_energy_daily[i] * m.X_energy[n]
                for n in m.investment_nodes)
 
 

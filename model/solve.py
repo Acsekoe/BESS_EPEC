@@ -69,6 +69,16 @@ def objective_bounds(solver):
     return tuple(value if value is not None and math.isfinite(value) else None for value in (incumbent, bound))
 
 
+def load_incumbent(solver):
+    """Load Gurobi's best solution after a time limit; solve() loads only proven
+    optima. Returns False if Gurobi has no solution."""
+    if solver._solver_model.SolCount == 0:
+        return False
+    for variable, gurobi_variable in solver._pyomo_var_to_solver_var_map.items():
+        variable.set_value(gurobi_variable.X, skip_validation=True)
+    return True
+
+
 def require_optimal(m, **kwargs):
     result = solve(m, **kwargs)
     if result.solver.termination_condition != pyo.TerminationCondition.optimal:

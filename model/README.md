@@ -7,6 +7,10 @@ One shared fixed-demand market supports three independent commands:
 - `mpec`: optimize one investor's MW/MWh against the profile's fixed rivals
   (SOS1 complementarity, Gurobi, proven optimum).
 - `mpec_relaxed`: the same MPEC with relaxed complementarity (Ipopt, local).
+- `clearing`: share scarce hosting capacity by a uniform price (section
+  "Scarce hosting capacity").
+- `verify`: Gurobi check of a candidate equilibrium, each investor against
+  fixed rivals (proven, refuted, or open).
 
 Both MPECs take `--strategic-bids`: the investor then also chooses hourly
 charge bids and discharge offers at each node (section "Strategic bids").
@@ -306,8 +310,32 @@ With LP prices the bid margin depends on a non-unique dispatch, so
 `dual_profit` refuses non-truthful bids.
 
 Bids are not unique. Any bid beyond the price range supports the same dispatch:
-an offer of 6 729 EUR/MWh means "never discharge here". Read the exported bids
-as one supporting set; the dispatch and the recleared prices are the result.
+an offer of 6 729 EUR/MWh means "never discharge here". `mpec` therefore solves
+twice (`solve_mpec` in `mpec.py`). After the optimum, `select_bids` keeps the
+capacity, holds the investor's own charge/discharge and every nodal price
+within 1e-6 of the optimum, and minimizes the squared distance of its bids from
+truthful over the same KKT conditions and SOS1 pairs (linear constraints, a
+convex objective). If Gurobi calls that hold infeasible (the optimum meets it
+only to the first solve's tolerances; V6 I4 behind I3), it retries at 1e-5 and
+1e-4 (`bid_selection.attempts`). The exported bids, the reclear, and later rival profiles
+use the selected bids; `summary.json` reports them under `bid_selection`.
+Because the ISO's SOC value is free, the rule spreads a markup over the hours
+that set it (four-hour test: +15 on the offer, -15 on the charge bid, instead
+of +30 on one). The rule is an assumption about rivals: minimal markups make a
+held-back battery react as soon as a price moves (extreme bids would freeze
+it). `mpec_relaxed` exports its bids unselected.
+
+V6 selection, 2026-10-13 13:12 (each selection proven at the root in 0.02 s):
+
+| investor | squared markup, first solve -> selected | largest markup [EUR/MWh] | exact - linear profit [EUR] |
+|---|---|---|---|
+| I1 | 1.5e10 -> 10.6 | 1.8 | -0.013 |
+| I2 | 1.4e10 -> 15.1 | 2.2 | 0.000 |
+| I3 | 1.5e10 -> 3 030 | 48.4 | -0.003 |
+| I4 | 1.9e10 -> 13 500 | 28.9 | -0.041 |
+
+Another Gurobi seed gives the same bids (I3 within 3e-3 EUR/MWh, after a
+1e-3 MW capacity difference; I4 within 2e-9).
 
 V6, 2026-10-13, settings as above (exact profit, EUR/day):
 
@@ -326,15 +354,70 @@ V6, 2026-10-13, settings as above (exact profit, EUR/day):
   about 1 MW more per night hour, just enough to absorb the curtailed wind, and
   its charge bid then sets the night price in the wind pocket: 52 instead of 0.
   The owned wind earns that price; the storage's own arbitrage loses a little.
-- I2 and I4 report `verification_passed: false` only through the absolute
-  1e-4 EUR thresholds: profit identity and primal-dual gap 5e-4 EUR on an
-  as-bid market cost of about -4e5 EUR.
+- Before the selection, I2 and I4 failed the then absolute 1e-4 EUR
+  thresholds (5e-4 EUR errors on an as-bid market cost of about -4e5 EUR).
+  The SOS1 check now allows 1e-4 EUR + 1e-8 of |market cost| + |profit|
+  (`verification_tolerance_eur`, about 3e-3 EUR on V6); all four pass.
 
 ```powershell
 python model/run.py mpec_relaxed --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I1 --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
 python model/run.py mpec_relaxed --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I3 --balancing-eps 1e-4 --seconds 300 --start-profile model/output/step_starts/ieee5_v6_I3.json --output model/output/<new_dir>
 python model/run.py mpec_relaxed --strategic-bids --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I3 --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
 python model/run.py mpec --strategic-bids --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I3 --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
+```
+
+## Scarce hosting capacity (`clearing`)
+
+A node can host a limited storage power in total, `sum_i X_power[i, n] <= H_n`.
+By default (`--node-limit`) this is first come, first served: rivals' MW reduce
+the active investor's headroom, so the move order decides who gets the node.
+`clearing` instead shares the node by one uniform price p_n [EUR/MW/day]:
+
+```
+investor i:  max profit_linear_i - sum_n p_n * X_power[i, n]    s.t. X_power[i, n] <= H_n, LLP KKT (unchanged)
+clearing:    0 <= p_n  complementary to  H_n - sum_i X_power[i, n] >= 0
+```
+
+With one price for all investors this is the variational equilibrium of the
+shared constraint (Rosen 1965, Harker 1991): a competitive, uniform-price
+auction of hosting capacity in which investors are price takers. The energy
+market (LLP) is unchanged; the price is a linear fee in each MPEC
+(`capacity_price` in `prepare_input.py`, `investment_cost_rule` in `mpec.py`).
+
+`capacity_clearing.py`: at fixed prices, Gauss-Seidel best responses until a
+full round has no move worth more than `--gain-tolerance` in exact profit;
+bisection on the price of the one node that is over-full at zero prices. If the
+node's demand jumps across H_n (lumpy investment), the bracket narrows while MW
+stay unused at the upper price: then no uniform price clears the node.
+
+- Capacity only (default, truthful bids): relaxed MPEC from the investor's
+  current capacity and from 50 MW, plus building nothing. Local: "converged"
+  means no improvement found. One start was not enough on V6 (moves worth
+  48 000 EUR/day missed).
+- `--strategic-bids`: bid MPEC (`solve_mpec`, proven). On V6 two batteries in
+  one pocket cycle in their bids: at the step the pocket price is anywhere
+  between 0 and the storage value in the LP, and bid differences of 4e-4
+  EUR/MWh decide it through the balancing slope.
+
+V6 capacity only, no hosting limit (2026-10-13): two candidates pass the
+two-start check, both with merchants out and the steps filled (N2 456.7 MWh,
+N5 146.8 MW): A, I3 N2 + N5 130.5 MW with I4 16.3 MW (profit 40 898 / 84 249),
+and B, I3 N2 only with I4 N5 146.8 MW (62 457 / 62 812). The N5 battery lifts
+the price for both PV owners, so each prefers the other to build it; the move
+order selects. With H_N5 = 100 MW (below the step) I3 and I4 cycle at the step.
+
+`verify` (600 s) proves merchant exit at both but no owner's side. A is not an
+equilibrium: I3 gains 12 333 EUR/day by shrinking N5 to 129.1 MW (N5 total
+below the step, midday N5 price to about 0). B is open; small moves
+(`scripts/diagnostics/equilibrium_probe.py`) find no gain, but at B a 0.01 MW
+battery at N2 drops the midday N2 price from 52 to 14.6 EUR/MWh (to 3.1 at
+1 MW), a difference of 0.0037 MW balancing at eps = 1e-4. At eps = 1e-4 the
+balancing term, not the economics, sets these payoffs; smoothing comes first.
+
+```powershell
+python model/run.py clearing --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --balancing-eps 1e-4 --order I3 I4 I1 I2 --seconds 120 --output model/output/<new_dir>
+python model/run.py clearing --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --balancing-eps 1e-4 --hosting N5=100 --order I3 I4 I1 I2 --seconds 120 --output model/output/<new_dir>
+python model/run.py verify --data model/input/ieee5_v6_market_data.json --profile workflow/equilibria_2026-10-13/ieee5_v6_equilibrium_B.json --balancing-eps 1e-4 --seconds 600 --threads 6 --output model/output/<new_dir>
 ```
 
 ## Outputs and limits
@@ -374,12 +457,14 @@ duality and complementary-slackness basis, see
 - `mpec_relaxed.py`: the same MPEC with relaxed complementarity, its start point, and the Ipopt epsilon continuation.
 - `solve.py`: Gurobi and Ipopt interfaces and numerical feasibility checks.
 - `solution_space.py`: optimal-face coordinate ranges; unique-price reclear and settlement with balancing.
-- `run.py`: three commands and results export.
+- `capacity_clearing.py`: hosting capacity shared by a uniform clearing price (Gauss-Seidel best responses, price bisection).
+- `run.py`: commands (`market`, `ranges`, `mpec`, `mpec_relaxed`, `clearing`) and results export.
 - `../scripts/tests/test_core.py`: analytical cases that check signs, degeneracy, settlement,
   physical storage constraints, the quadratic costs, independent reclearing, and
   that the settlement profit matches the strong-duality form, strategic bids
   (withholding at a step: 300 capacity-only vs 340 with bids), and that the
-  relaxed MPEC reaches the SOS1 optima (skipped without Ipopt on `PATH`).
+  relaxed MPEC reaches the SOS1 optima (skipped without Ipopt on `PATH`), the
+  bid selection, and the hosting capacity price.
 
 ```powershell
 python -m unittest discover -s scripts/tests -v

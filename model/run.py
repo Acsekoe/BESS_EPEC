@@ -1,6 +1,9 @@
 """Independent commands: market, ranges, the one-investor capacity mpec (SOS1
-complementarity, Gurobi), and mpec_relaxed (relaxed complementarity, Ipopt,
-local). --strategic-bids adds the investor's hourly charge bids and discharge offers."""
+complementarity, Gurobi), mpec_relaxed (relaxed complementarity, Ipopt,
+local), clearing (hosting capacity shared by a uniform price, all investors), and
+verify (Gurobi check that a capacity profile is an equilibrium).
+--strategic-bids adds the investor's hourly charge bids and discharge offers;
+mpec then selects the bids closest to truthful before the reclear."""
 import argparse
 import csv
 import hashlib
@@ -12,11 +15,11 @@ import pyomo.environ as pyo
 from prepare_input import INPUT, load_case
 from primal_llp import build_primal, dispatch_variables
 from dual_llp import build_dual, dual_profit
-from solve import (make_solver, nlp_solver_version, objective_bounds, require_optimal, residual, solve,
-                   solver_version)
-from mpec import build_mpec, chosen_profile, complementarity_pairs
+from solve import make_solver, nlp_solver_version, require_optimal, residual, solver_version
+from mpec import build_mpec, chosen_profile, complementarity_pairs, solve_mpec
 from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed, start_profile
 from solution_space import analyze, extrema, face_models, settlement_profit, unique_price_reclear
+from capacity_clearing import clear_capacity, verify_equilibrium
 
 
 def write_json(path, value):
@@ -79,7 +82,7 @@ def mpec_results(out, data, m, args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("market", "ranges", "mpec", "mpec_relaxed"))
+    parser.add_argument("command", choices=("market", "ranges", "mpec", "mpec_relaxed", "clearing", "verify"))
     parser.add_argument("--data", type=Path, default=INPUT / "market_data.json")
     parser.add_argument("--profile", type=Path, default=INPUT / "capacities.json")
     parser.add_argument("--output", type=Path, required=True)
@@ -100,6 +103,16 @@ def main(argv=None):
                         help="mpec_relaxed: start MW (minimum duration) at each investment node.")
     parser.add_argument("--start-profile", type=Path,
                         help="mpec_relaxed: start from the investor's MW, MWh and bids in this profile instead.")
+    parser.add_argument("--hosting", nargs="+", default=[], metavar="NODE=MW",
+                        help="clearing: hosting capacity of the scarce node(s); other nodes keep --node-limit.")
+    parser.add_argument("--order", nargs="+", help="clearing: best-response order (default: profile order).")
+    parser.add_argument("--price-start", type=float, default=50, help="clearing: first price tried [EUR/MW/day].")
+    parser.add_argument("--price-tolerance", type=float, default=0.5, help="clearing: final bracket width [EUR/MW/day].")
+    parser.add_argument("--rounds", type=int, default=6, help="clearing: Gauss-Seidel rounds per price.")
+    parser.add_argument("--gain-tolerance", type=float, default=1.0,
+                        help="clearing: an investor moves only for a larger profit gain [EUR/day]; "
+                             "verify: largest gain that still counts as no profitable deviation.")
+    parser.add_argument("--threads", type=int, help="verify: Gurobi threads per solve (default: all).")
     args = parser.parse_args(argv)
     if args.seconds <= 0 or args.mip_gap < 0 or args.face_tolerance < 0:
         parser.error("Time must be positive; MIP gap and face tolerance must be nonnegative.")
@@ -138,6 +151,45 @@ def main(argv=None):
         export_market(args.output, m, data)
         summary["verification_passed"] = (abs(summary["primal_dual_gap_eur"]) <= 1e-5
             and max(summary["primal_residual"], summary["dual_residual"]) <= 1e-5)
+    elif args.command == "clearing":
+        if args.balancing_eps <= 0:
+            parser.error("clearing compares exact profits: it needs --balancing-eps > 0 (unique prices).")
+        hosting = {k: float(v) for k, v in (item.split("=") for item in args.hosting)}
+        if set(hosting) - set(data["nodes"]):
+            parser.error("Unknown hosting node.")
+        order = args.order or list(profile)
+        print(f"Clearing hosting capacity {hosting}, order {order}", flush=True)
+        result, evaluations = clear_capacity(
+            data, profile, hosting, order=order, balancing_eps=args.balancing_eps, node_limit=args.node_limit,
+            strategic_bids=args.strategic_bids,
+            price_start=args.price_start, price_tolerance=args.price_tolerance, rounds=args.rounds,
+            seconds=args.seconds, gain_tolerance=args.gain_tolerance, log=lambda text: print(text, flush=True))
+        write_json(args.output / "capacities.json", result.pop("profile"))
+        write_json(args.output / "clearing_log.json", evaluations)
+        summary = dict(result, investors=order, strategic_bids=args.strategic_bids,
+            best_response="bid MPEC, Gurobi SOS1 (proven)" if args.strategic_bids
+                          else "relaxed capacity MPEC, Ipopt (local), and building nothing",
+            evaluation_count=len(evaluations),
+            interpretation="Uniform hosting-capacity price (variational equilibrium of the shared node limit), "
+                           "found by bisection on the price with Gauss-Seidel bid-MPEC best responses. "
+                           "inner_converged: a full round without profitable deviation found at the final price "
+                           "(capacity only: by a local method). "
+                           "unused_mw > 0 at a narrow bracket means demand jumps across the limit (no clearing price). "
+                           "One start and order; not proven unique.")
+        summary["verification_passed"] = summary["inner_converged"]
+    elif args.command == "verify":
+        if args.balancing_eps <= 0:
+            parser.error("verify compares exact profits: it needs --balancing-eps > 0 (unique prices).")
+        print(f"Verifying {args.profile} as an equilibrium with Gurobi", flush=True)
+        overall, records = verify_equilibrium(
+            data, profile, balancing_eps=args.balancing_eps, node_limit=args.node_limit,
+            strategic_bids=args.strategic_bids, seconds=args.seconds, mip_gap=args.mip_gap, threads=args.threads,
+            tolerance=args.gain_tolerance, log=lambda text: print(text, flush=True))
+        summary = dict(equilibrium=overall, investors=records, strategic_bids=args.strategic_bids,
+            interpretation="proven: every investor's Gurobi upper bound is within the tolerance of its current "
+                           "exact profit, so no profitable deviation exists (rivals fixed, optimistic MPEC). "
+                           "refuted: a better deviation was found. open: the bound did not close in time.")
+        summary["verification_passed"] = overall == "proven"
     elif args.command == "ranges":
         records, summary = analyze(data, profile, tolerance=args.face_tolerance, dispatch=args.dispatch, progress=print,
                                    balancing_eps=args.balancing_eps)
@@ -183,12 +235,16 @@ def main(argv=None):
         print(f"Solving one-investor MPEC: {market_variable_count} market variables, {sos_count} SOS1 sets", flush=True)
         solver = make_solver()
         solver.options["LogFile"] = str(args.output / "gurobi.log")
-        result = solve(m, seconds=args.seconds, mip_gap=args.mip_gap, solver=solver)
+        # With bids, a second solve selects the bids closest to truthful, so the
+        # exported bids and the reclear below are definite.
+        result, (incumbent, bound), selection = solve_mpec(m, seconds=args.seconds, mip_gap=args.mip_gap,
+                                                           solver=solver)
         status = str(result.solver.termination_condition)
-        incumbent, bound = objective_bounds(solver)  # maximization: incumbent <= bound
         summary = dict(status=status, investor=args.investor, solver="gurobi", solver_version=config["solver_version"],
                        strategic_bids=args.strategic_bids, investment_nodes=args.nodes or data["nodes"],
-                       solver_lower_bound=incumbent, solver_upper_bound=bound)
+                       solver_lower_bound=incumbent, solver_upper_bound=bound)  # maximization: incumbent <= bound
+        if selection is not None:
+            summary["bid_selection"] = selection
         if status != "optimal":
             summary["interpretation"] = "No proven optimal MPEC result loaded. Increase the time limit or reduce the case. No equilibrium claim."
             write_json(args.output / "summary.json", summary)
@@ -196,9 +252,17 @@ def main(argv=None):
             return 2
         summary.update(mpec_results(args.output, data, m, args),
             interpretation="Optimistic best response for the specified rival profile and strategy bounds, with SOS1 complementarity and no multiplier bound. Not a multi-investor equilibrium.")
-        summary["verification_passed"] = (summary["profit_identity_error_eur"] <= 1e-4
-            and abs(summary["reclear_cost_gap_eur"]) <= 1e-4
-            and abs(summary["primal_dual_gap_eur"]) <= 1e-4
+        exact = summary["fixed_capacity_profit_range"]["maximum"]
+        if args.balancing_eps > 0:
+            summary["linear_minus_exact_profit_eur"] = summary["linear_profit_eur_per_day"] - exact
+        # 1e-4 EUR plus 1e-8 of the money involved: Gurobi's 1e-6 feasibility
+        # tolerance times prices of 1e3-1e4 EUR/MWh gives errors of about 1e-3 EUR.
+        money = abs(summary["embedded_market_cost_eur"]) + abs(summary["linear_profit_eur_per_day"])
+        summary["verification_tolerance_eur"] = tolerance = 1e-4 + 1e-8 * money
+        summary["verification_passed"] = ((selection is None or selection["status"] == "optimal")
+            and summary["profit_identity_error_eur"] <= tolerance
+            and abs(summary["reclear_cost_gap_eur"]) <= tolerance
+            and abs(summary["primal_dual_gap_eur"]) <= tolerance
             and summary["maximum_constraint_violation"] <= 1e-5
             and summary["maximum_complementarity_product"] <= 1e-4)
     write_json(args.output / "summary.json", summary)

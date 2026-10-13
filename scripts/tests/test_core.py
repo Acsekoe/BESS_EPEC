@@ -11,7 +11,7 @@ from primal_llp import build_primal
 from dual_llp import build_dual, dual_profit
 from prepare_input import INPUT, load_case
 from solve import make_nlp_solver, make_solver, require_optimal, residual
-from mpec import build_mpec, chosen_profile, complementarity_pairs
+from mpec import build_mpec, chosen_profile, complementarity_pairs, solve_mpec
 from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed, start_profile
 from solution_space import extrema, face_models
 
@@ -210,6 +210,47 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):  # a bid above the offer would let the ISO loop the storage
             selected["I"]["charge_bid_eur_per_mwh"]["N"]["1"] = selected["I"]["discharge_offer_eur_per_mwh"]["N"]["1"] + 1
             build_primal(data, selected)
+
+    def test_bid_selection_closest_to_truthful(self):
+        # Same optimum as above: 2 MW at 40 in hour 2, recharged at 10 in hour 1
+        # or 3 (LP: either). Interior dispatch pins offer(2) + SOC value = 40
+        # and SOC value + charge bid = 10 in the 2 MW charging hour; the ISO's
+        # SOC value is free, so the closest bids to truthful (0, d = 0) split
+        # the markup: +15 and -15. All other bids return to truthful.
+        data, profile = bid_case()
+        m = build_mpec(data, profile, "I", node_limit=20, strategic_bids=True)
+        result, (incumbent, _), selection = solve_mpec(m)
+        self.assertEqual(selection["status"], "optimal")
+        self.assertAlmostEqual(incumbent, 340., places=5)
+        self.assertAlmostEqual(pyo.value(m.profit), 340., places=4)
+        self.assertAlmostEqual(pyo.value(m.X_discharge_offer["N", 2]), 15., places=4)
+        partial = 1 if pyo.value(m.charge["I", "N", 1]) < 5 else 3
+        self.assertAlmostEqual(pyo.value(m.X_charge_bid["N", partial]), -15., places=4)
+        for t in m.timesteps:
+            if t != partial:
+                self.assertAlmostEqual(pyo.value(m.X_charge_bid["N", t]), 0., places=4)
+            if t != 2:
+                self.assertAlmostEqual(pyo.value(m.X_discharge_offer["N", t]), 0., places=4)
+        self.assertAlmostEqual(selection["squared_markup_after"], 450., places=1)
+        primal, _, _ = face_models(data, chosen_profile(m), tolerance=0)
+        self.assertAlmostEqual(pyo.value(primal.discharge["I", "N", 2]), 2., places=5)
+        self.assertAlmostEqual(pyo.value(primal.market_cost), pyo.value(m.market_cost), places=3)  # 1e-6 MW hold
+
+    def test_capacity_price_and_priced_headroom(self):
+        # Toy: each MW (E = X) earns 40 - 10 - 2 capex = 28 up to 5 MW. A hosting
+        # capacity price p per MW leaves 5 MW at p = 10 (profit 90), nothing at 30.
+        data, profile = case(two_hours=True)
+        for price, power, profit in ((10., 5., 90.), (30., 0., 0.)):
+            m = build_mpec(data, profile, "I", node_limit=10, capacity_price={"N": price})
+            require_optimal(m)
+            self.assertAlmostEqual(pyo.value(m.X_power["N"]), power, places=5)
+            self.assertAlmostEqual(pyo.value(m.profit_linear), profit, places=5)
+        # First come, first served: a rival's 4 MW cut the headroom to 6. With
+        # prices the node is shared by the price, so the investor alone may use 10.
+        profile["R"] = copy.deepcopy(profile["I"])
+        profile["R"]["power_mw"], profile["R"]["energy_mwh"] = {"N": 4.}, {"N": 4.}
+        self.assertEqual(pyo.value(build_mpec(data, profile, "I", node_limit=10).headroom["N"]), 6.)
+        self.assertEqual(pyo.value(build_mpec(data, profile, "I", node_limit=10, capacity_price={}).headroom["N"]), 10.)
 
     @unittest.skipUnless(IPOPT, "Ipopt is not on PATH")
     def test_relaxed_mpec_reaches_the_sos1_optimum(self):

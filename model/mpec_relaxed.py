@@ -50,10 +50,11 @@ from solve import make_nlp_solver, solve_nlp
 
 
 def build_mpec_relaxed(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0,
-                       strategic_bids=False, epsilon=1.0):
-    """epsilon is the initial product bound; solve_relaxed() changes it in place."""
+                       strategic_bids=False, epsilon=1.0, capacity_price=None):
+    """epsilon is the initial product bound; solve_relaxed() changes it in place.
+    capacity_price as in build_mpec (prepare_input.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
-                      balancing_eps=balancing_eps)
+                      balancing_eps=balancing_eps, capacity_price=capacity_price)
     m.name = f"Relaxed {'capacity and bid' if strategic_bids else 'capacity'} MPEC: {investor}"
 
     # 1. Investor decisions: MW and MWh (and bids) of the active investor only.

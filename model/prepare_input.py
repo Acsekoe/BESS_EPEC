@@ -69,13 +69,20 @@ def capital_recovery_factor(wacc, years):
 
 
 def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
-                  node_limit=1000.0, balancing_eps=0.0):
+                  node_limit=1000.0, balancing_eps=0.0, capacity_price=None):
     """Return a model containing only input sets and numerical parameters.
 
     For a fixed-capacity market, omit active_investor. For an MPEC, include all
     permitted investment locations even when their starting capacity is zero.
     Zero-capacity rival storage is omitted, as in the original formulation.
     balancing_eps > 0 adds price-responsive nodal balancing (see primal_llp.py).
+
+    node_limit is the storage power a node can host [MW], one number for all
+    nodes or {node: MW}. Without capacity_price it is shared first come, first
+    served: rivals' MW reduce the active investor's headroom. With
+    capacity_price {node: EUR/MW/day} (missing nodes 0) the active investor pays
+    that price per MW and may alone build up to the limit; the price shares the
+    node instead (capacity_clearing.py).
     """
     validate(data, profile)
     if not math.isfinite(balancing_eps) or balancing_eps < 0:
@@ -89,8 +96,12 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
             raise ValueError("Choose valid investment nodes.")
         if len(set(investment_nodes)) != len(investment_nodes):
             raise ValueError("Investment nodes must be unique.")
-        if not math.isfinite(node_limit) or node_limit <= 0:
-            raise ValueError("The nodal investment limit must be positive and finite.")
+        limits = node_limit if isinstance(node_limit, dict) else {n: node_limit for n in nodes}
+        if set(limits) != set(nodes) or not all(math.isfinite(v) and v > 0 for v in limits.values()):
+            raise ValueError("The nodal investment limit must be positive and finite at every node.")
+        prices = capacity_price or {}
+        if set(prices) - set(nodes) or not all(math.isfinite(v) and v >= 0 for v in prices.values()):
+            raise ValueError("Capacity prices must be finite and nonnegative at valid nodes.")
 
     generation_capacity = {(r["generator"], r["hour"]): r["capacity_mw"]
                            for r in data["generation_capacity"]}
@@ -114,7 +125,8 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     headroom = {}
     if active_investor is not None:
         for n in nodes:
-            headroom[n] = node_limit - sum(power[i, n] for i in profile if i != active_investor)
+            rivals = 0.0 if capacity_price is not None else sum(power[i, n] for i in profile if i != active_investor)
+            headroom[n] = limits[n] - rivals
             if headroom[n] < 0:
                 raise ValueError("Rival power exceeds the shared nodal investment limit.")
             power_max[active_investor, n] = headroom[n] if n in investment_nodes else 0.0
@@ -200,4 +212,6 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     if active_investor is not None:
         m.investment_nodes = pyo.Set(initialize=investment_nodes, ordered=True)
         m.headroom = pyo.Param(m.nodes, initialize=headroom)
+        m.capacity_price = pyo.Param(m.nodes, initialize={n: prices.get(n, 0.0) for n in nodes},
+                                     doc="Price of hosting capacity paid per MW of power [EUR/MW/day]")
     return m

@@ -1,0 +1,9 @@
+# Store and check out text files with LF on every machine, so Windows
+# checkouts (core.autocrlf=true) never show line-ending-only modifications.
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gz binary

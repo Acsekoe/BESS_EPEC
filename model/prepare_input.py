@@ -53,6 +53,12 @@ def validate(data, profile):
                 raise ValueError(f"{investor} has a curtailment slope for {g} but does not own it.")
             if not math.isfinite(slope) or slope < 0:
                 raise ValueError(f"Invalid curtailment slope for {investor}, {g}.")
+        for field in ("charge_bid_eur_per_mwh", "discharge_offer_eur_per_mwh"):
+            for n, hourly in config.get(field, {}).items():
+                if n not in data["nodes"] or set(hourly) - {str(t) for t in data["times"]}:
+                    raise ValueError(f"Unknown node or hour in {field} of {investor} (hours are strings).")
+                if not all(math.isfinite(price) for price in hourly.values()):
+                    raise ValueError(f"Invalid {field} for {investor}, {n}.")
     for g in data["generators"]:
         if sum(c.get("owned_generation_shares", {}).get(g, 0) for c in profile.values()) > 1 + 1e-9:
             raise ValueError(f"Aggregate ownership exceeds 100% for {g}.")
@@ -150,6 +156,24 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     m.energy_max = pyo.Param(m.storage_pairs, initialize={pair: energy_max[pair] for pair in storage_pairs},
                            doc="Largest possible energy: installed, or ratio_max * headroom [MWh]")
     m.degradation = pyo.Param(m.investors, initialize={i: c["degradation_eur_per_mwh"] for i, c in profile.items()})
+    # Hourly charge bid (price to buy) and discharge offer (price to sell) of each
+    # storage. Truthful values are the degradation cost of each direction: bid
+    # -0.5 * d, offer 0.5 * d. With strategic bids the MPEC chooses the active investor's.
+    charge_bid = {(i, n, t): profile[i].get("charge_bid_eur_per_mwh", {}).get(n, {}).get(
+                      str(t), -0.5 * profile[i]["degradation_eur_per_mwh"])
+                  for i, n in storage_pairs for t in data["times"]}
+    discharge_offer = {(i, n, t): profile[i].get("discharge_offer_eur_per_mwh", {}).get(n, {}).get(
+                           str(t), 0.5 * profile[i]["degradation_eur_per_mwh"])
+                       for i, n in storage_pairs for t in data["times"]}
+    for key, bid in charge_bid.items():
+        # A same-hour loop (charge c, discharge eta^2 * c, SOC unchanged) costs
+        # -bid * c + offer * eta^2 * c as bid; it must not be negative.
+        if data["eta"] ** 2 * discharge_offer[key] < bid - 1e-6:
+            raise ValueError(f"Bids of {key} give a charge-discharge loop a negative bid cost.")
+    m.fixed_charge_bid = pyo.Param(m.storage_pairs, m.timesteps, initialize=charge_bid,
+                                   doc="Charge bid from the profile, price to buy [EUR/MWh]")
+    m.fixed_discharge_offer = pyo.Param(m.storage_pairs, m.timesteps, initialize=discharge_offer,
+                                        doc="Discharge offer from the profile, price to sell [EUR/MWh]")
     # Charging or discharging p MW for one hour costs 0.5 * slope * p^2 on top of the
     # linear degradation (losses rising with current); slope > 0 makes dispatch unique.
     m.dispatch_slope = pyo.Param(m.investors, initialize={

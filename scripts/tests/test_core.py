@@ -10,9 +10,12 @@ import pyomo.environ as pyo
 from primal_llp import build_primal
 from dual_llp import build_dual, dual_profit
 from prepare_input import INPUT, load_case
-from solve import make_solver, require_optimal, residual
+from solve import make_nlp_solver, make_solver, require_optimal, residual
 from mpec import build_mpec, chosen_profile, complementarity_pairs
+from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed, start_profile
 from solution_space import extrema, face_models
+
+IPOPT = make_nlp_solver().available(exception_flag=False)
 
 
 def case(two_hours=False, duplicate=False):
@@ -27,6 +30,26 @@ def case(two_hours=False, duplicate=False):
         cost_energy_eur_per_mwh=365.25, degradation_eur_per_mwh=0.,
         ratio_min=1., ratio_max=1., power_mw={}, energy_mwh={}, owned_generation_shares={})
     return data, {"I": config}
+
+
+def bid_case():
+    """Charge at 10 in hours 1 and 3. Hour 2: 8 MW at 12 and the peaker at 40
+    against 10 MW demand, so discharge above 2 MW drops the price from 40 to 12.
+    Hour 4: only the peaker at 40."""
+    data, profile = case()
+    times = [1, 2, 3, 4]
+    capacity = {("cheap", 1): 30., ("cheap", 3): 30., ("low", 2): 8., ("peak", 2): 20., ("peak", 4): 20.}
+    data.update(generators=["cheap", "low", "peak"], times=times, soc_times=[0] + times,
+        generators_at_node={"N": ["cheap", "low", "peak"]}, generation_cost={"cheap": 10., "low": 12., "peak": 40.},
+        generation_capacity=[dict(generator=g, hour=t, capacity_mw=capacity.get((g, t), 0.))
+                             for g in ("cheap", "low", "peak") for t in times],
+        demand_el=[dict(node="N", hour=t, demand_mw=10.) for t in times])
+    return data, profile
+
+
+def solve_relaxed_from(m, data, profile, start_power):
+    initialize_from_market(m, data, start_profile(m, profile, start_power=start_power))
+    return solve_relaxed(m, [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6])[-1]["status"]
 
 
 class CoreTests(unittest.TestCase):
@@ -164,6 +187,45 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(pyo.value(m.profit_linear), 19.6, places=4)
         self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
         self.assertLess(residual(m), 1e-5)
+
+    def test_strategic_bids_withhold_at_the_step(self):
+        # Capacity only (E = X, capex 2 per MW): the ISO discharges X in hours 2 and
+        # 4, so for X > 2 profit is 12X + 40X - 20X - 2X = 30X, best at X = 10: 300.
+        # With bids the investor offers only 2 MW in hour 2 at 40:
+        # 2 * 40 + 10 * 40 - 12 * 10 - 20 = 340.
+        data, profile = bid_case()
+        for strategic, expected in ((False, 300.), (True, 340.)):
+            m = build_mpec(data, profile, "I", node_limit=20, strategic_bids=strategic)
+            require_optimal(m)
+            self.assertAlmostEqual(pyo.value(m.X_power["N"]), 10., places=5)
+            self.assertAlmostEqual(pyo.value(m.profit), expected, places=5)
+            self.assertAlmostEqual(pyo.value(m.profit_linear), expected, places=5)
+            self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
+            self.assertLess(residual(m), 1e-5)
+        self.assertAlmostEqual(pyo.value(m.discharge["I", "N", 2]), 2., places=5)
+        # The exported bids are the market's input: the reclear reproduces the dispatch cost.
+        selected = chosen_profile(m)
+        primal, _, _ = face_models(data, selected, tolerance=0)
+        self.assertAlmostEqual(pyo.value(primal.market_cost), pyo.value(m.market_cost), places=5)
+        with self.assertRaises(ValueError):  # a bid above the offer would let the ISO loop the storage
+            selected["I"]["charge_bid_eur_per_mwh"]["N"]["1"] = selected["I"]["discharge_offer_eur_per_mwh"]["N"]["1"] + 1
+            build_primal(data, selected)
+
+    @unittest.skipUnless(IPOPT, "Ipopt is not on PATH")
+    def test_relaxed_mpec_reaches_the_sos1_optimum(self):
+        data, profile = case(two_hours=True)
+        m = build_mpec_relaxed(data, profile, "I", node_limit=10)
+        self.assertEqual(solve_relaxed_from(m, data, profile, start_power=2.), "optimal")
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 5., places=5)
+        self.assertAlmostEqual(pyo.value(m.profit), 140., places=4)
+        # Local and start-dependent: from 10 MW the bid MPEC stays at the
+        # truthful 300 (withholding pays only below 2 MW); from 2 MW it finds 340.
+        data, profile = bid_case()
+        for start_power, expected in ((10., 300.), (2., 340.)):
+            m = build_mpec_relaxed(data, profile, "I", node_limit=20, strategic_bids=True)
+            self.assertEqual(solve_relaxed_from(m, data, profile, start_power), "optimal")
+            self.assertAlmostEqual(pyo.value(m.profit), expected, places=3)
+            self.assertLessEqual(max(pyo.value(s * mu) for s, mu in complementarity_pairs(m)), 1e-6 + 1e-9)
 
     def test_shared_inverter_and_cyclic_soc(self):
         data, profile = case(two_hours=True)

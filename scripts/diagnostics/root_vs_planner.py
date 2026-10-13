@@ -130,14 +130,7 @@ def root_relaxation(data, profile, eps):
 def planner(data, profile, eps):
     """min market_cost + capex over the active investor's capacity (same rules as mpec.py)."""
     m = prepare_input(data, profile, active_investor=args.investor, investment_nodes=nodes, balancing_eps=eps)
-    m.X_power = pyo.Var(m.investment_nodes, domain=pyo.NonNegativeReals)
-    m.X_energy = pyo.Var(m.investment_nodes, domain=pyo.NonNegativeReals)
-    m.investment_power_limit = pyo.Constraint(m.investment_nodes, rule=mpec.investment_power_limit_rule)
-    m.investment_energy_limit = pyo.Constraint(m.investment_nodes, rule=mpec.investment_energy_limit_rule)
-    m.duration_min = pyo.Constraint(m.investment_nodes, rule=mpec.duration_min_rule)
-    m.duration_max = pyo.Constraint(m.investment_nodes, rule=mpec.duration_max_rule)
-    m.power_capacity = pyo.Expression(m.storage_pairs, rule=mpec.power_capacity_rule)
-    m.energy_capacity = pyo.Expression(m.storage_pairs, rule=mpec.energy_capacity_rule)
+    mpec.add_investment(m)
     add_primal(m)
     m.capex = pyo.Expression(rule=mpec.investment_cost_rule)
     m.objective = pyo.Objective(expr=m.market_cost + m.capex, sense=pyo.minimize)

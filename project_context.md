@@ -46,8 +46,15 @@ The existing Overleaf documents are historical and have not yet been rewritten.
   about 4 EUR/day at a 173 MW battery (0.06 % of I1's profit); 1e-3 costs about
   10x more, mostly from full-power charging where no tie exists. It does not
   unstick the four-node MPEC bound (see `model/README.md`).
-- No demand adjustment, quadratic price selection, strategic bidding, access
-  auction, proximal penalty, or equilibrium iteration.
+- No demand adjustment, quadratic price selection, access auction, proximal
+  penalty, or equilibrium iteration.
+- Storage bids truthfully by default: hourly charge bid -0.5 d and discharge
+  offer 0.5 d per node. Since 2026-10-13 `--strategic-bids` (both MPECs) lets
+  the active investor choose its bids in [-VOLL, VOLL] with eta^2 * offer >= bid;
+  rivals' bids are fixed profile inputs. The investor's profit uses its true
+  degradation cost, not its bids. Bids need `--balancing-eps > 0`, and the
+  chosen bid levels are not unique (any bid beyond the price range supports the
+  same dispatch). With bids, capacity is no longer the only strategy.
 - Strategic decisions are nodal MW and MWh with continuous 2--8-hour duration in
   the IEEE-9 profile. Rivals' capacities are fixed during a best response.
 - The 1000 MW default shared nodal investment bound is retained as an explicit
@@ -105,6 +112,10 @@ Ipopt relaxed MPEC (`mpec_relaxed.py`) were compared that day and removed
 (evidence in `workflow/complementarity_and_degradation_2026-10-12.md`; code in
 git history). All share the same root relaxation; SOS1 solved I1/N9 fastest.
 The relaxation is weak: with four candidate nodes the bound stays at its root.
+On 2026-10-13 the Ipopt relaxed MPEC returned as `mpec_relaxed.py` (same
+blocks, Scholtes products `slack * mu <= epsilon`, epsilon continuation), as a
+fast local method that is not a proof. On V6 it reaches the proven merchant
+optima and the owners' best Gurobi incumbents in under a minute (`model/README.md`).
 
 Without multiplier bounds the prices are unbounded, so the objective is the
 strong-duality profit `profit_linear`: demand payments less market costs and

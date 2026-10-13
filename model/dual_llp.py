@@ -24,17 +24,23 @@ dual keeps charge and discharge as free variables and subtracts
 storage_dispatch_rent, 0.5 * slope * (charge^2 + discharge^2), from dual_value.
 At a KKT point the same term is the storage's rent from its rising marginal
 cost: settlement less degradation and dispatch cost = scarcity rent + this rent.
+
+Storage bids replace 0.5 * d in charge and discharge stationarity: -charge_bid
+and discharge_offer (truthful: -0.5 * d and 0.5 * d). They do not enter the dual
+objective, so strong duality holds for any bids. A storage's settlement less
+its true costs is then scarcity rent + dispatch rent + bid margin
+(offer - 0.5 d) * discharge + (-bid - 0.5 d) * charge.
 """
 import pyomo.environ as pyo
 
 from prepare_input import prepare_input
-from primal_llp import add_fixed_capacities, curtailment_rule
+from primal_llp import add_fixed_storage, curtailment_rule
 
 
 def build_dual(data, profile, balancing_eps=0.0):
     m = prepare_input(data, profile, balancing_eps=balancing_eps)
     m.name = "Dual market LLP"
-    add_fixed_capacities(m)
+    add_fixed_storage(m)
     if any(pyo.value(m.curtailment_slope[g]) > 0 for g in m.generators):
         m.generation = pyo.Var(m.generators, m.timesteps, domain=pyo.Reals,
                                doc="Dorn dual: generation of plants with a curtailment cost [MW]")
@@ -143,16 +149,18 @@ def stationarity_injection_rule(m, n, t):
 
 
 def stationarity_charge_rule(m, i, n, t):
-    """dL/dCharge = 0.5 * degradation + slope * charge + price - eta * soc_value
-    + mu_power - mu_lower = 0."""
+    """dL/dCharge = -charge_bid + slope * charge + price - eta * soc_value
+    + mu_power - mu_lower = 0 (truthful bid: -0.5 * degradation)."""
     dispatch_cost = m.dispatch_slope[i] * m.charge[i, n, t] if pyo.value(m.dispatch_slope[i]) > 0 else 0
-    return (0.5 * m.degradation[i] + dispatch_cost + m.price[n, t] - m.eta * m.soc_value[i, n, t]
+    return (-m.charge_bid[i, n, t] + dispatch_cost + m.price[n, t] - m.eta * m.soc_value[i, n, t]
             + m.mu_power[i, n, t] - m.mu_charge_lower[i, n, t] == 0)
 
 
 def stationarity_discharge_rule(m, i, n, t):
+    """dL/dDischarge = discharge_offer + slope * discharge - price + soc_value / eta
+    + mu_power - mu_lower = 0 (truthful offer: 0.5 * degradation)."""
     dispatch_cost = m.dispatch_slope[i] * m.discharge[i, n, t] if pyo.value(m.dispatch_slope[i]) > 0 else 0
-    return (0.5 * m.degradation[i] + dispatch_cost - m.price[n, t] + m.soc_value[i, n, t] / m.eta
+    return (m.discharge_offer[i, n, t] + dispatch_cost - m.price[n, t] + m.soc_value[i, n, t] / m.eta
             + m.mu_power[i, n, t] - m.mu_discharge_lower[i, n, t] == 0)
 
 
@@ -247,7 +255,13 @@ def dual_value_rule(m):
 
 def dual_profit(m, investor):
     """Net daily payoff on a fixed-capacity dual optimal face (linear without
-    dispatch or curtailment cost)."""
+    dispatch or curtailment cost). Needs the investor's truthful bids: otherwise
+    the payoff includes the bid margin, which depends on the dispatch."""
+    for i, n in m.storage_pairs:
+        for t in m.timesteps:
+            if i == investor and (pyo.value(m.fixed_charge_bid[i, n, t]) != -0.5 * pyo.value(m.degradation[i])
+                                  or pyo.value(m.fixed_discharge_offer[i, n, t]) != 0.5 * pyo.value(m.degradation[i])):
+                raise ValueError(f"dual_profit needs truthful bids; {investor} bids strategically.")
     capex = sum(m.cost_power_daily[investor] * m.installed_power[investor, n]
                 + m.cost_energy_daily[investor] * m.installed_energy[investor, n] for n in m.nodes)
     return (m.storage_scarcity_rent[investor] + m.storage_dispatch_rent[investor]

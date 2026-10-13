@@ -20,6 +20,12 @@ the linear degradation, so the marginal cost rises by slope per MW (losses
 rising with current). It is strictly convex in charge and discharge, so the
 storage dispatch is unique. Slope 0 omits the term.
 
+Storage bids: each storage enters the market with an hourly charge bid (price
+to buy) and discharge offer (price to sell), so the ISO's storage cost is
+offer * discharge - bid * charge. Truthful bids (the default) are -0.5 * d and
+0.5 * d, which is the degradation cost. The market objective is the as-bid cost;
+an investor's settlement uses its true costs (solution_space.settlement_profit).
+
 Run independently: python model/primal_llp.py --output model/output/market_run
 """
 import pyomo.environ as pyo
@@ -30,16 +36,19 @@ from prepare_input import prepare_input
 def build_primal(data, profile, balancing_eps=0.0):
     m = prepare_input(data, profile, balancing_eps=balancing_eps)
     m.name = "Primal market LLP"
-    add_fixed_capacities(m)
+    add_fixed_storage(m)
     add_primal(m)
     m.objective = pyo.Objective(expr=m.market_cost, sense=pyo.minimize)
     m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
     return m
 
 
-def add_fixed_capacities(m):
+def add_fixed_storage(m):
+    """Capacities and bids of every storage are the profile's input parameters."""
     m.power_capacity = pyo.Expression(m.storage_pairs, rule=fixed_power_capacity_rule)
     m.energy_capacity = pyo.Expression(m.storage_pairs, rule=fixed_energy_capacity_rule)
+    m.charge_bid = pyo.Expression(m.storage_pairs, m.timesteps, rule=fixed_charge_bid_rule)
+    m.discharge_offer = pyo.Expression(m.storage_pairs, m.timesteps, rule=fixed_discharge_offer_rule)
 
 
 def add_primal(m):
@@ -110,7 +119,7 @@ def add_primal(m):
 
     m.generation_cost_total = pyo.Expression(rule=generation_cost_rule)
     m.load_shed_cost_total = pyo.Expression(rule=load_shed_cost_rule)
-    m.degradation_cost_total = pyo.Expression(rule=degradation_cost_rule)
+    m.storage_bid_cost = pyo.Expression(m.investors, rule=storage_bid_cost_rule)
     m.dispatch_cost_total = pyo.Expression(rule=dispatch_cost_rule)
     m.curtailment_cost_total = pyo.Expression(rule=curtailment_cost_rule)
     m.balancing_cost_total = pyo.Expression(rule=balancing_cost_rule)
@@ -123,6 +132,14 @@ def fixed_power_capacity_rule(m, i, n):
 
 def fixed_energy_capacity_rule(m, i, n):
     return m.installed_energy[i, n]
+
+
+def fixed_charge_bid_rule(m, i, n, t):
+    return m.fixed_charge_bid[i, n, t]
+
+
+def fixed_discharge_offer_rule(m, i, n, t):
+    return m.fixed_discharge_offer[i, n, t]
 
 
 def nodal_balance_rule(m, n, t):
@@ -196,9 +213,11 @@ def load_shed_cost_rule(m):
     return sum(m.voll * m.load_shed[n, t] for n in m.nodes for t in m.timesteps)
 
 
-def degradation_cost_rule(m):
-    return sum(0.5 * m.degradation[i] * (m.charge[i, n, t] + m.discharge[i, n, t])
-               for i, n in m.storage_pairs for t in m.timesteps)
+def storage_bid_cost_rule(m, investor):
+    """As-bid cost of the investor's storage: offer * discharge - bid * charge.
+    With truthful bids this is the degradation cost 0.5 * d * (charge + discharge)."""
+    return sum(m.discharge_offer[i, n, t] * m.discharge[i, n, t] - m.charge_bid[i, n, t] * m.charge[i, n, t]
+               for i, n in m.storage_pairs if i == investor for t in m.timesteps)
 
 
 def dispatch_cost_rule(m):
@@ -221,7 +240,7 @@ def balancing_cost_rule(m):
 
 
 def market_cost_rule(m):
-    return (m.generation_cost_total + m.load_shed_cost_total + m.degradation_cost_total
+    return (m.generation_cost_total + m.load_shed_cost_total + sum(m.storage_bid_cost[i] for i in m.investors)
             + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total)
 
 

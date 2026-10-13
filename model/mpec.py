@@ -1,7 +1,7 @@
-"""Capacity-only optimistic MPEC: investor problem plus LLP KKT with SOS1 complementarity.
+"""Capacity MPEC: investor problem plus LLP KKT with SOS1 complementarity.
 
     max  investor profit, strong-duality form     (6)
-    s.t. investor constraints                     (1)
+    s.t. investor decisions                       (1)
          LLP primal feasibility                   (2, primal_llp.py)
          LLP stationarity, multipliers mu >= 0    (3, dual_llp.py)
          LLP complementarity via SOS1             (4)
@@ -15,6 +15,12 @@ Prices are therefore unbounded too, so the objective is the strong-duality
 profit, which contains no price * quantity products; the direct nodal
 settlement is kept as an expression to check it.
 
+The investor chooses MW and MWh per node. With strategic_bids it also chooses
+an hourly charge bid and discharge offer per node, which replace its truthful
+bids in the market (primal_llp.py). The bids enter only charge and discharge
+stationarity, linearly; the strong-duality profit does not contain them, so the
+MPEC keeps its structure. mpec_relaxed.py replaces block 4 by relaxed products.
+
 Run independently: python model/mpec.py --investor I1 --nodes N9 --output ...
 """
 import copy
@@ -26,26 +32,16 @@ from primal_llp import add_primal
 from dual_llp import add_dual
 
 
-def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0):
+def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0,
+               strategic_bids=False):
     """balancing_eps > 0 makes LLP prices unique (see primal_llp.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
                       balancing_eps=balancing_eps)
-    m.name = f"Capacity MPEC: {investor}"
+    m.name = f"{'Capacity and bid' if strategic_bids else 'Capacity'} MPEC: {investor}"
 
-    # 1. Investor constraints: MW and MWh of the active investor only.
-    m.X_power = pyo.Var(m.investment_nodes, domain=pyo.NonNegativeReals)
-    m.X_energy = pyo.Var(m.investment_nodes, domain=pyo.NonNegativeReals)
-    m.investment_power_limit = pyo.Constraint(m.investment_nodes, rule=investment_power_limit_rule)
-    m.investment_energy_limit = pyo.Constraint(
-        m.investment_nodes,
-        rule=investment_energy_limit_rule,
-    )
-    m.duration_min = pyo.Constraint(m.investment_nodes, rule=duration_min_rule)
-    m.duration_max = pyo.Constraint(m.investment_nodes, rule=duration_max_rule)
-
-    # Active capacity is variable; rival capacity is the fixed input parameter.
-    m.power_capacity = pyo.Expression(m.storage_pairs, rule=power_capacity_rule)
-    m.energy_capacity = pyo.Expression(m.storage_pairs, rule=energy_capacity_rule)
+    # 1. Investor decisions: MW and MWh (and bids) of the active investor only.
+    # Rival capacities and bids are fixed input parameters.
+    add_investment(m, strategic_bids)
 
     # 2. LLP primal feasibility: balances, SOC dynamics, and all capacity limits.
     add_primal(m)
@@ -62,6 +58,39 @@ def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balanc
 
     # 6. Investor objective. profit is the direct nodal settlement of the active
     # investor's assets; profit_linear equals it at every KKT point and is maximized.
+    add_investor_profit(m)
+    m.objective = pyo.Objective(expr=m.profit_linear, sense=pyo.maximize)
+    return m
+
+
+def add_investment(m, strategic_bids=False):
+    m.X_power = pyo.Var(m.investment_nodes, domain=pyo.NonNegativeReals)
+    m.X_energy = pyo.Var(m.investment_nodes, domain=pyo.NonNegativeReals)
+    m.investment_power_limit = pyo.Constraint(m.investment_nodes, rule=investment_power_limit_rule)
+    m.investment_energy_limit = pyo.Constraint(
+        m.investment_nodes,
+        rule=investment_energy_limit_rule,
+    )
+    m.duration_min = pyo.Constraint(m.investment_nodes, rule=duration_min_rule)
+    m.duration_max = pyo.Constraint(m.investment_nodes, rule=duration_max_rule)
+    if strategic_bids:
+        # Bids within the market's price range [-VOLL, VOLL]; an offer above
+        # every price withholds the storage.
+        bid_range = (-pyo.value(m.voll), pyo.value(m.voll))
+        m.X_charge_bid = pyo.Var(m.investment_nodes, m.timesteps, bounds=bid_range,
+                                 doc="Active investor's charge bid, price to buy [EUR/MWh]")
+        m.X_discharge_offer = pyo.Var(m.investment_nodes, m.timesteps, bounds=bid_range,
+                                      doc="Active investor's discharge offer, price to sell [EUR/MWh]")
+        m.bid_no_loop = pyo.Constraint(m.investment_nodes, m.timesteps, rule=bid_no_loop_rule)
+
+    # Active capacity and bids are variable; rival ones are fixed input parameters.
+    m.power_capacity = pyo.Expression(m.storage_pairs, rule=power_capacity_rule)
+    m.energy_capacity = pyo.Expression(m.storage_pairs, rule=energy_capacity_rule)
+    m.charge_bid = pyo.Expression(m.storage_pairs, m.timesteps, rule=charge_bid_rule)
+    m.discharge_offer = pyo.Expression(m.storage_pairs, m.timesteps, rule=discharge_offer_rule)
+
+
+def add_investor_profit(m):
     m.storage_revenue = pyo.Expression(rule=storage_revenue_rule)
     m.storage_degradation = pyo.Expression(rule=storage_degradation_rule)
     m.storage_dispatch_cost = pyo.Expression(rule=storage_dispatch_cost_rule)
@@ -69,8 +98,6 @@ def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balanc
     m.capex = pyo.Expression(rule=investment_cost_rule)
     m.profit = pyo.Expression(rule=profit_rule)
     m.profit_linear = pyo.Expression(rule=profit_linear_rule)
-    m.objective = pyo.Objective(expr=m.profit_linear, sense=pyo.maximize)
-    return m
 
 
 def add_sos1_complementarity(m):
@@ -137,6 +164,25 @@ def power_capacity_rule(m, i, n):
 
 def energy_capacity_rule(m, i, n):
     return m.X_energy[n] if i == m.active_investor else m.installed_energy[i, n]
+
+
+def charge_bid_rule(m, i, n, t):
+    if i == m.active_investor and m.component("X_charge_bid") is not None:
+        return m.X_charge_bid[n, t]
+    return m.fixed_charge_bid[i, n, t]
+
+
+def discharge_offer_rule(m, i, n, t):
+    if i == m.active_investor and m.component("X_discharge_offer") is not None:
+        return m.X_discharge_offer[n, t]
+    return m.fixed_discharge_offer[i, n, t]
+
+
+def bid_no_loop_rule(m, n, t):
+    """A same-hour loop (charge c, discharge eta^2 * c, SOC unchanged) costs
+    -bid * c + offer * eta^2 * c as bid. It must not be negative, or the ISO
+    would cycle the storage for the bid alone (prepare_input checks fixed bids)."""
+    return m.eta ** 2 * m.X_discharge_offer[n, t] >= m.X_charge_bid[n, t]
 
 
 # Slack variables of the upper-bound and line pairs.
@@ -221,6 +267,7 @@ def storage_revenue_rule(m):
 
 
 def storage_degradation_rule(m):
+    """True degradation cost; with strategic bids the market sees the bids instead."""
     return sum(0.5 * m.degradation[i] * (m.charge[i, n, t] + m.discharge[i, n, t])
                for i, n in m.storage_pairs if i == m.active_investor for t in m.timesteps)
 
@@ -280,14 +327,25 @@ def profit_linear_rule(m):
     With a dispatch cost, strong duality subtracts every storage's dispatch rent
     0.5 * slope * (charge^2 + discharge^2); the rivals' rents are removed as
     their other rents are. The active storage's charge^2 coefficient is then
-    -0.5 * slope (from market_cost), a rival's -slope: still concave.
+    -0.5 * slope (from the market cost), a rival's -slope: still concave.
+
+    Bids: the market cost holds every storage's as-bid cost. The active
+    investor's is replaced by its true degradation cost, so its bid margin
+    (bid - true cost) * quantity is part of the profit, and the product
+    bid * quantity of two variables never appears (Ruiz and Conejo 2009).
+    With truthful bids the two are equal and this is demand payment - market cost.
     """
-    return (m.demand_payment - m.market_cost - m.balancing_dual_term + m.curtailment_dual_term
+    i = m.active_investor
+    market_cost_at_true_cost = (
+        m.generation_cost_total + m.load_shed_cost_total + m.storage_degradation
+        + sum(m.storage_bid_cost[j] for j in m.investors if j != i)
+        + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total)
+    return (m.demand_payment - market_cost_at_true_cost - m.balancing_dual_term + m.curtailment_dual_term
             - m.generation_scarcity_rent
             - m.shedding_scarcity_rent - m.transmission_scarcity_rent
-            - sum(m.storage_scarcity_rent[i] + m.storage_dispatch_rent[i]
-                  for i in m.investors if i != m.active_investor)
-            + m.owned_generation_rent[m.active_investor] - m.capex)
+            - sum(m.storage_scarcity_rent[j] + m.storage_dispatch_rent[j]
+                  for j in m.investors if j != i)
+            + m.owned_generation_rent[i] - m.capex)
 
 
 def complementarity_pairs(m):
@@ -326,6 +384,13 @@ def chosen_profile(m):
     power, energy = result[i]["power_mw"], result[i]["energy_mwh"]
     for n in m.nodes:
         energy[n] = min(max(energy[n], pyo.value(m.ratio_min[i]) * power[n]), pyo.value(m.ratio_max[i]) * power[n])
+    if m.component("X_charge_bid") is not None:
+        bids = {n: {str(t): pyo.value(m.X_charge_bid[n, t]) for t in m.timesteps} for n in m.investment_nodes}
+        # Snap the offers to the no-loop bound, which the solver meets only to its tolerance.
+        offers = {n: {str(t): max(pyo.value(m.X_discharge_offer[n, t]), bids[n][str(t)] / pyo.value(m.eta) ** 2)
+                      for t in m.timesteps} for n in m.investment_nodes}
+        result[i]["charge_bid_eur_per_mwh"] = bids
+        result[i]["discharge_offer_eur_per_mwh"] = offers
     return result
 
 

@@ -4,7 +4,12 @@ One shared fixed-demand market supports three independent commands:
 
 - `market`: clear an explicit fixed-capacity profile and verify its dual.
 - `ranges`: find dispatch, SOC, price, and investor-profit ranges at that profile.
-- `mpec`: optimize one investor's MW/MWh against the profile's fixed rivals.
+- `mpec`: optimize one investor's MW/MWh against the profile's fixed rivals
+  (SOS1 complementarity, Gurobi, proven optimum).
+- `mpec_relaxed`: the same MPEC with relaxed complementarity (Ipopt, local).
+
+Both MPECs take `--strategic-bids`: the investor then also chooses hourly
+charge bids and discharge offers at each node (section "Strategic bids").
 
 ## Read the equations
 
@@ -23,6 +28,7 @@ Read the files in this order:
 4. `mpec.py`: the MPEC in named blocks, in this order: investor constraints,
    LLP primal feasibility, LLP stationarity, SOS1 complementarity, physical
    variable bounds, and the investor objective.
+5. `mpec_relaxed.py`: the same blocks, with relaxed products instead of SOS1.
 
 For example, the shared-inverter equation is literally:
 
@@ -68,7 +74,8 @@ method has the same root relaxation; SOS1 proved the optimum fastest (7 s)
 without a multiplier bound. The relaxation stays weak: on four candidate nodes
 the bound does not leave its root value. Pyomo reports the incumbent as both
 bounds for models without integer variables, so the runner reads both from
-Gurobi (`objective_bounds()` in `solve.py`).
+Gurobi (`objective_bounds()` in `solve.py`). The Ipopt relaxed MPEC returned
+on 2026-10-13 as `mpec_relaxed.py`, as a fast local method next to SOS1.
 
 ## Run
 
@@ -237,6 +244,99 @@ four-node MPEC bound. Evidence: `workflow/complementarity_and_degradation_2026-1
 python scripts/diagnostics/storage_dispatch_ranges.py . --profile <capacities.json> --degradation 3 --dispatch-slope 1e-4
 ```
 
+## Relaxed MPEC (`mpec_relaxed`, Ipopt)
+
+`mpec_relaxed.py` builds the MPEC of `mpec.py` from the same blocks but
+replaces each SOS1 set by the Scholtes relaxation `slack * mu <= epsilon`. Ipopt
+solves it for decreasing epsilon (`--epsilons`, default 1 to 1e-6), each step
+warm-started from the previous one. The start is a fixed-capacity market KKT
+point: `--start-power` MW at minimum duration at every investment node
+(default 50), or the investor's capacity and bids in `--start-profile` (for
+example a step-search result). Ipopt has no presolve, so shedding at zero demand
+and plants at zero capacity are written as equalities with one free multiplier.
+
+The result is a local optimum from one start, not a proven best response. As
+epsilon goes to 0 the limit is in general only C-stationary (Scholtes 2001), and
+at a supply step the relaxed objective can exceed the true profit. The runner
+therefore reports `exact_profit_eur_per_day`, the investor's settlement in the
+exactly recleared market at the chosen capacity and bids, next to the relaxed
+objective. `verification_passed` requires every product to be at most the
+final epsilon, constraint violations of at most 1e-6, and
+|market cost - dual value| <= pairs * epsilon. The products are checked
+signed: a negative product is a 1e-8 primal tolerance times a large multiplier.
+
+V6 5-bus case (`ieee5_v6_*.json`), 2026-10-13: eps 1e-4, all buses, rivals at
+zero; exact profit in EUR/day, Ipopt 3.14.20, Gurobi 13.0.3.
+
+| investor | relaxed, 50 MW start | relaxed, step start | Gurobi SOS1 (12 Oct) |
+|---|---|---|---|
+| I1 | 8042.37 (33 s) | 8042.37 (22 s) | 8042.38, proven |
+| I2 | 1264.95 (18 s) | 1264.70 (15 s) | 1264.95, proven |
+| I3 | 53 478.54 (27 s) | 53 478.54 (20 s) | 53 478.55 incumbent, bound 108 213 after 600 s |
+| I4 | 66 194.69 (33 s) | 66 194.71 (17 s) | 66 192.86 exact at the incumbent, bound 68 312 |
+
+The relaxed MPEC reaches the proven merchant optima and the owners' best
+incumbents within a minute. It does not prove them: the owners' Gurobi bounds
+stay loose. Step starts are `scripts/diagnostics/step_candidates.py` outputs.
+
+## Strategic bids (`--strategic-bids`)
+
+Every storage enters the market with an hourly charge bid (price to buy) and
+discharge offer (price to sell) per node, and the ISO's storage cost is
+`offer * discharge - bid * charge`. Truthful bids are `-0.5 d` and `0.5 d`,
+which is the degradation cost, so every earlier result is unchanged. A profile
+can fix bids as `charge_bid_eur_per_mwh` and `discharge_offer_eur_per_mwh`,
+`{node: {"hour": EUR/MWh}}`; missing entries are truthful. The MPEC exports the
+active investor's chosen bids in that format in `capacities.json`, so the
+reclear and later rival profiles use them.
+
+```
+stationarity:  -charge_bid + slope * charge + price - eta * soc_value + mu_power - mu_lower = 0
+               discharge_offer + slope * discharge - price + soc_value / eta + mu_power - mu_lower = 0
+investor:      -VOLL <= bid, offer <= VOLL;   eta^2 * offer >= bid   (no negative-cost same-hour loop)
+profit_linear: market cost with the active storage at its true degradation cost instead of its bids
+```
+
+The bids enter only the stationarity equations, linearly. `profit_linear`
+counts the active investor's storage at its true cost, so the bid margin is
+part of the profit and no bid * quantity product appears (Ruiz and Conejo
+2009). The MPEC therefore keeps its structure, and both `mpec` and
+`mpec_relaxed` accept the flag. `--strategic-bids` needs `--balancing-eps > 0`.
+With LP prices the bid margin depends on a non-unique dispatch, so
+`dual_profit` refuses non-truthful bids.
+
+Bids are not unique. Any bid beyond the price range supports the same dispatch:
+an offer of 6 729 EUR/MWh means "never discharge here". Read the exported bids
+as one supporting set; the dispatch and the recleared prices are the result.
+
+V6, 2026-10-13, settings as above (exact profit, EUR/day):
+
+| investor | capacity only | with bids, relaxed (50 MW / step start) | with bids, Gurobi SOS1 |
+|---|---|---|---|
+| I1 | 8042.38 | 8094.93 / 8094.93 | 8094.93, proven in 1 s |
+| I2 | 1264.95 | 1294.66 / 1294.66 | 1294.66, proven in 1 s |
+| I3 | 53 478.54 | 124 420.44 / 124 554.76 | 124 554.73, proven in 3 s |
+| I4 | 66 194.71 | 75 431.30 / 75 431.30 | 75 431.43, proven in 1 s |
+
+- With bids Gurobi proves every investor within seconds. For the merchants the
+  optimum equals the capacity MPEC's root relaxation (8094.93 and 1294.66 in
+  `workflow/summary_2026-10-12_20-53.md`). The bids free the investor's own
+  storage conditions, the ones that relaxation drops.
+- I3 (80 % of the N2 wind) more than doubles its profit. Its N2 battery charges
+  about 1 MW more per night hour, just enough to absorb the curtailed wind, and
+  its charge bid then sets the night price in the wind pocket: 52 instead of 0.
+  The owned wind earns that price; the storage's own arbitrage loses a little.
+- I2 and I4 report `verification_passed: false` only through the absolute
+  1e-4 EUR thresholds: profit identity and primal-dual gap 5e-4 EUR on an
+  as-bid market cost of about -4e5 EUR.
+
+```powershell
+python model/run.py mpec_relaxed --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I1 --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
+python model/run.py mpec_relaxed --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I3 --balancing-eps 1e-4 --seconds 300 --start-profile model/output/step_starts/ieee5_v6_I3.json --output model/output/<new_dir>
+python model/run.py mpec_relaxed --strategic-bids --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I3 --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
+python model/run.py mpec --strategic-bids --data model/input/ieee5_v6_market_data.json --profile model/input/ieee5_v6_capacities.json --investor I3 --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
+```
+
 ## Outputs and limits
 
 Every command writes `run_config.json`, `input_profile.json`, and `summary.json`.
@@ -270,13 +370,16 @@ duality and complementary-slackness basis, see
 - `prepare_input.py`: input loading/validation, sets, parameters and annualized costs.
 - `primal_llp.py`: named physical variables, explicit market equations and objective.
 - `dual_llp.py`: explicit stationarity, dual objective and fixed-capacity profit.
-- `mpec.py`: capacity investment, SOS1 complementarity, physical bounds, and settlement/strong-duality profit.
+- `mpec.py`: capacity investment and optional strategic bids, SOS1 complementarity, physical bounds, and settlement/strong-duality profit.
+- `mpec_relaxed.py`: the same MPEC with relaxed complementarity, its start point, and the Ipopt epsilon continuation.
 - `solve.py`: Gurobi and Ipopt interfaces and numerical feasibility checks.
 - `solution_space.py`: optimal-face coordinate ranges; unique-price reclear and settlement with balancing.
 - `run.py`: three commands and results export.
 - `../scripts/tests/test_core.py`: analytical cases that check signs, degeneracy, settlement,
   physical storage constraints, the quadratic costs, independent reclearing, and
-  that the settlement profit matches the strong-duality form.
+  that the settlement profit matches the strong-duality form, strategic bids
+  (withholding at a step: 300 capacity-only vs 340 with bids), and that the
+  relaxed MPEC reaches the SOS1 optima (skipped without Ipopt on `PATH`).
 
 ```powershell
 python -m unittest discover -s scripts/tests -v

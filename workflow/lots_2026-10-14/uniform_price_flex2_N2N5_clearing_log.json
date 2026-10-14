@@ -1,0 +1,3529 @@
+[
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 0.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 0.0
+    },
+    "converged": false,
+    "load_mw": {
+      "N1": 1.4002712815615937e-10,
+      "N2": 53.83062158862777,
+      "N3": 1.3964700359577253e-10,
+      "N4": 1.3953841544134424e-10,
+      "N5": 136.52849459112198
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 53543.66809697488,
+        "best_response_net_profit": 116981.33940906372,
+        "gain": 63437.67131208884,
+        "moved": true,
+        "seconds": 16.2,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 70.157
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 64966.34650965651,
+        "best_response_net_profit": 104840.07575101245,
+        "gain": 39873.72924135594,
+        "moved": true,
+        "seconds": 13.0,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 66.373
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 31.3,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 115752.81619038378,
+        "best_response_net_profit": 118316.97917913106,
+        "gain": 2564.162988747281,
+        "moved": true,
+        "seconds": 45.8,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 49.625
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 83091.65088705033,
+        "best_response_net_profit": 100948.49886541153,
+        "gain": 17856.8479783612,
+        "moved": true,
+        "seconds": 28.6,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 86.905
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 48.4,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 119790.71172037681,
+        "best_response_net_profit": 120393.01700078128,
+        "gain": 602.305280404471,
+        "moved": true,
+        "seconds": 56.8,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 39.392
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 91323.27646901897,
+        "best_response_net_profit": 99008.57002596302,
+        "gain": 7685.29355694406,
+        "moved": true,
+        "seconds": 32.0,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 97.138
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 106.5,
+        "power_mw": {}
+      },
+      {
+        "round": 4,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 121729.43512032882,
+        "best_response_net_profit": 121879.40133340016,
+        "gain": 149.96621307134046,
+        "moved": true,
+        "seconds": 29.0,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 39.582
+        }
+      },
+      {
+        "round": 4,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 94498.36763883104,
+        "best_response_net_profit": 98038.80571586569,
+        "gain": 3540.438077034647,
+        "moved": true,
+        "seconds": 24.3,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 96.946
+        }
+      },
+      {
+        "round": 4,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 35.9,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 4.9344504311278685e-11,
+          "N2": 49.99999999747694,
+          "N3": 4.9351312590655345e-11,
+          "N4": 4.935830622659785e-11,
+          "N5": 39.58211644343087
+        },
+        "energy_mwh": {
+          "N1": 1.0330377689278342e-10,
+          "N2": 385.27720023726727,
+          "N3": 1.0331859343953933e-10,
+          "N4": 1.0333390294323004e-10,
+          "N5": 143.1724673844247
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 9.068262384488069e-11,
+          "N2": 3.830621591150833,
+          "N3": 9.02956910051172e-11,
+          "N4": 9.018010921474639e-11,
+          "N5": 96.9463781476911
+        },
+        "energy_mwh": {
+          "N1": 2.2034841107158609e-10,
+          "N2": 7.661243252552191,
+          "N3": 2.196721968863522e-10,
+          "N4": 2.1955490011280923e-10,
+          "N5": 390.23959500114455
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 50.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 50.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 1.9627757754919277e-10,
+      "N2": 53.8306215411018,
+      "N3": 1.9871734600419532e-10,
+      "N4": 1.9979871191780363e-10,
+      "N5": 119.67909935828823
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 118219.41476673732,
+        "best_response_net_profit": 118911.41910218353,
+        "gain": 692.0043354462105,
+        "moved": true,
+        "seconds": 44.0,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 21.15
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 87459.04851873664,
+        "best_response_net_profit": 89022.5183859876,
+        "gain": 1563.4698672509548,
+        "moved": true,
+        "seconds": 21.9,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 49.7,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 119415.656003881,
+        "best_response_net_profit": 119424.78577082524,
+        "gain": 9.129766944242874,
+        "moved": true,
+        "seconds": 45.0,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 19.679
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 87996.8859451662,
+        "best_response_net_profit": 88433.94492629574,
+        "gain": 437.0589811295358,
+        "moved": true,
+        "seconds": 27.6,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 80.3,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 119548.89069348948,
+        "best_response_net_profit": 119549.82943283994,
+        "gain": 0.9387393504584907,
+        "moved": false,
+        "seconds": 30.2,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 19.679
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 88433.94492629574,
+        "best_response_net_profit": 88433.94492629574,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 27.7,
+        "power_mw": {
+          "N2": 3.831,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 80.1,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.164179909840316e-10,
+          "N2": 49.99999999871574,
+          "N3": 1.1854748997132478e-10,
+          "N4": 1.198260624295655e-10,
+          "N5": 19.679099360184516
+        },
+        "energy_mwh": {
+          "N1": 2.865701709099801e-10,
+          "N2": 385.277200269057,
+          "N3": 2.930452502014285e-10,
+          "N4": 2.9695307473793134e-10,
+          "N5": 105.53084042863921
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 7.985958656516118e-11,
+          "N2": 3.830621542386061,
+          "N3": 8.016985603287054e-11,
+          "N4": 7.997264948823814e-11,
+          "N5": 99.9999999981037
+        },
+        "energy_mwh": {
+          "N1": 1.6498995793761603e-10,
+          "N2": 7.661243182329333,
+          "N3": 1.656154764713184e-10,
+          "N4": 1.6521739840674855e-10,
+          "N5": 405.7506347263954
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 100.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 100.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.3494870978862743e-10,
+      "N2": 51.221206268578314,
+      "N3": 2.3290282173261814e-10,
+      "N4": 2.3500793992715995e-10,
+      "N5": 114.04924886153819
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 116064.93572554446,
+        "best_response_net_profit": 116204.65961168402,
+        "gain": 139.7238861395599,
+        "moved": true,
+        "seconds": 31.2,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 15.125
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 79766.64913704435,
+        "best_response_net_profit": 81415.15297416222,
+        "gain": 1648.503837117867,
+        "moved": true,
+        "seconds": 15.1,
+        "power_mw": {
+          "N2": 1.221,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 36.2,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 115872.33947219652,
+        "best_response_net_profit": 115880.94353052054,
+        "gain": 8.604058324024663,
+        "moved": true,
+        "seconds": 25.5,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 14.049
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 80412.38922119651,
+        "best_response_net_profit": 80922.01774884536,
+        "gain": 509.62852764884883,
+        "moved": true,
+        "seconds": 43.8,
+        "power_mw": {
+          "N2": 1.221,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 48.4,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 116054.65369176815,
+        "best_response_net_profit": 116055.60986591387,
+        "gain": 0.9561741457146127,
+        "moved": false,
+        "seconds": 23.3,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 14.049
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 80922.01774884536,
+        "best_response_net_profit": 80922.01774884712,
+        "gain": 1.760781742632389e-09,
+        "moved": false,
+        "seconds": 42.4,
+        "power_mw": {
+          "N2": 1.221,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 48.4,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 8.311940617163125e-11,
+          "N2": 49.99999999857371,
+          "N3": 8.10735393990532e-11,
+          "N4": 8.317867053349229e-11,
+          "N5": 14.049248862437457
+        },
+        "energy_mwh": {
+          "N1": 1.7236019024093065e-10,
+          "N2": 385.27720041627344,
+          "N3": 1.6721388501535622e-10,
+          "N4": 1.7270019871285886e-10,
+          "N5": 78.90058133878148
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.5182930361699616e-10,
+          "N2": 1.2212062700046025,
+          "N3": 1.5182928233356494e-10,
+          "N4": 1.5182926939366768e-10,
+          "N5": 99.99999999910074
+        },
+        "energy_mwh": {
+          "N1": 4.086441275268496e-10,
+          "N2": 5.21883008278085,
+          "N3": 4.086440873842822e-10,
+          "N4": 4.08644062225211e-10,
+          "N5": 421.9398813762481
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 200.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 200.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 3.6401060050131324e-09,
+      "N2": 50.55554286076357,
+      "N3": 4.101057058825312e-09,
+      "N4": 6.391569101548231e-11,
+      "N5": 104.54089193372855
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 109649.72880566704,
+        "best_response_net_profit": 110023.01593351718,
+        "gain": 373.2871278501407,
+        "moved": true,
+        "seconds": 43.6,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 6.961
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 64232.72937883335,
+        "best_response_net_profit": 67071.26427827787,
+        "gain": 2838.534899444523,
+        "moved": true,
+        "seconds": 24.5,
+        "power_mw": {
+          "N2": 0.556,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 28.5,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 110836.93771304715,
+        "best_response_net_profit": 110864.73529085833,
+        "gain": 27.797577811172232,
+        "moved": true,
+        "seconds": 43.8,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 5.027
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 65334.77213480041,
+        "best_response_net_profit": 65985.10522444363,
+        "gain": 650.3330896432162,
+        "moved": true,
+        "seconds": 31.8,
+        "power_mw": {
+          "N2": 0.556,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 70.9,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 111149.25839666078,
+        "best_response_net_profit": 111151.0153860065,
+        "gain": 1.7569893457257422,
+        "moved": true,
+        "seconds": 38.3,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 4.541
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 65552.05705645843,
+        "best_response_net_profit": 65712.04011119067,
+        "gain": 159.98305473223445,
+        "moved": true,
+        "seconds": 34.4,
+        "power_mw": {
+          "N2": 0.556,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 30.7,
+        "power_mw": {}
+      },
+      {
+        "round": 4,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 111223.42915330769,
+        "best_response_net_profit": 111223.5402783373,
+        "gain": 0.11112502960895654,
+        "moved": false,
+        "seconds": 34.5,
+        "power_mw": {
+          "N2": 50.0,
+          "N5": 4.541
+        }
+      },
+      {
+        "round": 4,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 65712.04011119067,
+        "best_response_net_profit": 65712.04011119067,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 33.5,
+        "power_mw": {
+          "N2": 0.556,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 4,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 30.6,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 3.6239654366956763e-09,
+          "N2": 49.99999999899819,
+          "N3": 4.084916465187406e-09,
+          "N4": 4.777509242005769e-11,
+          "N5": 4.540891936331803
+        },
+        "energy_mwh": {
+          "N1": 1.01283383183136e-08,
+          "N2": 385.2772009204799,
+          "N3": 1.1803782857663862e-08,
+          "N4": 1.0594393579178484e-10,
+          "N5": 25.50164907522816
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.6140568317455993e-11,
+          "N2": 0.5555428617653844,
+          "N3": 1.6140593637906058e-11,
+          "N4": 1.6140598595424617e-11,
+          "N5": 99.99999999739674
+        },
+        "energy_mwh": {
+          "N1": 3.278240429003863e-11,
+          "N2": 4.44434287452305,
+          "N3": 3.278245579162358e-11,
+          "N4": 3.2782465883855206e-11,
+          "N5": 450.62989132780046
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 400.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 400.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 5.179754762267972e-09,
+      "N2": 49.03381816254934,
+      "N3": 14.340023827551846,
+      "N4": 5.179758029215809e-09,
+      "N5": 2.01446660788827e-09
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 100315.25076624169,
+        "best_response_net_profit": 101079.1047271873,
+        "gain": 763.8539609456056,
+        "moved": true,
+        "seconds": 50.7,
+        "power_mw": {
+          "N2": 49.574
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 41505.34471051248,
+        "best_response_net_profit": 47132.54224888091,
+        "gain": 5627.197538368433,
+        "moved": true,
+        "seconds": 92.8,
+        "power_mw": {
+          "N2": 0.556
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 57.5,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 90740.44790211567,
+        "best_response_net_profit": 90942.03084669559,
+        "gain": 201.58294457991724,
+        "moved": true,
+        "seconds": 94.6,
+        "power_mw": {
+          "N2": 48.478,
+          "N3": 14.34
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 47384.25692541822,
+        "best_response_net_profit": 47384.25698781389,
+        "gain": 6.239566573640332e-05,
+        "moved": false,
+        "seconds": 41.8,
+        "power_mw": {
+          "N2": 0.556
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 37.1,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 90942.03084669559,
+        "best_response_net_profit": 90942.03084667814,
+        "gain": -1.7447746358811855e-08,
+        "moved": false,
+        "seconds": 92.6,
+        "power_mw": {
+          "N2": 48.478,
+          "N3": 14.34
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 47384.25692541822,
+        "best_response_net_profit": 47384.25698781389,
+        "gain": 6.239566573640332e-05,
+        "moved": false,
+        "seconds": 41.7,
+        "power_mw": {
+          "N2": 0.556
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 37.1,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 8.980579723712327e-11,
+          "N2": 48.47827540151019,
+          "N3": 14.340023822461896,
+          "N4": 8.980906419539016e-11,
+          "N5": 1.0856349663651798e-10
+        },
+        "energy_mwh": {
+          "N1": 2.754768467120274e-10,
+          "N2": 386.2859460167231,
+          "N3": 35.74469537847325,
+          "N4": 2.756635398084063e-10,
+          "N5": 3.7004503625645063e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.089948965030849e-09,
+          "N2": 0.5555427610391488,
+          "N3": 5.08994896501514e-09,
+          "N4": 5.0899489650204186e-09,
+          "N5": 1.905903111251752e-09
+        },
+        "energy_mwh": {
+          "N1": 1.7514478330738544e-08,
+          "N2": 4.444342082321157,
+          "N3": 1.7514478330707524e-08,
+          "N4": 1.7514478330720915e-08,
+          "N5": 9.09531515305828e-09
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 300.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 300.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 1.50211519616295e-10,
+      "N2": 50.542213590131645,
+      "N3": 12.39012300247292,
+      "N4": 1.5023517184412523e-10,
+      "N5": 43.336674564228915
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 95789.85838685746,
+        "best_response_net_profit": 95900.04139783277,
+        "gain": 110.18301097530639,
+        "moved": true,
+        "seconds": 53.6,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 12.862
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 47550.12089772558,
+        "best_response_net_profit": 52395.26376030805,
+        "gain": 4845.14286258247,
+        "moved": true,
+        "seconds": 33.4,
+        "power_mw": {
+          "N2": 0.542,
+          "N5": 43.337
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 42.9,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 100028.17941915813,
+        "best_response_net_profit": 100072.327364855,
+        "gain": 44.14794569686637,
+        "moved": true,
+        "seconds": 44.8,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 12.39
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 52392.661936369215,
+        "best_response_net_profit": 52392.66197396173,
+        "gain": 3.7592515582218766e-05,
+        "moved": false,
+        "seconds": 45.0,
+        "power_mw": {
+          "N2": 0.542,
+          "N5": 43.337
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 47.4,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 100072.327364855,
+        "best_response_net_profit": 100072.32737857917,
+        "gain": 1.3724173186346889e-05,
+        "moved": false,
+        "seconds": 44.5,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 12.39
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 52392.661936369215,
+        "best_response_net_profit": 52392.66197396173,
+        "gain": 3.7592515582218766e-05,
+        "moved": false,
+        "seconds": 45.2,
+        "power_mw": {
+          "N2": 0.542,
+          "N5": 43.337
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 47.5,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 7.437892619275947e-11,
+          "N2": 49.999999991214644,
+          "N3": 12.390123002397065,
+          "N4": 7.43801822625924e-11,
+          "N5": 6.454336152634302e-11
+        },
+        "energy_mwh": {
+          "N1": 2.1666235206417926e-10,
+          "N2": 387.3239882116676,
+          "N3": 25.149712184777837,
+          "N4": 2.1667210306519814e-10,
+          "N5": 1.4143465216497271e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 7.583259342353554e-11,
+          "N2": 0.5422135989170046,
+          "N3": 7.585637220912144e-11,
+          "N4": 7.585498958153284e-11,
+          "N5": 43.33667456416437
+        },
+        "energy_mwh": {
+          "N1": 1.5949110063883055e-10,
+          "N2": 4.33770878245644,
+          "N3": 1.5953937378490428e-10,
+          "N4": 1.59536588010684e-10,
+          "N5": 243.37876431466185
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 350.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 250.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 3.1182045431325685e-10,
+      "N2": 50.518080544957726,
+      "N3": 11.13675140975368,
+      "N4": 3.113730366327919e-10,
+      "N5": 45.12129819491732
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 97572.32736529749,
+        "best_response_net_profit": 97572.72490598694,
+        "gain": 0.39754068944603205,
+        "moved": false,
+        "seconds": 64.0,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 12.39
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 54532.384984631586,
+        "best_response_net_profit": 54538.23618960544,
+        "gain": 5.851204973856511,
+        "moved": true,
+        "seconds": 46.7,
+        "power_mw": {
+          "N2": 0.518,
+          "N5": 45.121
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 50.0,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 97595.7155103562,
+        "best_response_net_profit": 97675.25275010036,
+        "gain": 79.53723974416789,
+        "moved": true,
+        "seconds": 50.1,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 11.137
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 54531.4737216133,
+        "best_response_net_profit": 54531.474220297525,
+        "gain": 0.0004986842250218615,
+        "moved": false,
+        "seconds": 35.7,
+        "power_mw": {
+          "N2": 0.518,
+          "N5": 45.121
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 73.8,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 97675.25275010036,
+        "best_response_net_profit": 97675.25282269901,
+        "gain": 7.259864651132375e-05,
+        "moved": false,
+        "seconds": 60.3,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 11.137
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 54531.4737216133,
+        "best_response_net_profit": 54531.474220297525,
+        "gain": 0.0004986842250218615,
+        "moved": false,
+        "seconds": 41.4,
+        "power_mw": {
+          "N2": 0.518,
+          "N5": 45.121
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 61.4,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.318326502259405e-10,
+          "N2": 49.999999989648,
+          "N3": 11.136751409574387,
+          "N4": 1.3183341839016648e-10,
+          "N5": 1.3542588892022057e-10
+        },
+        "energy_mwh": {
+          "N1": 2.735803592754668e-10,
+          "N2": 387.26530065888244,
+          "N3": 22.273502896801862,
+          "N4": 2.735812260345696e-10,
+          "N5": 2.794526874014698e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.7998780408731635e-10,
+          "N2": 0.5180805553097224,
+          "N3": 1.792927317080545e-10,
+          "N4": 1.7953961824262537e-10,
+          "N5": 45.1212981947819
+        },
+        "energy_mwh": {
+          "N1": 6.058940086141949e-10,
+          "N2": 4.144644435390654,
+          "N3": 6.046725910230761e-10,
+          "N4": 6.050835617848777e-10,
+          "N5": 251.71531605338583
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 375.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 225.0
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 5.502367505429003e-09,
+      "N2": 50.26470837706738,
+      "N3": 5.5020916080011754e-09,
+      "N4": 5.5020174360355915e-09,
+      "N5": 100.00000000169406
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 96425.25275036255,
+        "best_response_net_profit": 96425.25275004058,
+        "gain": -3.219611244276166e-07,
+        "moved": false,
+        "seconds": 62.8,
+        "power_mw": {
+          "N2": 50.0,
+          "N3": 11.137
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 55646.55416260011,
+        "best_response_net_profit": 60717.46072968791,
+        "gain": 5070.906567087804,
+        "moved": true,
+        "seconds": 49.1,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 87.8,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 102026.6771888041,
+        "best_response_net_profit": 102881.61411700684,
+        "gain": 854.9369282027474,
+        "moved": true,
+        "seconds": 54.9,
+        "power_mw": {
+          "N2": 50.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 60717.46075605968,
+        "best_response_net_profit": 60717.46076500772,
+        "gain": 8.948045433498919e-06,
+        "moved": false,
+        "seconds": 29.7,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 68.9,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 102881.61411700684,
+        "best_response_net_profit": 102881.61411700686,
+        "gain": 1.4551915228366852e-11,
+        "moved": false,
+        "seconds": 69.5,
+        "power_mw": {
+          "N2": 50.0
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 60717.46075605968,
+        "best_response_net_profit": 60717.46076500772,
+        "gain": 8.948045433498919e-06,
+        "moved": false,
+        "seconds": 29.6,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 68.8,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.444588793862497e-09,
+          "N2": 49.9999999427509,
+          "N3": 5.4445887938434855e-09,
+          "N4": 5.444588777915317e-09,
+          "N5": 2.7142626201825676e-09
+        },
+        "energy_mwh": {
+          "N1": 1.8386192391529963e-08,
+          "N2": 387.2653011214667,
+          "N3": 1.8386192391490944e-08,
+          "N4": 1.8386192355367195e-08,
+          "N5": 1.1896080597138174e-08
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.777871156650609e-11,
+          "N2": 0.26470843431648483,
+          "N3": 5.75028141576897e-11,
+          "N4": 5.7428658120273964e-11,
+          "N5": 99.9999999989798
+        },
+        "energy_mwh": {
+          "N1": 1.5658955159682113e-10,
+          "N2": 2.1176674721448205,
+          "N3": 1.548573701775774e-10,
+          "N4": 1.5439699683025248e-10,
+          "N5": 463.50804565414165
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 387.5,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 212.5
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 5.502367505429003e-09,
+      "N2": 50.26470837706738,
+      "N3": 5.5020916080011754e-09,
+      "N4": 5.5020174360355915e-09,
+      "N5": 100.00000000169406
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 102256.61411775638,
+        "best_response_net_profit": 102256.6141169658,
+        "gain": -7.905910024419427e-07,
+        "moved": false,
+        "seconds": 53.7,
+        "power_mw": {
+          "N2": 50.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 61964.15190061797,
+        "best_response_net_profit": 61964.15191088594,
+        "gain": 1.026796962833032e-05,
+        "moved": false,
+        "seconds": 45.1,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 47.0,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.444588793862497e-09,
+          "N2": 49.9999999427509,
+          "N3": 5.4445887938434855e-09,
+          "N4": 5.444588777915317e-09,
+          "N5": 2.7142626201825676e-09
+        },
+        "energy_mwh": {
+          "N1": 1.8386192391529963e-08,
+          "N2": 387.2653011214667,
+          "N3": 1.8386192391490944e-08,
+          "N4": 1.8386192355367195e-08,
+          "N5": 1.1896080597138174e-08
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.777871156650609e-11,
+          "N2": 0.26470843431648483,
+          "N3": 5.75028141576897e-11,
+          "N4": 5.7428658120273964e-11,
+          "N5": 99.9999999989798
+        },
+        "energy_mwh": {
+          "N1": 1.5658955159682113e-10,
+          "N2": 2.1176674721448205,
+          "N3": 1.548573701775774e-10,
+          "N4": 1.5439699683025248e-10,
+          "N5": 463.50804565414165
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 393.75,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 206.25
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 5.502367505429003e-09,
+      "N2": 50.26470837706738,
+      "N3": 5.5020916080011754e-09,
+      "N4": 5.5020174360355915e-09,
+      "N5": 100.00000000169406
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 101944.11411813115,
+        "best_response_net_profit": 101944.11411694682,
+        "gain": -1.184336724691093e-06,
+        "moved": false,
+        "seconds": 45.2,
+        "power_mw": {
+          "N2": 50.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62587.497472897114,
+        "best_response_net_profit": 62587.497481564584,
+        "gain": 8.667469955980778e-06,
+        "moved": false,
+        "seconds": 44.9,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 53.3,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.444588793862497e-09,
+          "N2": 49.9999999427509,
+          "N3": 5.4445887938434855e-09,
+          "N4": 5.444588777915317e-09,
+          "N5": 2.7142626201825676e-09
+        },
+        "energy_mwh": {
+          "N1": 1.8386192391529963e-08,
+          "N2": 387.2653011214667,
+          "N3": 1.8386192391490944e-08,
+          "N4": 1.8386192355367195e-08,
+          "N5": 1.1896080597138174e-08
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.777871156650609e-11,
+          "N2": 0.26470843431648483,
+          "N3": 5.75028141576897e-11,
+          "N4": 5.7428658120273964e-11,
+          "N5": 99.9999999989798
+        },
+        "energy_mwh": {
+          "N1": 1.5658955159682113e-10,
+          "N2": 2.1176674721448205,
+          "N3": 1.548573701775774e-10,
+          "N4": 1.5439699683025248e-10,
+          "N5": 463.50804565414165
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 396.875,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 5.502367505429003e-09,
+      "N2": 50.26470837706738,
+      "N3": 5.5020916080011754e-09,
+      "N4": 5.5020174360355915e-09,
+      "N5": 100.00000000169406
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 101787.86411831854,
+        "best_response_net_profit": 101787.86411693791,
+        "gain": -1.3806275092065334e-06,
+        "moved": false,
+        "seconds": 60.2,
+        "power_mw": {
+          "N2": 50.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62899.17025903669,
+        "best_response_net_profit": 62899.17027046051,
+        "gain": 1.1423820978961885e-05,
+        "moved": false,
+        "seconds": 44.3,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 39.7,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.444588793862497e-09,
+          "N2": 49.9999999427509,
+          "N3": 5.4445887938434855e-09,
+          "N4": 5.444588777915317e-09,
+          "N5": 2.7142626201825676e-09
+        },
+        "energy_mwh": {
+          "N1": 1.8386192391529963e-08,
+          "N2": 387.2653011214667,
+          "N3": 1.8386192391490944e-08,
+          "N4": 1.8386192355367195e-08,
+          "N5": 1.1896080597138174e-08
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.777871156650609e-11,
+          "N2": 0.26470843431648483,
+          "N3": 5.75028141576897e-11,
+          "N4": 5.7428658120273964e-11,
+          "N5": 99.9999999989798
+        },
+        "energy_mwh": {
+          "N1": 1.5658955159682113e-10,
+          "N2": 2.1176674721448205,
+          "N3": 1.548573701775774e-10,
+          "N4": 1.5439699683025248e-10,
+          "N5": 463.50804565414165
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 400.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 5.502367505429003e-09,
+      "N2": 50.26470837706738,
+      "N3": 5.5020916080011754e-09,
+      "N4": 5.5020174360355915e-09,
+      "N5": 100.00000000169406
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 101631.61411849744,
+        "best_response_net_profit": 101631.8907296553,
+        "gain": 0.2766111578530399,
+        "moved": false,
+        "seconds": 54.8,
+        "power_mw": {
+          "N2": 50.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62898.343045179456,
+        "best_response_net_profit": 62898.34305469701,
+        "gain": 9.517556463833898e-06,
+        "moved": false,
+        "seconds": 36.6,
+        "power_mw": {
+          "N2": 0.265,
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 29.8,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.444588793862497e-09,
+          "N2": 49.9999999427509,
+          "N3": 5.4445887938434855e-09,
+          "N4": 5.444588777915317e-09,
+          "N5": 2.7142626201825676e-09
+        },
+        "energy_mwh": {
+          "N1": 1.8386192391529963e-08,
+          "N2": 387.2653011214667,
+          "N3": 1.8386192391490944e-08,
+          "N4": 1.8386192355367195e-08,
+          "N5": 1.1896080597138174e-08
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 5.777871156650609e-11,
+          "N2": 0.26470843431648483,
+          "N3": 5.75028141576897e-11,
+          "N4": 5.7428658120273964e-11,
+          "N5": 99.9999999989798
+        },
+        "energy_mwh": {
+          "N1": 1.5658955159682113e-10,
+          "N2": 2.1176674721448205,
+          "N3": 1.548573701775774e-10,
+          "N4": 1.5439699683025248e-10,
+          "N5": 463.50804565414165
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 800.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 81631.61414139708,
+        "best_response_net_profit": 82220.22018503046,
+        "gain": 588.6060436333792,
+        "moved": true,
+        "seconds": 42.4,
+        "power_mw": {
+          "N2": 48.517
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62582.539703598435,
+        "best_response_net_profit": 62629.68043632864,
+        "gain": 47.140732730207674,
+        "moved": true,
+        "seconds": 28.5,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 33.1,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 81493.1719220666,
+        "best_response_net_profit": 81933.22166474302,
+        "gain": 440.04974267641956,
+        "moved": true,
+        "seconds": 58.5,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.467769482166,
+        "best_response_net_profit": 62869.46777059832,
+        "gain": 1.11615372588858e-06,
+        "moved": false,
+        "seconds": 24.1,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 122.8,
+        "power_mw": {}
+      },
+      {
+        "round": 3,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 81933.22166474302,
+        "best_response_net_profit": 81933.22166474303,
+        "gain": 1.4551915228366852e-11,
+        "moved": false,
+        "seconds": 58.5,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.467769482166,
+        "best_response_net_profit": 62869.46777059832,
+        "gain": 1.11615372588858e-06,
+        "moved": false,
+        "seconds": 24.0,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 3,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 123.1,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 600.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 91689.46173461305,
+        "best_response_net_profit": 91689.46173540618,
+        "gain": 7.931230356916785e-07,
+        "moved": false,
+        "seconds": 51.3,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.46776959614,
+        "best_response_net_profit": 62869.46776813965,
+        "gain": -1.456493919249624e-06,
+        "moved": false,
+        "seconds": 42.0,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 131.4,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 500.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 96567.58176954808,
+        "best_response_net_profit": 96567.58177226655,
+        "gain": 2.7184723876416683e-06,
+        "moved": false,
+        "seconds": 44.4,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.46776965313,
+        "best_response_net_profit": 62869.46776570332,
+        "gain": -3.949811798520386e-06,
+        "moved": false,
+        "seconds": 32.3,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 28.7,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 450.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 99006.6417870156,
+        "best_response_net_profit": 99006.64179238201,
+        "gain": 5.3664116421714425e-06,
+        "moved": false,
+        "seconds": 41.4,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.46776968162,
+        "best_response_net_profit": 62869.467769638504,
+        "gain": -4.311732482165098e-08,
+        "moved": false,
+        "seconds": 31.7,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 104.0,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 425.0,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 100226.17179574935,
+        "best_response_net_profit": 100226.17180534544,
+        "gain": 9.59608587436378e-06,
+        "moved": false,
+        "seconds": 43.8,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.46776969587,
+        "best_response_net_profit": 62869.46776815812,
+        "gain": -1.5377445379272103e-06,
+        "moved": false,
+        "seconds": 25.3,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 35.7,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 412.5,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 100835.93680011622,
+        "best_response_net_profit": 100835.93625371858,
+        "gain": -0.0005463976413011551,
+        "moved": false,
+        "seconds": 46.3,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.467769702984,
+        "best_response_net_profit": 62869.46776954709,
+        "gain": -1.5589466784149408e-07,
+        "moved": false,
+        "seconds": 24.8,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 32.4,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 406.25,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.170167930372545e-09,
+      "N2": 48.78120034992009,
+      "N3": 2.170168376949499e-09,
+      "N4": 2.1701685637574145e-09,
+      "N5": 99.99999999921847
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 101140.81930229967,
+        "best_response_net_profit": 101140.9309741613,
+        "gain": 0.11167186162492726,
+        "moved": false,
+        "seconds": 50.4,
+        "power_mw": {
+          "N2": 48.781
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62869.46776970655,
+        "best_response_net_profit": 62869.46777060086,
+        "gain": 8.943097782321274e-07,
+        "moved": false,
+        "seconds": 29.4,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 52.5,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 1.2423830807334218e-10,
+          "N2": 48.78120034935022,
+          "N3": 1.2423875971367969e-10,
+          "N4": 1.2423894652286464e-10,
+          "N5": 9.449604764279945e-11
+        },
+        "energy_mwh": {
+          "N1": 3.9079837693066833e-10,
+          "N2": 387.6565120649114,
+          "N3": 3.90803331333538e-10,
+          "N4": 3.908054031625034e-10,
+          "N5": 2.0825091188361617e-10
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  },
+  {
+    "prices": {
+      "N1": 0.0,
+      "N2": 403.125,
+      "N3": 0.0,
+      "N4": 0.0,
+      "N5": 203.125
+    },
+    "converged": true,
+    "load_mw": {
+      "N1": 2.0817024917063897e-09,
+      "N2": 49.40553327602924,
+      "N3": 2.081701532998302e-09,
+      "N4": 2.0817010796787307e-09,
+      "N5": 99.99999999916024
+    },
+    "history": [
+      {
+        "round": 1,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 101293.26055339139,
+        "best_response_net_profit": 101294.6266104573,
+        "gain": 1.3660570659121731,
+        "moved": true,
+        "seconds": 48.5,
+        "power_mw": {
+          "N2": 49.406
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62958.39245600554,
+        "best_response_net_profit": 62958.392456882124,
+        "gain": 8.765855454839766e-07,
+        "moved": false,
+        "seconds": 21.7,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 1,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 29.9,
+        "power_mw": {}
+      },
+      {
+        "round": 2,
+        "investor": "I3",
+        "status": "local",
+        "current_net_profit": 101294.6266104573,
+        "best_response_net_profit": 101294.62661044604,
+        "gain": -1.1263182386755943e-08,
+        "moved": false,
+        "seconds": 50.6,
+        "power_mw": {
+          "N2": 49.406
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I4",
+        "status": "local",
+        "current_net_profit": 62958.39245600554,
+        "best_response_net_profit": 62958.392456882124,
+        "gain": 8.765855454839766e-07,
+        "moved": false,
+        "seconds": 21.7,
+        "power_mw": {
+          "N5": 100.0
+        }
+      },
+      {
+        "round": 2,
+        "investor": "I1",
+        "status": "local",
+        "current_net_profit": 0.0,
+        "best_response_net_profit": 0.0,
+        "gain": 0.0,
+        "moved": false,
+        "seconds": 29.9,
+        "power_mw": {}
+      }
+    ],
+    "profile": {
+      "I1": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {},
+        "energy_mwh": {},
+        "owned_generation_shares": {},
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I3": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 3.5772869407187e-11,
+          "N2": 49.40553327545937,
+          "N3": 3.5771915762483e-11,
+          "N4": 3.577146244418082e-11,
+          "N5": 3.626467162405566e-11
+        },
+        "energy_mwh": {
+          "N1": 7.1545738814374e-11,
+          "N2": 388.3830372539228,
+          "N3": 7.1543831524966e-11,
+          "N4": 7.154292488836164e-11,
+          "N5": 7.252934324811132e-11
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.8,
+          "RES_PV_N5": 0.2
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      },
+      "I4": {
+        "wacc": 0.08,
+        "lifetime_years": 15,
+        "cost_power_eur_per_mw": 1.0,
+        "cost_energy_eur_per_mwh": 120000.0,
+        "degradation_eur_per_mwh": 3.0,
+        "ratio_min": 2.0,
+        "ratio_max": 8.0,
+        "power_mw": {
+          "N1": 2.045929622299203e-09,
+          "N2": 5.698666916923932e-10,
+          "N3": 2.0459296172358194e-09,
+          "N4": 2.04592961723455e-09,
+          "N5": 99.99999999912397
+        },
+        "energy_mwh": {
+          "N1": 6.804599614011047e-09,
+          "N2": 2.8708056757350875e-09,
+          "N3": 6.804599610061174e-09,
+          "N4": 6.804599610130398e-09,
+          "N5": 463.5080456579908
+        },
+        "owned_generation_shares": {
+          "RES_Wind_N2": 0.2,
+          "RES_PV_N5": 0.8
+        },
+        "curtailment_slope_eur_per_mwh_per_mw": {
+          "RES_Wind_N2": 0.1,
+          "RES_PV_N5": 0.1
+        },
+        "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+      }
+    }
+  }
+]

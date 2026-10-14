@@ -1,0 +1,61 @@
+{
+  "cleared": true,
+  "scarce_nodes": [
+    "N2",
+    "N5"
+  ],
+  "hosting_mw": {
+    "N2": 50.0,
+    "N5": 100.0
+  },
+  "prices": {
+    "N1": 0.0,
+    "N2": 403.125,
+    "N3": 0.0,
+    "N4": 0.0,
+    "N5": 203.125
+  },
+  "price_bracket": {
+    "N2": [
+      400.0,
+      403.125
+    ],
+    "N5": [
+      200.0,
+      203.125
+    ]
+  },
+  "load_mw": {
+    "N2": 49.40553327602924,
+    "N5": 99.99999999916024
+  },
+  "unused_mw": {
+    "N2": 0.5944667239707613,
+    "N5": 8.39762037685432e-10
+  },
+  "inner_converged": true,
+  "profits": {
+    "I1": {
+      "market_profit": 0.0,
+      "capacity_payment": 0.0
+    },
+    "I3": {
+      "market_profit": 121211.23221213423,
+      "capacity_payment": 19916.605601676925
+    },
+    "I4": {
+      "market_profit": 83270.89245605732,
+      "capacity_payment": 20312.500000051783
+    }
+  },
+  "investors": [
+    "I3",
+    "I4",
+    "I1"
+  ],
+  "strategic_bids": false,
+  "best_response": "relaxed capacity MPEC, Ipopt (local), and building nothing",
+  "evaluation_count": 20,
+  "interpretation": "Uniform hosting-capacity price per node (variational equilibrium of the shared node limits), found by bisection on every node's price at once with Gauss-Seidel best responses. inner_converged: a full round without profitable deviation found at the final prices (capacity only: by a local method). cleared false: no prices within the evaluation limit. unused_mw > 0 at a narrow bracket means demand jumps across the limit (no clearing price). One start and order; not proven unique.",
+  "verification_passed": true
+}

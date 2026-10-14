@@ -218,13 +218,13 @@ def main(argv=None):
                             f"own right. {gauss_seidel} Not proven unique." if allocation else
                             f"First come, first served: rivals' MW reduce each investor's headroom. {gauss_seidel} "
                             "Depends on the order; not proven unique." if args.first_come else
-                            "Uniform hosting-capacity price (variational equilibrium of the shared node limit), "
-                            "found by bisection on the price with Gauss-Seidel bid-MPEC best responses. "
-                            "inner_converged: a full round without profitable deviation found at the final price "
-                            "(capacity only: by a local method). "
-                            "unused_mw > 0 at a narrow bracket means demand jumps across the limit (no clearing "
-                            "price). One start and order; not proven unique."))
-        summary["verification_passed"] = summary["inner_converged"]
+                            "Uniform hosting-capacity price per node (variational equilibrium of the shared node "
+                            "limits), found by bisection on every node's price at once with Gauss-Seidel best "
+                            "responses. inner_converged: a full round without profitable deviation found at the "
+                            "final prices (capacity only: by a local method). cleared false: no prices within the "
+                            "evaluation limit. unused_mw > 0 at a narrow bracket means demand jumps across the "
+                            "limit (no clearing price). One start and order; not proven unique."))
+        summary["verification_passed"] = summary["inner_converged"] and summary.get("cleared", True)
     elif args.command == "verify":
         if args.balancing_eps <= 0:
             parser.error("verify compares exact profits: it needs --balancing-eps > 0 (unique prices).")

@@ -115,9 +115,12 @@ The existing Overleaf documents are historical and have not yet been rewritten.
   storage for surplus RES.
 
 - Scarce hosting capacity (`run.py clearing`, since 2026-10-14) is shared by
-  first come, first served (status quo), a uniform price per MW (variational
-  equilibrium; no clearing price exists at N5 = 100 MW because owners' demand
-  jumps, so rationing is still to be added), or allocated hosting rights
+  first come, first served (status quo), a uniform price per MW and node
+  (variational equilibrium, all node prices searched together; at the current
+  flexible demand no price clears N5 = 100 MW because owners' demand jumps; with
+  the flexible demand doubled, prices clear N5 at about 203 and N2 = 50 MW at
+  about 403 EUR/MW/day, far above the planner's shadow prices of 9.3 and 0.6,
+  see `workflow/summary_2026-10-14_22-26.md`), or allocated hosting rights
   (`--allocation`, lots of an auction). The planner with the limit is the
   benchmark. The quadratic access cost and the soft-linked auction were
   removed the same day (commit b0b74b8). With truthful dispatch the pocket

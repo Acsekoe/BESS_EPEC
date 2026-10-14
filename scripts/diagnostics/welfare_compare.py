@@ -28,6 +28,7 @@ parser.add_argument("--profiles", nargs="*", default=[], metavar="LABEL=PATH")
 parser.add_argument("--hosting", nargs="*", default=[], metavar="NODE=MW")
 parser.add_argument("--planner-costs", default="I1")
 parser.add_argument("--balancing-eps", type=float, default=1e-4)
+parser.add_argument("--flexible-demand-scale", type=float, default=1.0)
 parser.add_argument("--output", type=Path)
 args = parser.parse_args()
 
@@ -35,12 +36,13 @@ sys.path.insert(0, str(args.root / "model"))
 import pyomo.environ as pyo  # noqa: E402
 from capacity_clearing import exact_profits  # noqa: E402
 from mpec import add_investment, chosen_profile  # noqa: E402
-from prepare_input import load_case, prepare_input  # noqa: E402
+from prepare_input import load_case, prepare_input, scale_flexible_demand  # noqa: E402
 from primal_llp import add_primal  # noqa: E402
 from solution_space import unique_price_reclear  # noqa: E402
 from solve import require_optimal  # noqa: E402
 
 data, base = load_case(args.root / args.data, args.root / args.profile)
+data = scale_flexible_demand(data, args.flexible_demand_scale)
 hosting = {k: float(v) for k, v in (item.split("=") for item in args.hosting)}
 limits = {n: hosting.get(n, 1000.0) for n in data["nodes"]}
 

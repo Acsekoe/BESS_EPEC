@@ -622,10 +622,15 @@ include the owners' price uplift, which they also get when a rival fills the
 node).
 
 `capacity_clearing.py`: at fixed prices, Gauss-Seidel best responses until a
-full round has no move worth more than `--gain-tolerance` in exact profit;
-bisection on the price of the one node that is over-full at zero prices. If the
-node's demand jumps across H_n (lumpy investment), the bracket narrows while MW
-stay unused at the upper price: then no uniform price clears the node.
+full round has no move worth more than `--gain-tolerance` in exact profit.
+Every node has its own price (since 2026-10-14; e.g. `--hosting N2=50 N5=100`),
+all searched together: an over-full node's price doubles until it fits, then
+bisects; a node that fits at a positive price bisects downwards; a bracket that
+the other nodes' prices have invalidated is reopened. Nodes whose limit never
+binds keep price 0. If a node's demand jumps across H_n (lumpy investment),
+its bracket narrows while MW stay unused at the upper price: then no uniform
+price clears it. `cleared` is false if no prices are found within 40
+evaluations. Checked by `test_uniform_price_reports_a_demand_jump`.
 
 - Capacity only (default, truthful bids): relaxed MPEC from the investor's
   current capacity and from 50 MW, plus building nothing. Local: "converged"

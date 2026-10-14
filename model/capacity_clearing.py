@@ -10,7 +10,7 @@ With one price for all investors this is the variational equilibrium of the
 shared constraint (one common multiplier; Rosen 1965, Harker 1991). The energy
 market is unchanged; p_n enters each investor's MPEC as a linear fee.
 
-Algorithm (one scarce node):
+Algorithm (prices at all nodes at once):
     inner: at fixed prices, Gauss-Seidel best responses. Capacity only (truthful
            bids): relaxed MPEC (Ipopt) from the investor's current capacity and
            from start_power, plus building nothing; local, so a round without
@@ -18,10 +18,12 @@ Algorithm (one scarce node):
            strategic bids: the bid MPEC (solve_mpec, Gurobi), proven. An
            investor moves only if the best candidate beats its current exact
            profit (unique-price reclear) by more than gain_tolerance.
-    outer: bisection on p_n between a price where the node is over-full and
-           one where it is not, each step warm-started from the last one.
+    outer: per node, bisection on p_n between a price where the node is
+           over-full and one where it is not; all nodes move together, each
+           step warm-started from the last one (clear_capacity). Nodes whose
+           limit never binds keep p_n = 0.
 
-If the node's demand jumps across H_n (lumpy investment), the bracket shrinks
+If a node's demand jumps across H_n (lumpy investment), its bracket shrinks
 while the node stays partly empty at the upper price: no uniform price clears
 it. The result can depend on the start and the order; it is not unique by proof.
 
@@ -203,52 +205,58 @@ def verify_equilibrium(data, profile, *, balancing_eps, node_limit=1000.0, price
 
 
 def clear_capacity(data, profile, hosting, *, order, balancing_eps, node_limit=1000.0, strategic_bids=True,
-                   price_start=50.0, price_max=5000.0, price_tolerance=0.5, rounds=6, seconds=120,
-                   gain_tolerance=1.0, log=print):
-    """hosting {node: MW} overrides node_limit at the scarce nodes. Bisection on the
-    price of the one node that is over-full at zero prices."""
-    limits = {n: hosting.get(n, node_limit) for n in data["nodes"]}
+                   price_start=50.0, price_max=5000.0, price_tolerance=0.5, max_evaluations=40, rounds=6,
+                   seconds=120, gain_tolerance=1.0, log=print):
+    """hosting {node: MW} overrides node_limit. One price per node, all searched
+    together; each evaluation is an inner equilibrium at the current prices.
+
+    Per node n, low[n] is the highest price known to leave n over-full and
+    high[n] the lowest known to fit it (None: none yet). An over-full node's
+    price doubles from price_start until a bracket exists, then bisects; a node
+    that fits at a positive price bisects downwards. Prices at the other nodes
+    shift a node's demand, so a bracket that no longer holds is reopened. Done
+    when every node fits and every positive price is within price_tolerance of
+    its low[n]; with one scarce node this is the plain bisection."""
+    nodes = data["nodes"]
+    limits = {n: hosting.get(n, node_limit) for n in nodes}
+    prices = {n: 0.0 for n in nodes}
+    low, high = {n: 0.0 for n in nodes}, {n: None for n in nodes}
     evaluations = []
-
-    def evaluate(prices, start_profile):
-        log(f"  prices {prices}")
-        result, converged, history = inner_equilibrium(
-            data, start_profile, limits, prices, order=order, balancing_eps=balancing_eps,
+    current = profile
+    for _ in range(max_evaluations):
+        log(f"  prices {({n: p for n, p in prices.items() if p > 0})}")
+        current, converged, history = inner_equilibrium(
+            data, current, limits, prices, order=order, balancing_eps=balancing_eps,
             strategic_bids=strategic_bids, rounds=rounds, seconds=seconds, gain_tolerance=gain_tolerance, log=log)
-        loads = {n: node_load(result, n) for n in data["nodes"]}
-        evaluations.append(dict(prices=dict(prices), converged=converged, load_mw=loads, history=history, profile=result))
+        loads = {n: node_load(current, n) for n in nodes}
+        evaluations.append(dict(prices=dict(prices), converged=converged, load_mw=loads, history=history,
+                                profile=current))
         log(f"  -> converged {converged}, load {({n: round(v, 2) for n, v in loads.items() if v > 1e-6})}")
-        return result, converged, loads
-
-    prices = {n: 0.0 for n in data["nodes"]}
-    current, converged, loads = evaluate(prices, profile)
-    scarce = [n for n in data["nodes"] if loads[n] > limits[n] + 1e-6]
-    if not scarce:
-        return dict(scarce_node=None, prices=prices, profile=current, inner_converged=converged,
-                    profits=exact_profits(data, current, prices, balancing_eps)), evaluations
-    if len(scarce) > 1:
-        raise NotImplementedError(f"Several nodes over-full at zero prices ({scarce}); bisection handles one.")
-    n = scarce[0]
-    low, high, high_result = 0.0, None, None  # low: over-full; high: within the limit
-    price = price_start
-    while high is None:
-        prices[n] = price
-        current, converged, loads = evaluate(prices, current)
-        if loads[n] > limits[n] + 1e-6:
-            low, price = price, 2 * price
-            if price > price_max:
-                raise RuntimeError(f"Node {n} still over-full at {low} EUR/MW/day.")
-        else:
-            high, high_result = price, (current, converged, loads)
-    while high - low > price_tolerance:
-        prices[n] = 0.5 * (low + high)
-        current, converged, loads = evaluate(prices, current)
-        if loads[n] > limits[n] + 1e-6:
-            low = prices[n]
-        else:
-            high, high_result = prices[n], (current, converged, loads)
-    prices[n] = high
-    current, converged, loads = high_result
-    return dict(scarce_node=n, hosting_mw=limits[n], prices=dict(prices), price_bracket=[low, high],
-                load_mw=loads[n], unused_mw=limits[n] - loads[n], profile=current, inner_converged=converged,
+        over = {n: loads[n] > limits[n] + 1e-6 for n in nodes}
+        for n in nodes:
+            if over[n]:
+                low[n] = prices[n]
+                if high[n] is not None and high[n] <= prices[n]:
+                    high[n] = None  # the other prices raised n's demand: reopen upwards
+            elif prices[n] > 0:
+                high[n] = prices[n]
+                if low[n] >= prices[n]:
+                    low[n] = 0.0  # the other prices lowered n's demand: reopen downwards
+        cleared = not any(over.values()) and all(prices[n] - low[n] <= price_tolerance
+                                                 for n in nodes if prices[n] > 0)
+        if cleared:
+            break
+        for n in nodes:
+            if high[n] is None:
+                if over[n]:
+                    prices[n] = 2 * prices[n] if prices[n] > 0 else price_start
+                    if prices[n] > price_max:
+                        raise RuntimeError(f"Node {n} still over-full at {low[n]} EUR/MW/day.")
+            elif over[n] or prices[n] - low[n] > price_tolerance:
+                prices[n] = high[n] if high[n] - low[n] <= price_tolerance else 0.5 * (low[n] + high[n])
+    priced = [n for n in nodes if prices[n] > 0]
+    return dict(cleared=cleared, scarce_nodes=priced, hosting_mw={n: limits[n] for n in hosting},
+                prices=dict(prices), price_bracket={n: [low[n], prices[n]] for n in priced},
+                load_mw={n: loads[n] for n in hosting}, unused_mw={n: limits[n] - loads[n] for n in priced},
+                profile=current, inner_converged=converged,
                 profits=exact_profits(data, current, prices, balancing_eps)), evaluations

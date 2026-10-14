@@ -14,7 +14,7 @@ from solve import make_nlp_solver, make_solver, require_optimal, residual
 from mpec import build_mpec, chosen_profile, complementarity_pairs, complete_sos1_start, solve_mpec
 from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed, start_profile
 from solution_space import extrema, face_models
-from capacity_clearing import inner_equilibrium, own_limits, verify_equilibrium
+from capacity_clearing import clear_capacity, inner_equilibrium, own_limits, verify_equilibrium
 
 IPOPT = make_nlp_solver().available(exception_flag=False)
 
@@ -341,6 +341,22 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(converged)
         for i in ("I", "R"):
             self.assertAlmostEqual(result[i]["power_mw"]["N"], 2., places=3)
+
+    @unittest.skipUnless(IPOPT, "Ipopt is not on PATH")
+    def test_uniform_price_reports_a_demand_jump(self):
+        # Toy: each MW earns 28 up to 5 MW, so two investors want 5 MW below a
+        # price of 28 and nothing above it. A 3 MW limit has no clearing price:
+        # prices 0, 10, 20 (over-full), 40, 30 (fit), 25, 27.5 (over-full), then
+        # the bracket [27.5, 30] is narrow and 30 leaves the node empty.
+        data, profile = case(two_hours=True)
+        profile["R"] = copy.deepcopy(profile["I"])
+        result, evaluations = clear_capacity(data, profile, {"N": 3.}, order=["I", "R"], balancing_eps=1e-4,
+                                             strategic_bids=False, price_start=10., price_tolerance=3., rounds=3,
+                                             seconds=60, log=lambda text: None)
+        self.assertTrue(result["cleared"])
+        self.assertEqual([e["prices"]["N"] for e in evaluations], [0., 10., 20., 40., 30., 25., 27.5, 30.])
+        self.assertEqual(result["price_bracket"]["N"], [27.5, 30.])
+        self.assertAlmostEqual(result["unused_mw"]["N"], 3., places=4)
 
     def test_relaxed_mpec_reaches_the_sos1_optimum(self):
         data, profile = case(two_hours=True)

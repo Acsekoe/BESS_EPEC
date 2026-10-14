@@ -1,0 +1,43 @@
+{
+  "scarce_node": null,
+  "prices": {
+    "N1": 0.0,
+    "N2": 0.0,
+    "N3": 0.0,
+    "N4": 0.0,
+    "N5": 0.0
+  },
+  "inner_converged": true,
+  "profits": {
+    "I1": {
+      "market_profit": 0.0,
+      "capacity_payment": 0.0
+    },
+    "I2": {
+      "market_profit": 0.0,
+      "capacity_payment": 0.0
+    },
+    "I3": {
+      "market_profit": 112192.27058843352,
+      "capacity_payment": 1734.9746495412
+    },
+    "I4": {
+      "market_profit": 62016.04133528094,
+      "capacity_payment": 9825.230277270595
+    }
+  },
+  "investors": [
+    "I3",
+    "I4",
+    "I1",
+    "I2"
+  ],
+  "strategic_bids": false,
+  "access_slope": {
+    "N5": 5.0
+  },
+  "best_response": "relaxed capacity MPEC, Ipopt (local), and building nothing",
+  "evaluation_count": 1,
+  "interpretation": "Uniform hosting-capacity price (variational equilibrium of the shared node limit), found by bisection on the price with Gauss-Seidel bid-MPEC best responses. inner_converged: a full round without profitable deviation found at the final price (capacity only: by a local method). unused_mw > 0 at a narrow bracket means demand jumps across the limit (no clearing price). With access_slope every MW also pays slope * node total. One start and order; not proven unique.",
+  "verification_passed": true
+}

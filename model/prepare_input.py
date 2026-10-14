@@ -8,10 +8,24 @@ import pyomo.environ as pyo
 INPUT = Path(__file__).parent / "input"
 
 
-def load_case(data_path=INPUT / "market_data.json", profile_path=INPUT / "capacities.json"):
+def load_case(data_path=INPUT / "five_bus_market_data.json", profile_path=INPUT / "five_bus_capacities.json"):
+    """Default: the 5-bus test system, the final market data (since 2026-10-14)."""
     data = json.loads(Path(data_path).read_text(encoding="utf-8"))
     profile = json.loads(Path(profile_path).read_text(encoding="utf-8"))
     return data, profile
+
+
+def scale_flexible_demand(data, scale):
+    """Copy of data with every flexible demand's max_mw times scale, at the same
+    max_price (more or fewer units with the same willingness to pay); scale 0
+    removes flexible demand."""
+    if not math.isfinite(scale) or scale < 0:
+        raise ValueError("The flexible demand scale must be finite and nonnegative.")
+    data = dict(data)
+    flexible = data.pop("flexible_demand", {})
+    if scale > 0 and flexible:
+        data["flexible_demand"] = {n: dict(f, max_mw=scale * f["max_mw"]) for n, f in flexible.items()}
+    return data
 
 
 def validate(data, profile):
@@ -24,6 +38,16 @@ def validate(data, profile):
     assigned = [g for n in data["nodes"] for g in data["generators_at_node"][n]]
     if sorted(assigned) != sorted(data["generators"]):
         raise ValueError("Each generator must belong to exactly one node.")
+    for g, slope in data.get("generation_cost_slope", {}).items():
+        if g not in data["generators"] or not math.isfinite(slope) or slope < 0:
+            raise ValueError(f"Invalid generation cost slope for {g}.")
+        if slope > 0 and any(c.get("owned_generation_shares", {}).get(g, 0) > 0 for c in profile.values()):
+            raise ValueError(f"{g} has a generation cost slope and an owner; owned plants need a constant cost.")
+    for n, flexible in data.get("flexible_demand", {}).items():
+        if n not in data["nodes"] or set(flexible) != {"max_mw", "max_price_eur_per_mwh"}:
+            raise ValueError(f"Flexible demand at {n} needs a valid node, max_mw and max_price_eur_per_mwh.")
+        if not all(math.isfinite(v) and v > 0 for v in flexible.values()):
+            raise ValueError(f"Flexible demand at {n} needs a positive finite size and price.")
     for investor, config in profile.items():
         if not 0 <= config["ratio_min"] <= config["ratio_max"] or config["ratio_max"] <= 0:
             raise ValueError(f"Invalid duration limits for {investor}.")
@@ -69,7 +93,7 @@ def capital_recovery_factor(wacc, years):
 
 
 def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
-                  node_limit=1000.0, balancing_eps=0.0, capacity_price=None):
+                  node_limit=1000.0, balancing_eps=0.0, capacity_price=None, access_slope=None):
     """Return a model containing only input sets and numerical parameters.
 
     For a fixed-capacity market, omit active_investor. For an MPEC, include all
@@ -83,6 +107,12 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     capacity_price {node: EUR/MW/day} (missing nodes 0) the active investor pays
     that price per MW and may alone build up to the limit; the price shares the
     node instead (capacity_clearing.py).
+
+    access_slope {node: EUR/MW/day per MW} (missing nodes 0): a quadratic access
+    cost. Every MW at the node pays slope * (total MW at the node), the same
+    fee for all investors; the active investor's own MW raise it too. As with
+    capacity_price, the fee shares the node, so rivals' MW do not reduce the
+    headroom.
     """
     validate(data, profile)
     if not math.isfinite(balancing_eps) or balancing_eps < 0:
@@ -102,6 +132,9 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
         prices = capacity_price or {}
         if set(prices) - set(nodes) or not all(math.isfinite(v) and v >= 0 for v in prices.values()):
             raise ValueError("Capacity prices must be finite and nonnegative at valid nodes.")
+        slopes = access_slope or {}
+        if set(slopes) - set(nodes) or not all(math.isfinite(v) and v >= 0 for v in slopes.values()):
+            raise ValueError("Access cost slopes must be finite and nonnegative at valid nodes.")
 
     generation_capacity = {(r["generator"], r["hour"]): r["capacity_mw"]
                            for r in data["generation_capacity"]}
@@ -125,7 +158,8 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     headroom = {}
     if active_investor is not None:
         for n in nodes:
-            rivals = 0.0 if capacity_price is not None else sum(power[i, n] for i in profile if i != active_investor)
+            priced = capacity_price is not None or access_slope is not None
+            rivals = 0.0 if priced else sum(power[i, n] for i in profile if i != active_investor)
             headroom[n] = limits[n] - rivals
             if headroom[n] < 0:
                 raise ValueError("Rival power exceeds the shared nodal investment limit.")
@@ -151,6 +185,11 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
 
     # Market parameters: EUR/MWh, MW, MWh, and dimensionless PTDF/efficiency.
     m.generation_cost = pyo.Param(m.generators, initialize=data["generation_cost"])
+    # Optional rising marginal cost cost + slope * generation (one unit standing for
+    # a thermal merit order): generation cost cost * g + 0.5 * slope * g^2.
+    m.generation_slope = pyo.Param(m.generators, initialize={
+        g: data.get("generation_cost_slope", {}).get(g, 0.0) for g in data["generators"]},
+        doc="Generation cost slope [EUR/MWh per MW]")
     m.generation_capacity = pyo.Param(m.generators, m.timesteps, initialize=generation_capacity)
     m.demand = pyo.Param(m.nodes, m.timesteps, initialize=demand)
     m.line_limit = pyo.Param(m.lines, initialize=data["line_limit"])
@@ -159,6 +198,18 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     m.voll = pyo.Param(initialize=data["voll"], doc="Lost-load cost [EUR/MWh]")
     m.balancing_eps = pyo.Param(initialize=balancing_eps,
                                 doc="Nodal balancing slope; 0 is the pure LP [MW per EUR/MWh]")
+    # Optional price-responsive flexible demand (e.g. power-to-heat) at some nodes:
+    # willingness to pay falls linearly from max_price at 0 MW to 0 at max_mw.
+    flexible = data.get("flexible_demand", {})
+    m.flexible_nodes = pyo.Set(initialize=[n for n in nodes if n in flexible], ordered=True,
+                               doc="Nodes with flexible demand")
+    m.flexible_demand_max = pyo.Param(m.flexible_nodes, initialize={n: flexible[n]["max_mw"] for n in flexible},
+                                      doc="Flexible demand size [MW]")
+    m.flexible_demand_price = pyo.Param(m.flexible_nodes, initialize={
+        n: flexible[n]["max_price_eur_per_mwh"] for n in flexible}, doc="Willingness to pay at 0 MW [EUR/MWh]")
+    m.flexible_demand_slope = pyo.Param(m.flexible_nodes, initialize={
+        n: flexible[n]["max_price_eur_per_mwh"] / flexible[n]["max_mw"] for n in flexible},
+        doc="Fall of the willingness to pay per MW [EUR/MWh per MW]")
     generator_node = {g: n for n in nodes for g in data["generators_at_node"][n]}
     m.generator_node = pyo.Param(m.generators, within=pyo.Any, initialize=generator_node)
     m.installed_power = pyo.Param(m.investors, m.nodes, initialize=power)
@@ -214,4 +265,9 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
         m.headroom = pyo.Param(m.nodes, initialize=headroom)
         m.capacity_price = pyo.Param(m.nodes, initialize={n: prices.get(n, 0.0) for n in nodes},
                                      doc="Price of hosting capacity paid per MW of power [EUR/MW/day]")
+        m.access_slope = pyo.Param(m.nodes, initialize={n: slopes.get(n, 0.0) for n in nodes},
+                                   doc="Access fee per MW per MW installed at the node [EUR/MW/day per MW]")
+        m.rival_power = pyo.Param(m.nodes, initialize={
+            n: sum(power[i, n] for i in profile if i != active_investor) for n in nodes},
+            doc="Rivals' installed power at the node [MW]")
     return m

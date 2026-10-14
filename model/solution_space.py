@@ -12,15 +12,20 @@ def unique_price_reclear(data, profile, balancing_eps, seconds=600):
     price = b/eps. The dual QP is not used: its curvature in price is only eps,
     so ordinary tolerances leave prices far from the unique ones (900 EUR/MWh
     off on IEEE-9 at a supply step). The QP is convex, so Ipopt's local
-    optimum is global; tight tolerances pin b to about 1e-12 MW."""
+    optimum is global; tight tolerances pin b to about 1e-12 MW. If Ipopt
+    cannot reach 1e-12 (5-bus without storage and flexible demand: NLP error
+    1.4e-12, "search direction becoming too small"), it retries at 1e-10."""
     if balancing_eps <= 0:
         raise ValueError("The unique-price reclear needs balancing_eps > 0.")
     primal = build_primal(data, profile, balancing_eps)
-    solver = make_nlp_solver()
-    solver.options.update({"tol": 1e-12, "constr_viol_tol": 1e-12, "dual_inf_tol": 1e-12,
-                           "compl_inf_tol": 1e-12})
-    result = solve_nlp(primal, seconds=seconds, solver=solver)
-    if result.solver.termination_condition != pyo.TerminationCondition.optimal:
+    for tolerance in (1e-12, 1e-10):
+        solver = make_nlp_solver()
+        solver.options.update({"tol": tolerance, "constr_viol_tol": tolerance, "dual_inf_tol": tolerance,
+                               "compl_inf_tol": tolerance})
+        result = solve_nlp(primal, seconds=seconds, solver=solver)
+        if result.solver.termination_condition == pyo.TerminationCondition.optimal:
+            break
+    else:
         raise RuntimeError(f"Unique-price reclear not solved: {result.solver.termination_condition}")
     price = {(n, t): pyo.value(primal.balancing[n, t]) / balancing_eps
              for n in primal.nodes for t in primal.timesteps}
@@ -56,7 +61,9 @@ def face_models(data, profile, tolerance=1e-6, balancing_eps=0.0):
     require_optimal(dual)
     z = pyo.value(primal.market_cost)
     gap = z - pyo.value(dual.dual_value)
-    if abs(gap) > 1e-5 or max(residual(primal), residual(dual)) > 1e-5:
+    # 1e-5 EUR plus 1e-9 relative: Gurobi leaves gaps of about 1e-10 * cost
+    # (2.6e-5 EUR at 274 000 EUR on the 5-bus LP).
+    if abs(gap) > 1e-5 + 1e-9 * abs(z) or max(residual(primal), residual(dual)) > 1e-5:
         raise RuntimeError(f"Primal/dual market verification failed: gap={gap}.")
     primal.optimal_face = pyo.Constraint(expr=primal.market_cost <= z + tolerance)
     dual.optimal_face = pyo.Constraint(expr=dual.dual_value >= z - tolerance)

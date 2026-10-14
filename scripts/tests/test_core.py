@@ -9,11 +9,12 @@ import pyomo.environ as pyo
 
 from primal_llp import build_primal
 from dual_llp import build_dual, dual_profit
-from prepare_input import INPUT, load_case
+from prepare_input import load_case, scale_flexible_demand
 from solve import make_nlp_solver, make_solver, require_optimal, residual
-from mpec import build_mpec, chosen_profile, complementarity_pairs, solve_mpec
+from mpec import build_mpec, chosen_profile, complementarity_pairs, complete_sos1_start, solve_mpec
 from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed, start_profile
 from solution_space import extrema, face_models
+from capacity_clearing import exact_profits, verify_equilibrium
 
 IPOPT = make_nlp_solver().available(exception_flag=False)
 
@@ -162,6 +163,67 @@ class CoreTests(unittest.TestCase):
         self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
         self.assertLess(residual(m), 1e-5)
 
+    def test_rising_generation_cost(self):
+        # Hour 2: the peaker's marginal cost is 40 + 4 g against 10 MW demand, so
+        # price 80 and market cost 40*10 + 0.5*4*10^2 (+ 10*5 in hour 1).
+        data, profile = case(two_hours=True)
+        data["generation_cost_slope"] = {"peak": 4.}
+        data["generation_capacity"][0]["capacity_mw"] = 30.
+        primal, dual, _ = face_models(data, profile)
+        self.assertAlmostEqual(pyo.value(primal.market_cost), 50. + 400. + 200., places=4)
+        self.assertAlmostEqual(primal.dual[primal.nodal_balance["N", 2]], 80., places=4)
+        self.assertAlmostEqual(pyo.value(dual.price["N", 2]), 80., places=4)
+        # Storage X shifts X MW from the peaker (price 80 - 4X) to cheap energy at 10:
+        # profit (80 - 4X) X - 10 X - 2 X (capex 1 per MW and 1 per MWh) is largest at
+        # X = 8.5 (price 46, profit 289). Settlement and strong-duality profit agree.
+        m = build_mpec(data, profile, "I", node_limit=20)
+        require_optimal(m)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 8.5, places=4)
+        self.assertAlmostEqual(pyo.value(m.price["N", 2]), 46., places=4)
+        self.assertAlmostEqual(pyo.value(m.profit), 289., places=4)
+        self.assertAlmostEqual(pyo.value(m.profit_linear), 289., places=4)
+        self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
+        profile["I"]["owned_generation_shares"] = {"peak": 1.}
+        with self.assertRaises(ValueError):
+            build_mpec(data, profile, "I")
+
+    def test_flexible_demand(self):
+        # Hour 1: cheap 10 MW at 10 against 5 MW demand; flexible demand with
+        # willingness to pay 30 - 3 q takes the other 5 MW, and the peaker at 40
+        # is too dear, so the price is the willingness to pay at 5 MW: 15.
+        # Hour 2: peaker at 40 above 30, no flexible demand. Market cost
+        # 10*10 + 40*10 less the benefit 30*5 - 1.5*5^2 = 387.5.
+        data, profile = case(two_hours=True)
+        data["flexible_demand"] = {"N": {"max_mw": 10., "max_price_eur_per_mwh": 30.}}
+        primal, dual, _ = face_models(data, profile)
+        self.assertAlmostEqual(pyo.value(primal.market_cost), 387.5, places=4)
+        self.assertAlmostEqual(pyo.value(primal.flexible_demand["N", 1]), 5., places=4)
+        self.assertAlmostEqual(pyo.value(primal.flexible_demand["N", 2]), 0., places=4)
+        self.assertAlmostEqual(primal.dual[primal.nodal_balance["N", 1]], 15., places=4)
+        self.assertAlmostEqual(pyo.value(dual.price["N", 1]), 15., places=4)
+        self.assertAlmostEqual(pyo.value(dual.price["N", 2]), 40., places=4)
+        # Storage X charges in hour 1 by displacing flexible demand (price 15 + 3X)
+        # and discharges at 40: profit (25 - 3X) X - 2X is largest at X = 23/6
+        # (price 26.5, profit 529/12). Without flexible demand the hour-1 price
+        # would jump from 10 to 40 at X = 5.
+        m = build_mpec(data, profile, "I", node_limit=20)
+        require_optimal(m)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 23 / 6, places=4)
+        self.assertAlmostEqual(pyo.value(m.price["N", 1]), 26.5, places=4)
+        self.assertAlmostEqual(pyo.value(m.profit), 529 / 12, places=4)
+        self.assertAlmostEqual(pyo.value(m.profit_linear), 529 / 12, places=4)
+        self.assertLess(abs(pyo.value(m.market_cost - m.dual_value)), 1e-5)
+        relaxed = build_mpec_relaxed(data, profile, "I", node_limit=20)
+        self.assertEqual(solve_relaxed_from(relaxed, data, profile, start_power=1.), "optimal")
+        self.assertAlmostEqual(pyo.value(relaxed.X_power["N"]), 23 / 6, places=3)
+        self.assertAlmostEqual(pyo.value(relaxed.profit), 529 / 12, places=3)
+        # The scale multiplies the size at the same willingness to pay; 0 removes it.
+        self.assertEqual(scale_flexible_demand(data, 2)["flexible_demand"]["N"]["max_mw"], 20.)
+        self.assertNotIn("flexible_demand", scale_flexible_demand(data, 0))
+        data["flexible_demand"]["N"]["max_mw"] = 0.
+        with self.assertRaises(ValueError):
+            build_primal(data, profile)
+
     def test_quadratic_dispatch_cost(self):
         # Prices stay 10 (hour 1) and 40 (hour 2). Storage with slope 10 shifts c MW
         # at market cost -30c + 10c^2, so c = min(X, 1.5) is unique. Fixed X = 2 (an
@@ -253,6 +315,27 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(pyo.value(build_mpec(data, profile, "I", node_limit=10, capacity_price={}).headroom["N"]), 10.)
 
     @unittest.skipUnless(IPOPT, "Ipopt is not on PATH")
+    def test_quadratic_access_cost(self):
+        # The toy storage earns 30 per MW below 5 MW (charge at 10, sell at 40)
+        # and pays capex 2 per MW. Rival J holds 1 MW, so 4 MW of cheap energy
+        # are left. Access slope 4: I pays 4 * (X + 1) per MW, so profit
+        # 28 X - 4 (X + 1) X is largest at X = 3 (profit 36, fee 16 per MW).
+        data, profile = case(two_hours=True)
+        profile["J"] = copy.deepcopy(profile["I"])
+        profile["J"]["power_mw"], profile["J"]["energy_mwh"] = {"N": 1.}, {"N": 1.}
+        m = build_mpec(data, profile, "I", node_limit=10, access_slope={"N": 4.})
+        require_optimal(m)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 3., places=4)
+        self.assertAlmostEqual(pyo.value(m.profit), 36., places=4)
+        self.assertAlmostEqual(pyo.value(m.profit_linear), 36., places=4)
+        relaxed = build_mpec_relaxed(data, profile, "I", node_limit=10, access_slope={"N": 4.})
+        self.assertEqual(solve_relaxed_from(relaxed, data, profile, start_power=1.), "optimal")
+        self.assertAlmostEqual(pyo.value(relaxed.X_power["N"]), 3., places=3)
+        profile["I"]["power_mw"], profile["I"]["energy_mwh"] = {"N": 3.}, {"N": 3.}
+        payments = {i: v["capacity_payment"] for i, v in exact_profits(data, profile, None, 1e-4, {"N": 4.}).items()}
+        self.assertAlmostEqual(payments["I"], 48., places=6)
+        self.assertAlmostEqual(payments["J"], 16., places=6)
+
     def test_relaxed_mpec_reaches_the_sos1_optimum(self):
         data, profile = case(two_hours=True)
         m = build_mpec_relaxed(data, profile, "I", node_limit=10)
@@ -267,6 +350,34 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(solve_relaxed_from(m, data, profile, start_power), "optimal")
             self.assertAlmostEqual(pyo.value(m.profit), expected, places=3)
             self.assertLessEqual(max(pyo.value(s * mu) for s, mu in complementarity_pairs(m)), 1e-6 + 1e-9)
+
+    def test_mip_start_and_verify_cutoff(self):
+        # MIP start at the known optimum (5 MW / 5 MWh): a feasible KKT point with
+        # one exact zero in every SOS1 pair, from which Gurobi proves 140.
+        data, profile = case(two_hours=True)
+        start = copy.deepcopy(profile)
+        start["I"]["power_mw"], start["I"]["energy_mwh"] = {"N": 5.}, {"N": 5.}
+        m = build_mpec(data, profile, "I", node_limit=10)
+        initialize_from_market(m, data, start)
+        complete_sos1_start(m)
+        self.assertLess(residual(m), 1e-6)
+        for sos in m.component_data_objects(pyo.SOSConstraint):
+            self.assertEqual(min(pyo.value(v) for v in sos.get_variables()), 0.)
+        result, _, _ = solve_mpec(m, warmstart=True)
+        self.assertEqual(str(result.solver.termination_condition), "optimal")
+        self.assertAlmostEqual(pyo.value(m.profit), 140., places=5)
+        # verify: at the optimum nothing beats the cutoff, so Gurobi stops with
+        # status cutoff; at zero capacity building pays, so the check refutes it.
+        m = build_mpec(data, profile, "I", node_limit=10, balancing_eps=1e-4)
+        require_optimal(m)
+        overall, records = verify_equilibrium(data, chosen_profile(m), balancing_eps=1e-4, node_limit=10,
+                                              seconds=60, log=lambda text: None)
+        self.assertEqual((overall, records[0]["status"]), ("proven", "minFunctionValue"))
+        overall, _ = verify_equilibrium(data, profile, balancing_eps=1e-4, node_limit=10, seconds=60,
+                                        log=lambda text: None)
+        self.assertEqual(overall, "refuted")
+        with self.assertRaises(ValueError):
+            verify_equilibrium(data, chosen_profile(m), balancing_eps=1e-4, nodes=[], seconds=60)
 
     def test_shared_inverter_and_cyclic_soc(self):
         data, profile = case(two_hours=True)
@@ -303,15 +414,16 @@ class CoreTests(unittest.TestCase):
         self.assertIsNone(limits["maximum"])
         self.assertIn("unbounded", limits["maximum_status"].lower())
 
-    def test_ieee9_market_regression(self):
-        # Benchmark values recorded before replacing matrix assembly by rules.
-        for filename, expected in [("capacities.json", 394587.85188079276),
-                                   ("capacities_storage.json", 391977.221111562)]:
-            with self.subTest(profile=filename):
-                data, profile = load_case(profile_path=INPUT / filename)
-                primal, dual, _ = face_models(data, profile, tolerance=0)
-                self.assertAlmostEqual(pyo.value(primal.market_cost), expected, places=6)
-                self.assertAlmostEqual(pyo.value(dual.dual_value), expected, places=6)
+    def test_five_bus_market_regression(self):
+        # 5-bus test system without storage: a QP from G1's rising marginal cost
+        # and the pocket flexible demand (N2 10, N5 25 MW); scale 2 is the first
+        # size tried (N2 20, N5 50 MW), scale 0 the system before the flexible
+        # demand (recorded 2026-10-14, Gurobi 13.0.3).
+        data, profile = load_case()
+        for scale, expected in ((1, 250331.2321901794), (2, 240560.53533554217), (0, 260873.23465375137)):
+            primal, dual, _ = face_models(scale_flexible_demand(data, scale), profile, tolerance=0)
+            self.assertAlmostEqual(pyo.value(primal.market_cost), expected, delta=1e-5 + 1e-9 * expected)
+            self.assertAlmostEqual(pyo.value(dual.dual_value), expected, delta=1e-5 + 1e-9 * expected)
 
 
 if __name__ == "__main__":

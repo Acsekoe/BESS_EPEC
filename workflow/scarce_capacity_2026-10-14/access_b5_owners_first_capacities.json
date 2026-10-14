@@ -1,0 +1,92 @@
+{
+  "I1": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {},
+    "energy_mwh": {},
+    "owned_generation_shares": {},
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I2": {
+    "wacc": 0.12,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {},
+    "energy_mwh": {},
+    "owned_generation_shares": {},
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I3": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 5.532354505459842e-09,
+      "N2": 71.57507481436132,
+      "N3": 5.532355686240439e-09,
+      "N4": 0.7544563393676821,
+      "N5": 7.216479211928823
+    },
+    "energy_mwh": {
+      "N1": 1.8652364474285704e-08,
+      "N2": 432.1993533035869,
+      "N3": 1.865236710039093e-08,
+      "N4": 1.5089130021718462,
+      "N5": 40.52774720781865
+    },
+    "owned_generation_shares": {
+      "RES_Wind_N2": 0.8,
+      "RES_PV_N5": 0.2
+    },
+    "curtailment_slope_eur_per_mwh_per_mw": {
+      "RES_Wind_N2": 0.1,
+      "RES_PV_N5": 0.1
+    },
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I4": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 5.146321652305778e-09,
+      "N2": 7.596684317864192e-09,
+      "N3": 5.146321652288957e-09,
+      "N4": 5.146321652294507e-09,
+      "N5": 40.86720809845077
+    },
+    "energy_mwh": {
+      "N1": 1.7623202254477126e-08,
+      "N2": 2.331700836766587e-08,
+      "N3": 1.7623202254442368e-08,
+      "N4": 1.7623202254455917e-08,
+      "N5": 229.51024041180497
+    },
+    "owned_generation_shares": {
+      "RES_Wind_N2": 0.2,
+      "RES_PV_N5": 0.8
+    },
+    "curtailment_slope_eur_per_mwh_per_mw": {
+      "RES_Wind_N2": 0.1,
+      "RES_PV_N5": 0.1
+    },
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  }
+}

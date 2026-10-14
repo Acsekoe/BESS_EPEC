@@ -30,9 +30,11 @@ def solve_nlp(m, *, seconds=60, solver=None, log_file=None):
     solver = solver or make_nlp_solver()
     # Ipopt's default constr_viol_tol=1e-4 would allow products of 2*epsilon at
     # epsilon=1e-4, so constraint violations are held well below epsilon.
+    # bound_relax_factor=0: the default relaxes each bound by 1e-8 and projects
+    # the result back, which left constraint errors of 2e-6 (5-bus, 2026-10-14).
     # max_wall_time exists from Ipopt 3.14; older builds (IDAES 3.13) only limit CPU time.
     time_limit = "max_wall_time" if solver.version() >= (3, 14) else "max_cpu_time"
-    options = {time_limit: seconds, "tol": 1e-8, "constr_viol_tol": 1e-8}
+    options = {time_limit: seconds, "tol": 1e-8, "constr_viol_tol": 1e-8, "bound_relax_factor": 0.0}
     options.update(solver.options)  # options set on a passed solver take precedence
     if log_file is not None:
         options["output_file"] = str(log_file)
@@ -42,7 +44,8 @@ def solve_nlp(m, *, seconds=60, solver=None, log_file=None):
     return result
 
 
-def solve(m, *, seconds=60, mip_gap=1e-6, solver=None):
+def solve(m, *, seconds=60, mip_gap=1e-6, solver=None, warmstart=False):
+    """warmstart=True passes the model's current values to Gurobi as a MIP start."""
     solver = solver or make_solver()
     # PreSOS1BigM=0: presolve may otherwise rewrite the MPEC's SOS1 sets as Big-M
     # binaries again. IntFeasTol=1e-9: an SOS1 member below IntFeasTol counts as
@@ -51,7 +54,7 @@ def solve(m, *, seconds=60, mip_gap=1e-6, solver=None):
     # (dispatch cost slope > 0).
     solver.options.update({"TimeLimit": seconds, "MIPGap": mip_gap, "NonConvex": 2, "PreSOS1BigM": 0,
                            "IntFeasTol": 1e-9})
-    result = solver.solve(m, load_solutions=False)
+    result = solver.solve(m, load_solutions=False, warmstart=warmstart)
     if result.solver.termination_condition == pyo.TerminationCondition.optimal:
         m.solutions.load_from(result)
     return result

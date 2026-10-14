@@ -7,17 +7,19 @@ For the equations, start with [`primal_llp.py`](model/primal_llp.py): it declare
 named Pyomo variables and constraints, with one explicit `*_rule` function per
 equation. [`prepare_input.py`](model/prepare_input.py) reads and prepares the
 inputs, [`dual_llp.py`](model/dual_llp.py) contains the stationarity equations,
-and [`mpec.py`](model/mpec.py) adds investment and Big-M complementarity.
+and [`mpec.py`](model/mpec.py) adds investment and SOS1 complementarity.
+The market data is the 5-bus test system (`model/input/five_bus_*.json`, the
+default inputs; see [`model/README.md`](model/README.md)).
 
 ```powershell
-python model/primal_llp.py --output model/output/market_run
+python model/primal_llp.py --balancing-eps 1e-4 --output model/output/market_run
 python model/run.py ranges --output model/output/market_ranges
-python model/mpec.py --investor I1 --nodes N6 --seconds 60 --output model/output/n6_best_response
+python model/mpec.py --investor I1 --nodes N5 --balancing-eps 1e-4 --seconds 60 --output model/output/n5_best_response
 ```
 
 These run fixed-capacity market clearing, lower-level solution-space analysis,
 and one investor's capacity best response independently. The MPEC command above
-restricts investment to N6. There is currently no multi-investor equilibrium loop.
+restricts investment to N5. There is currently no multi-investor equilibrium loop.
 
 The October 2026 restart deletes the previous model trees. `Overleaf/` retains
 historical thesis/presentation material; it has not yet been updated to this core.

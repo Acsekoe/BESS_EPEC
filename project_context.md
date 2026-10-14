@@ -81,7 +81,37 @@ The existing Overleaf documents are historical and have not yet been rewritten.
   curtailed first. The value 0.1 EUR/MWh per MW (I3/I4, both PV plants,
   `capacities_capex120_curtail.json`) is a stylized choice, not sourced.
 - Capacity profiles are explicit JSON inputs. Missing capacity nodes mean zero.
+- Since 2026-10-14 the final market data is the 5-bus test system
+  (`model/input/five_bus_market_data.json`, `five_bus_capacities.json`; default
+  of `run.py`; built by `scripts/data/build_five_bus.py`): V6 with one thermal
+  unit G1 600 MW at N1 whose marginal cost rises as 41 + 0.075 * g EUR/MWh
+  (`generation_cost_slope`), standing for a thermal merit order. Without
+  storage the hub price N1/N3/N4 follows residual load from 52 to 66.7 EUR/MWh,
+  so each pocket keeps one price edge and the hub has none. It replaced V7
+  (G1 300 MW at 52, G3 300 MW at 67) the same day: the G3 block was a second
+  price edge, and a merchant's best response sat on it, held only by the
+  balancing eps. Owned plants keep a constant marginal cost. Pricing stays nodal; zonal pricing with redispatch was discussed and
+  not pursued. All other inputs named in this file were removed from
+  `model/input/` that day; they are at commit 82690b2.
   Old `x_power`/`x_energy` entries in the inherited market JSON are not used.
+- Since 2026-10-14 each pocket node carries a price-responsive flexible demand
+  (market data key `flexible_demand`), e.g. power-to-heat: N2 10 MW and N5
+  25 MW, about a sixth of each pocket's peak surplus, with willingness to pay
+  falling linearly from 60 EUR/MWh at 0 MW to 0 at full size. The size was
+  chosen from a scan of 0.1-2 times N2 20 / N5 50 MW
+  (`workflow/flexible_demand_2026-10-14.md`): the pocket price then rises over
+  about 16 MW (N2) and 35 MW (N5) of battery power instead of jumping, and a
+  merchant keeps 82-89 % of its arbitrage (56-80 % at twice the size). Nobody owns it;
+  it bids truthfully and the ISO maximizes welfare. Reason: without it a
+  pocket's price jumped from the curtailment price (about 0) to the storage
+  value (about 47) at one storage size, so owners' profits were step functions
+  of the pocket total and the balancing eps decided equilibria
+  (`workflow/summary_2026-10-13_15-01.md`). 60 EUR/MWh (roughly gas-plus-CO2
+  heat replaced) and the sizes are stylized, not sourced; 60 must stay above
+  the storage value. `run.py --flexible-demand-scale` scales the sizes; 0
+  reproduces the system without it. The load also draws power when the pocket
+  is not congested (about 13 % of its size at 52 EUR/MWh) and competes with
+  storage for surplus RES.
 
 ## Readable model structure and interpretation
 

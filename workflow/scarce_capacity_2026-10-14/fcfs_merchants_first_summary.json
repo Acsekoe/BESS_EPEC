@@ -1,0 +1,37 @@
+{
+  "mechanism": "first come, first served",
+  "hosting_mw": {
+    "N5": 100.0
+  },
+  "inner_converged": false,
+  "profits": {
+    "I1": {
+      "market_profit": 5834.618626176367,
+      "capacity_payment": 0.0
+    },
+    "I2": {
+      "market_profit": 35.982520624267295,
+      "capacity_payment": 0.0
+    },
+    "I3": {
+      "market_profit": 110074.51557348564,
+      "capacity_payment": 0.0
+    },
+    "I4": {
+      "market_profit": 53027.96157475902,
+      "capacity_payment": 0.0
+    }
+  },
+  "investors": [
+    "I1",
+    "I2",
+    "I3",
+    "I4"
+  ],
+  "strategic_bids": false,
+  "access_slope": null,
+  "best_response": "relaxed capacity MPEC, Ipopt (local), and building nothing",
+  "evaluation_count": 1,
+  "interpretation": "First come, first served: Gauss-Seidel best responses in the given order, rivals' MW reduce each investor's headroom. inner_converged: a full round without profitable deviation found (capacity only: by a local method). Depends on the order; not proven unique.",
+  "verification_passed": false
+}

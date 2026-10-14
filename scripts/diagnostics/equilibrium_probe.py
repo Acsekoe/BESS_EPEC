@@ -5,14 +5,17 @@ investor's profit gain and the rivals' profit changes (unique-price reclear,
 Ipopt, no capacity price). Local Ipopt best responses miss moves that cross a
 pocket step (workflow/summary_2026-10-13_15-01.md, update 16:04); this checks
 them directly. A probe without a profitable move is not a proof.
+--flexible-demand-scale as in run.py (0: no flexible demand).
 
 A change is INVESTOR.NODE=MW/MWh (set) or INVESTOR.NODE+=MW/MWh (add; negative
 values remove). Changes in one case are comma-separated. Without --case: for
 each RES owner and each node with storage, add 0.01/0.04 and 1/4, remove 1 MW
 and remove 0.5 MWh. --prices prints the hourly price at those nodes per case.
 
-python scripts/diagnostics/equilibrium_probe.py . --profile workflow/equilibria_2026-10-13/ieee5_v6_equilibrium_B.json --prices N2
-python scripts/diagnostics/equilibrium_probe.py . --profile workflow/equilibria_2026-10-13/ieee5_v6_equilibrium_A.json --case "I3.N2=0/0" --case "I3.N5=129.122/557.089" --case "I3.N2=0/0,I3.N5=129.122/557.089"
+python scripts/diagnostics/equilibrium_probe.py . --profile model/input/five_bus_capacities.json --case "I4.N5=146.8/591.1" --prices N5
+V6 candidates (restore model/input/ieee5_v6_market_data.json from commit 82690b2 first):
+python scripts/diagnostics/equilibrium_probe.py . --data model/input/ieee5_v6_market_data.json --profile workflow/equilibria_2026-10-13/ieee5_v6_equilibrium_B.json --prices N2
+python scripts/diagnostics/equilibrium_probe.py . --data model/input/ieee5_v6_market_data.json --profile workflow/equilibria_2026-10-13/ieee5_v6_equilibrium_A.json --case "I3.N2=0/0" --case "I3.N5=129.122/557.089" --case "I3.N2=0/0,I3.N5=129.122/557.089"
 """
 import argparse
 import copy
@@ -22,22 +25,24 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("root", type=Path)
-parser.add_argument("--data", type=Path, default=Path("model/input/ieee5_v6_market_data.json"))
+parser.add_argument("--data", type=Path, default=Path("model/input/five_bus_market_data.json"))
 parser.add_argument("--profile", type=Path, required=True)
 parser.add_argument("--balancing-eps", type=float, default=1e-4)
+parser.add_argument("--flexible-demand-scale", type=float, default=1.0)
 parser.add_argument("--case", action="append", default=[])
 parser.add_argument("--prices", nargs="*", default=[])
 args = parser.parse_args()
 
 sys.path.insert(0, str(args.root / "model"))
 from capacity_clearing import exact_profits  # noqa: E402
-from prepare_input import load_case  # noqa: E402
+from prepare_input import load_case, scale_flexible_demand  # noqa: E402
 from solution_space import unique_price_reclear  # noqa: E402
 
 CHANGE = re.compile(r"^(\w+)\.(\w+)(\+?=)([-+\d.eE]+)/([-+\d.eE]+)$")
 DEFAULT_MOVES = ("+=0.01/0.04", "+=1/4", "+=-1/0", "+=0/-0.5")
 
 data, base = load_case(args.root / args.data, args.root / args.profile)
+data = scale_flexible_demand(data, args.flexible_demand_scale)
 
 
 def apply(profile, case):

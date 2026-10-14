@@ -15,13 +15,13 @@ PROFILES = ROOT / "workflow" / "step_analysis_2026-10-09"
 sys.path.insert(0, str(ROOT / "model"))
 import pyomo.environ as pyo
 
-from prepare_input import load_case
+from prepare_input import INPUT, load_case
 from solution_space import unique_price_reclear
 
 EPS = 1e-4
 POCKET = ("N3", "N6", "N8", "N9")
 PV = ("RES_PV_N6", "RES_PV_N8")
-data, _ = load_case()
+data, _ = load_case(INPUT / "market_data.json", INPUT / "capacities.json")  # IEEE-9 case
 
 
 def scaled(profile, investor, factor):

@@ -50,11 +50,11 @@ from solve import make_nlp_solver, solve_nlp
 
 
 def build_mpec_relaxed(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0,
-                       strategic_bids=False, epsilon=1.0, capacity_price=None):
+                       strategic_bids=False, epsilon=1.0, capacity_price=None, access_slope=None):
     """epsilon is the initial product bound; solve_relaxed() changes it in place.
-    capacity_price as in build_mpec (prepare_input.py)."""
+    capacity_price and access_slope as in build_mpec (prepare_input.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
-                      balancing_eps=balancing_eps, capacity_price=capacity_price)
+                      balancing_eps=balancing_eps, capacity_price=capacity_price, access_slope=access_slope)
     m.name = f"Relaxed {'capacity and bid' if strategic_bids else 'capacity'} MPEC: {investor}"
 
     # 1. Investor decisions: MW and MWh (and bids) of the active investor only.
@@ -72,6 +72,8 @@ def build_mpec_relaxed(data, profile, investor, *, nodes=None, node_limit=1000.0
     m.comp_gen_upper = pyo.Constraint(m.generators, m.timesteps, rule=comp_gen_upper_rule)
     m.comp_shed_lower = pyo.Constraint(m.nodes, m.timesteps, rule=comp_shed_lower_rule)
     m.comp_shed_upper = pyo.Constraint(m.nodes, m.timesteps, rule=comp_shed_upper_rule)
+    m.comp_flex_lower = pyo.Constraint(m.flexible_nodes, m.timesteps, rule=comp_flex_lower_rule)
+    m.comp_flex_upper = pyo.Constraint(m.flexible_nodes, m.timesteps, rule=comp_flex_upper_rule)
     m.comp_line_upper = pyo.Constraint(m.lines, m.timesteps, rule=comp_line_upper_rule)
     m.comp_line_lower = pyo.Constraint(m.lines, m.timesteps, rule=comp_line_lower_rule)
     m.comp_charge_lower = pyo.Constraint(m.storage_pairs, m.timesteps, rule=comp_charge_lower_rule)
@@ -107,6 +109,15 @@ def comp_shed_lower_rule(m, n, t):
 
 def comp_shed_upper_rule(m, n, t):
     return (m.demand[n, t] - m.load_shed[n, t]) * m.mu_shed_upper[n, t] <= m.epsilon
+
+
+# Flexible demand: 0 <= flexible_demand <= max_mw.
+def comp_flex_lower_rule(m, n, t):
+    return m.flexible_demand[n, t] * m.mu_flex_lower[n, t] <= m.epsilon
+
+
+def comp_flex_upper_rule(m, n, t):
+    return (m.flexible_demand_max[n] - m.flexible_demand[n, t]) * m.mu_flex_upper[n, t] <= m.epsilon
 
 
 # Transmission: -line_limit <= line_flow <= line_limit.
@@ -209,7 +220,9 @@ def initialize_from_market(m, data, start):
         for v in variable.values():
             v.set_value(0.0)
     # Dispatch, prices, and multipliers have the same names and indices in all models.
-    for source in (primal, dual):
+    # The primal goes last: the dual's copies of dispatch (Dorn dual of the QP) are
+    # pinned only by the small quadratic slopes and can be off by 1e-3 MW.
+    for source in (dual, primal):
         for variable in source.component_objects(pyo.Var):
             target = m.component(variable.local_name)
             for index, value in variable.get_values().items():

@@ -1,0 +1,1022 @@
+[
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I1",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 10209.84,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 52.495,
+   "N5": 100.773
+  },
+  "energy_mwh": {
+   "N2": 380.863,
+   "N5": 489.012
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I1",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 10205.05,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 52.495,
+   "N5": 97.139
+  },
+  "energy_mwh": {
+   "N2": 380.863,
+   "N5": 475.406
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I1",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 10205.05,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 52.495,
+   "N5": 97.139
+  },
+  "energy_mwh": {
+   "N2": 380.863,
+   "N5": 475.406
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I2",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 3869.61,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.994,
+   "N5": 68.058
+  },
+  "energy_mwh": {
+   "N2": 125.015,
+   "N5": 327.641
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I2",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 3869.62,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.994,
+   "N5": 68.058
+  },
+  "energy_mwh": {
+   "N2": 125.015,
+   "N5": 327.641
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I2",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 3869.61,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.994,
+   "N5": 68.058
+  },
+  "energy_mwh": {
+   "N2": 125.015,
+   "N5": 327.641
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I3",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 53978.5,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 69.995,
+   "N5": 134.894
+  },
+  "energy_mwh": {
+   "N2": 413.6,
+   "N5": 577.679
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I3",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 53658.94,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.994,
+   "N5": 123.054
+  },
+  "energy_mwh": {
+   "N2": 279.954,
+   "N5": 555.515
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I3",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 53978.5,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 69.995,
+   "N5": 134.894
+  },
+  "energy_mwh": {
+   "N2": 413.6,
+   "N5": 577.679
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I4",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 71527.67,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 64.995,
+   "N5": 146.805
+  },
+  "energy_mwh": {
+   "N2": 391.921,
+   "N5": 591.112
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I4",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 71647.32,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.994,
+   "N5": 146.805
+  },
+  "energy_mwh": {
+   "N2": 279.954,
+   "N5": 591.112
+  }
+ },
+ {
+  "set": "eps1e-4_noflex",
+  "investor": "I4",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 71527.67,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 64.995,
+   "N5": 146.805
+  },
+  "energy_mwh": {
+   "N2": 391.921,
+   "N5": 591.112
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 8862.72,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 47.398,
+   "N5": 93.077
+  },
+  "energy_mwh": {
+   "N2": 338.786,
+   "N5": 460.198
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 8816.65,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 29.395,
+   "N5": 92.951
+  },
+  "energy_mwh": {
+   "N2": 235.161,
+   "N5": 459.727
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 8862.72,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 47.398,
+   "N5": 93.077
+  },
+  "energy_mwh": {
+   "N2": 338.786,
+   "N5": 460.198
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 10064.77,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 51.976,
+   "N5": 96.731
+  },
+  "energy_mwh": {
+   "N2": 376.626,
+   "N5": 473.88
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 10065.3,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.425,
+   "N5": 99.846
+  },
+  "energy_mwh": {
+   "N2": 275.4,
+   "N5": 485.541
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 10064.77,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 51.976,
+   "N5": 96.731
+  },
+  "energy_mwh": {
+   "N2": 376.626,
+   "N5": 473.88
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 10192.36,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 52.447,
+   "N5": 97.101
+  },
+  "energy_mwh": {
+   "N2": 380.477,
+   "N5": 475.267
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 10192.36,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 52.447,
+   "N5": 97.101
+  },
+  "energy_mwh": {
+   "N2": 380.477,
+   "N5": 475.267
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I1",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 10196.93,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 52.447,
+   "N5": 100.732
+  },
+  "energy_mwh": {
+   "N2": 380.477,
+   "N5": 488.858
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 3131.7,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 29.345,
+   "N5": 63.356
+  },
+  "energy_mwh": {
+   "N2": 86.102,
+   "N5": 294.293
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 3131.7,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 29.345,
+   "N5": 63.356
+  },
+  "energy_mwh": {
+   "N2": 86.102,
+   "N5": 294.293
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 3131.7,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 29.345,
+   "N5": 63.356
+  },
+  "energy_mwh": {
+   "N2": 86.102,
+   "N5": 294.293
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 3789.63,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.419,
+   "N5": 67.612
+  },
+  "energy_mwh": {
+   "N2": 121.803,
+   "N5": 324.909
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 3789.63,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.419,
+   "N5": 67.612
+  },
+  "energy_mwh": {
+   "N2": 121.803,
+   "N5": 324.909
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 3789.63,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.419,
+   "N5": 67.612
+  },
+  "energy_mwh": {
+   "N2": 121.803,
+   "N5": 324.909
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 3862.31,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.942,
+   "N5": 68.017
+  },
+  "energy_mwh": {
+   "N2": 124.723,
+   "N5": 327.392
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 3862.31,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.942,
+   "N5": 68.017
+  },
+  "energy_mwh": {
+   "N2": 124.723,
+   "N5": 327.392
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I2",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 3862.31,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.942,
+   "N5": 68.017
+  },
+  "energy_mwh": {
+   "N2": 124.723,
+   "N5": 327.392
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 49989.42,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 65.059,
+   "N5": 120.34
+  },
+  "energy_mwh": {
+   "N2": 365.647,
+   "N5": 548.643
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 49534.74,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 29.43,
+   "N5": 118.251
+  },
+  "energy_mwh": {
+   "N2": 235.442,
+   "N5": 542.776
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 49989.42,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 65.059,
+   "N5": 120.34
+  },
+  "energy_mwh": {
+   "N2": 365.647,
+   "N5": 548.643
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 53645.88,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 69.496,
+   "N5": 134.269
+  },
+  "energy_mwh": {
+   "N2": 408.269,
+   "N5": 576.508
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 53319.84,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.43,
+   "N5": 130.111
+  },
+  "energy_mwh": {
+   "N2": 275.437,
+   "N5": 568.725
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 53645.88,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 69.497,
+   "N5": 134.269
+  },
+  "energy_mwh": {
+   "N2": 408.269,
+   "N5": 576.508
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 53948.14,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 69.95,
+   "N5": 134.837
+  },
+  "energy_mwh": {
+   "N2": 413.115,
+   "N5": 577.572
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 53634.3,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.943,
+   "N5": 130.62
+  },
+  "energy_mwh": {
+   "N2": 279.543,
+   "N5": 569.678
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I3",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 53948.14,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 69.95,
+   "N5": 134.837
+  },
+  "energy_mwh": {
+   "N2": 413.115,
+   "N5": 577.572
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 66183.76,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 59.993,
+   "N5": 151.351
+  },
+  "energy_mwh": {
+   "N2": 353.738,
+   "N5": 618.526
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 66216.98,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 47.398,
+   "N5": 151.351
+  },
+  "energy_mwh": {
+   "N2": 338.786,
+   "N5": 618.526
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.1,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 66183.76,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 59.993,
+   "N5": 151.35
+  },
+  "energy_mwh": {
+   "N2": 353.738,
+   "N5": 618.526
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 71049.32,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 64.489,
+   "N5": 147.27
+  },
+  "energy_mwh": {
+   "N2": 388.092,
+   "N5": 593.724
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 71156.03,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.432,
+   "N5": 147.27
+  },
+  "energy_mwh": {
+   "N2": 275.452,
+   "N5": 593.724
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.01,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 71049.32,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 64.489,
+   "N5": 147.27
+  },
+  "energy_mwh": {
+   "N2": 388.092,
+   "N5": 593.724
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 71485.74,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 64.949,
+   "N5": 146.847
+  },
+  "energy_mwh": {
+   "N2": 391.573,
+   "N5": 591.351
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 71602.68,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 34.943,
+   "N5": 146.847
+  },
+  "energy_mwh": {
+   "N2": 279.544,
+   "N5": 591.351
+  }
+ },
+ {
+  "set": "noflex",
+  "investor": "I4",
+  "balancing_eps": 0.001,
+  "flexible_demand_scale": 0.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 71485.75,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 64.949,
+   "N5": 146.848
+  },
+  "energy_mwh": {
+   "N2": 391.573,
+   "N5": 591.351
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I1",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 6624.98,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 35.544,
+   "N5": 96.76
+  },
+  "energy_mwh": {
+   "N2": 229.807,
+   "N5": 310.212
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I1",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 6624.98,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 35.544,
+   "N5": 96.76
+  },
+  "energy_mwh": {
+   "N2": 229.807,
+   "N5": 310.212
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I1",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 6624.98,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 35.544,
+   "N5": 96.76
+  },
+  "energy_mwh": {
+   "N2": 229.807,
+   "N5": 310.212
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I2",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 2171.59,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 35.544,
+   "N5": 52.679
+  },
+  "energy_mwh": {
+   "N2": 88.44,
+   "N5": 215.366
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I2",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 2171.59,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 35.544,
+   "N5": 52.679
+  },
+  "energy_mwh": {
+   "N2": 88.44,
+   "N5": 215.366
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I2",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 2171.59,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 35.544,
+   "N5": 52.679
+  },
+  "energy_mwh": {
+   "N2": 88.44,
+   "N5": 215.366
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I3",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 118553.73,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 67.674,
+   "N5": 96.801
+  },
+  "energy_mwh": {
+   "N2": 395.239,
+   "N5": 338.125
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I3",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 118600.08,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 54.831,
+   "N5": 70.157
+  },
+  "energy_mwh": {
+   "N2": 393.892,
+   "N5": 320.349
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I3",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 118774.21,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 67.673,
+   "N5": 87.217
+  },
+  "energy_mwh": {
+   "N2": 395.239,
+   "N5": 338.335
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I4",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 150.0,
+  "exact_profit_eur_per_day": 79571.53,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 40.798,
+   "N5": 136.525
+  },
+  "energy_mwh": {
+   "N2": 326.385,
+   "N5": 533.395
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I4",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 20.0,
+  "exact_profit_eur_per_day": 79494.23,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 36.03,
+   "N5": 136.525
+  },
+  "energy_mwh": {
+   "N2": 288.244,
+   "N5": 533.395
+  }
+ },
+ {
+  "set": "eps1e-4_flex",
+  "investor": "I4",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "start_power_mw": 50.0,
+  "exact_profit_eur_per_day": 79571.53,
+  "verification_passed": true,
+  "power_mw": {
+   "N2": 40.798,
+   "N5": 136.525
+  },
+  "energy_mwh": {
+   "N2": 326.385,
+   "N5": 533.395
+  }
+ }
+]

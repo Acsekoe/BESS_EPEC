@@ -1,0 +1,104 @@
+{
+  "I1": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 9.024707525576159e-11,
+      "N2": 6.75398113645628e-11,
+      "N3": 8.997814963368601e-11,
+      "N4": 8.982669227027731e-11,
+      "N5": 97.9825829063189
+    },
+    "energy_mwh": {
+      "N1": 2.173925418290686e-10,
+      "N2": 1.5514291169419365e-10,
+      "N3": 2.1631560347981502e-10,
+      "N4": 2.1571841717846279e-10,
+      "N5": 410.18444566869925
+    },
+    "owned_generation_shares": {},
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I2": {
+    "wacc": 0.12,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 1.1748539112960504e-10,
+      "N2": 1.17852104456706e-10,
+      "N3": 1.1748538946493834e-10,
+      "N4": 1.1748538795166502e-10,
+      "N5": 1.942735138861135
+    },
+    "energy_mwh": {
+      "N1": 2.690220259275514e-10,
+      "N2": 2.697263707434142e-10,
+      "N3": 2.6902202355005805e-10,
+      "N4": 2.6902202097363e-10,
+      "N5": 8.243924344878328
+    },
+    "owned_generation_shares": {},
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I3": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 7.525548465803594e-11,
+      "N2": 71.57432090302844,
+      "N3": 7.525605202625852e-11,
+      "N4": 7.525631665066968e-11,
+      "N5": 0.07468195398286653
+    },
+    "energy_mwh": {
+      "N1": 1.958644819065961e-10,
+      "N2": 432.1448537431824,
+      "N3": 1.958644600791818e-10,
+      "N4": 1.9586445015447573e-10,
+      "N5": 0.4194138161766983
+    },
+    "owned_generation_shares": {
+      "RES_Wind_N2": 0.8,
+      "RES_PV_N5": 0.2
+    },
+    "curtailment_slope_eur_per_mwh_per_mw": {
+      "RES_Wind_N2": 0.1,
+      "RES_PV_N5": 0.1
+    },
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I4": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {},
+    "energy_mwh": {},
+    "owned_generation_shares": {
+      "RES_Wind_N2": 0.2,
+      "RES_PV_N5": 0.8
+    },
+    "curtailment_slope_eur_per_mwh_per_mw": {
+      "RES_Wind_N2": 0.1,
+      "RES_PV_N5": 0.1
+    },
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  }
+}

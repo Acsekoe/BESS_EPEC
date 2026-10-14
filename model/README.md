@@ -12,6 +12,9 @@ One shared fixed-demand market supports three independent commands:
 - `verify`: Gurobi check of a candidate equilibrium, each investor against
   fixed rivals (proven, refuted, or open).
 
+Exploration order: Ipopt candidates, then Gurobi (section "Ipopt candidates,
+Gurobi check").
+
 Both MPECs take `--strategic-bids`: the investor then also chooses hourly
 charge bids and discharge offers at each node (section "Strategic bids").
 
@@ -89,15 +92,27 @@ model: market LPs/QPs, ranges, and MPECs. The IEEE-9 MPEC needs a full Gurobi
 licence; the pip licence is too small. Ipopt (on `PATH`) solves the
 unique-price reclear when `--balancing-eps` > 0.
 
+`model/input/` holds only the 5-bus test system (next section), the default
+`--data` / `--profile`. The earlier inputs (IEEE-9 case and its cost,
+degradation, and slope profiles, the toy case, the 5-bus variants) and
+`scripts/data/build_ieee5.py` were removed on 2026-10-14. Every command below
+that names one of them reproduces an earlier result after restoring them:
+
 ```powershell
-python model/primal_llp.py --output model/output/no_storage
-python model/run.py ranges --dispatch all --output model/output/no_storage_ranges
+git checkout 82690b2 -- model/input scripts/data/build_ieee5.py
+```
 
-python model/primal_llp.py --profile model/input/capacities_storage.json --output model/output/fixed_storage
-python model/run.py ranges --profile model/input/capacities_storage.json --output model/output/fixed_storage_ranges
+IEEE-9 case:
 
-python model/mpec.py --investor I1 --nodes N9 --profile model/input/capacities_capex120_curtail_d3_slope1e-4.json --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
-python model/run.py mpec --investor I1 --nodes N3 N6 N8 N9 --profile model/input/capacities_capex120_curtail_d3_slope1e-4.json --balancing-eps 1e-4 --mip-gap 0.01 --seconds 600 --output model/output/<new_dir>
+```powershell
+python model/primal_llp.py --data model/input/market_data.json --profile model/input/capacities.json --output model/output/no_storage
+python model/run.py ranges --data model/input/market_data.json --profile model/input/capacities.json --dispatch all --output model/output/no_storage_ranges
+
+python model/primal_llp.py --data model/input/market_data.json --profile model/input/capacities_storage.json --output model/output/fixed_storage
+python model/run.py ranges --data model/input/market_data.json --profile model/input/capacities_storage.json --output model/output/fixed_storage_ranges
+
+python model/mpec.py --data model/input/market_data.json --investor I1 --nodes N9 --profile model/input/capacities_capex120_curtail_d3_slope1e-4.json --balancing-eps 1e-4 --seconds 300 --output model/output/<new_dir>
+python model/run.py mpec --data model/input/market_data.json --investor I1 --nodes N3 N6 N8 N9 --profile model/input/capacities_capex120_curtail_d3_slope1e-4.json --balancing-eps 1e-4 --mip-gap 0.01 --seconds 600 --output model/output/<new_dir>
 ```
 
 `capacities.json` still carries the inherited, unsourced costs (6 600 EUR/MW,
@@ -111,7 +126,7 @@ The current working case is `capacities_capex120_curtail_d3_slope1e-4.json`
 `project_context.md`); `_d0`, `_d10`, `_d15` vary d, `_d3` and `_d3_slope1e-3`
 vary the slope.
 
-The default IEEE-9 profile starts all four investors at zero capacity. The
+The IEEE-9 profile `capacities.json` starts all four investors at zero capacity. The
 storage example installs 10 MW / 30 MWh each for I1 and I2 at N6. Only the
 active investor's capacities are replaced in `mpec`; all others remain fixed.
 Use an exported `capacities.json` as `--profile` to independently clear or
@@ -137,10 +152,105 @@ installed MW per node. `--seconds` limits each main market/MPEC solve. Range
 subproblems use a 60-second limit individually. `--mip-gap` controls the MPEC
 proof tolerance. `run_config.json` records the Gurobi version.
 
-## Modified IEEE 5-bus case
+## 5-bus test system (final market data)
 
+Since 2026-10-14 all further work uses the 5-bus test system,
+`five_bus_market_data.json` / `five_bus_capacities.json`, the default
+`--data` / `--profile` of `run.py`. Built by `scripts/data/build_five_bus.py`;
+every number is in the JSON. It is V6 (below) with one thermal unit whose
+marginal cost rises with output, in place of G1 600 MW at 52 and G3 at 67.
+
+- Network: two radial pockets. L12 140 MW (wind, N2), L45 120 MW (PV, N5),
+  L13/L14/L34 300 MW (never binding); all reactances from the IEEE 5-bus table.
+- Generation: G1 600 MW (N1) with marginal cost 41 + 0.075 * g EUR/MWh
+  (section "Rising generation cost"), wind 200 MW peak (N2), PV 300 MW peak (N5).
+- Load: peaks N1 120, N3 180, N4 150, N5 40 MW, none at N2; IEEE-9 hourly shapes.
+- Flexible demand (since 2026-10-14, section "Flexible demand in the pockets"):
+  N2 10 MW and N5 25 MW, willingness to pay 60 EUR/MWh at 0 MW falling to 0.
+- Investors as in V6: I1/I2 merchants (WACC 8 % / 12 %), I3 80 % wind / 20 % PV,
+  I4 the rest; 120 000 EUR/MWh, 1 EUR/MW, d = 3 EUR/MWh, dispatch slope 1e-4,
+  curtailment slope 0.1 on both plants.
+- Without storage (eps 1e-4): N1/N3/N4 follow residual load, from 52.16 EUR/MWh
+  (hour 16) to 66.65 (hour 20). N2 down to -5.0 at night (370 MWh wind
+  curtailed), N5 down to -12.2 at midday (482 MWh PV curtailed); the flexible
+  demand takes 315 MWh. Market cost less the flexible demand's benefit
+  250 315 EUR/day. Pricing stays nodal.
+- Without the flexible demand (`--flexible-demand-scale 0`): hub 52.06-66.65,
+  N2 down to -6.0 (505 MWh curtailed), N5 down to -14.7 (632 MWh), market cost
+  260 857 EUR/day. Each pocket then has a price step at one storage size: its
+  line is congested or not, and nothing in the pocket pays between the
+  curtailment price and the storage value. The hub has no step.
+- Results labelled V6 and V7 below were computed on those variants; the
+  best-response table directly below was computed without the flexible demand.
+
+Best responses against zero rivals without the flexible demand (reproduce with
+`--flexible-demand-scale 0`), eps 1e-4, all buses (2026-10-14, Ipopt
+3.13.2, Gurobi 13.0.3; `model/output/five_bus_best_responses/`, untracked;
+capacities in `workflow/flexible_demand_2026-10-14/best_responses_zero_rivals.json`).
+Relaxed: exact recleared profit in EUR/day from starts of 20, 50, and 150 MW,
+all with `verification_passed`. Gurobi: MIP start from the best relaxed run,
+180 s, `--mip-gap 0.01`; MPEC objective.
+
+| investor | relaxed (Ipopt), best | N2 / N5 MW / MWh | other local optimum | Gurobi from Ipopt start |
+|---|---|---|---|---|
+| I1 | 10 209.84 (150 MW start) | 52.5 / 380.9, 100.8 / 489.0 | 10 205.05, N5 97.1 / 475.4 (20, 50) | 10 209.95, within 0.97 % in 11 s |
+| I2 | 3 869.62 (all starts) | 35.0 / 125.0, 68.1 / 327.6 | - | 3 869.65, within 0.42 % in 3 s |
+| I3 | 53 978.50 (50, 150) | 70.0 / 413.6, 134.9 / 577.7 | 53 658.94, N2 35.0 / 280.0 (20) | better point 54 037.64, bound 115 134 |
+| I4 | 71 647.32 (20) | 35.0 / 280.0, 146.8 / 591.1 | 71 527.67, N2 65.0 / 391.9 (50, 150) | 71 647.56, bound 75 634 (5.6 %) |
+
+- Against V7 the merchants got easy: I1 within 1 % in 11 s (V7: 7.3 % open
+  after 180 s) and I2 needs no particular start. I1's N2 battery is interior
+  (52.5 MW) instead of at the pocket edge (V7: 70 MW / 456.7 MWh).
+- The owners still have several local optima, at the pocket surpluses: N2
+  35 MW is the hour-22 wind surplus over L12, N5 146.8 MW the hour-14 PV
+  surplus over L45. Gurobi found a better I3 point (+59 EUR/day) that the
+  time-limited run does not export; I3's bound stays loose.
+
+```powershell
+python scripts/data/build_five_bus.py .
+python model/run.py market --balancing-eps 1e-4 --output model/output/<new_dir>
+python scripts/diagnostics/plot_prices.py <dir>/prices.png <dir> "5-bus test system, no storage"
+```
+
+## Earlier 5-bus variants
+
+V7 (G1 300 MW at 52 EUR/MWh, G3 300 MW at 67 at N3, otherwise as above) was
+the test system on 2026-10-14 until the rising-cost G1 replaced it. Its JSON is
+`build_five_bus.py` with those two generators and no slope (copies in the
+untracked `model/output/v7_step_best_responses/`). Without storage its hub
+price is 52, and 67 in hours 19-21; market cost 274 313 EUR/day.
+
+V7 best responses against zero rivals, eps 1e-4, all buses (2026-10-14,
+Ipopt 3.13.2, Gurobi 13.0.3). Relaxed: exact recleared profit in EUR/day, best
+of the 50 MW, 150 MW, and step starts (I2 also 20, 30, 42, 100 MW). Gurobi:
+MPEC objective (strong-duality profit); it differs from the exact profit by
+up to 2.5 EUR/day.
+
+| investor | relaxed (Ipopt) | N2 / N5 MW / MWh | Gurobi cold, 600 s | Gurobi from Ipopt start, 180 s, gap 0.01 |
+|---|---|---|---|---|
+| I1 | 8040.86 (all starts) | 70.0 / 456.7, 98.0 / 478.8 | 8042.43, bound 8547 | 8042.43, bound 8629 (N2 N5 only: 8844) |
+| I2 | 2238.15 (starts 20-50 MW) | 16.3 / 92.7, 42.0 / 94.1 | 2238.91, proven in 17 s (same point) | - |
+| I3 | 53 473.49 (all starts) | 70.0 / 456.7, 133.7 / 575.5 | no incumbent, bound 129 849 | N2 N5 only: 53 478.6, bound 129 006 |
+| I4 | 66 192.47 (all starts) | 70.0 / 456.7, 146.8 / 591.1 | 29 749, bound 73 985 | N2 N5 only: 66 195, bound 72 401 |
+
+- Ipopt finds every best point Gurobi knows, in seconds. Gurobi improves none
+  of them, cold or from the Ipopt start, and proves only I2.
+- I2 needs several starts: 100-150 MW starts end at 1265.09 and the step start
+  at 1855.27. Its best sits on the edge of the G3 block (evening price 66.99),
+  held there by eps. This second edge besides the pocket steps is why V7 was
+  replaced.
+- The MIP start gives Gurobi the incumbent at once (I3 had none cold after
+  600 s) but does not move the bound. Fewer nodes did not tighten it in 180 s.
+- Every relaxed run has `verification_passed` false, narrowly: constraint
+  violation 1.5-2.9e-6 (limit 1e-6) and |market cost - dual value| 2.4-3.0e-3
+  EUR (limit 1282 pairs * 1e-6). The cause was Ipopt's default bound
+  relaxation (`bound_relax_factor` 1e-8), also in the exact reclear (market
+  cost 2.6e-3 EUR below Gurobi's). Every Ipopt solve now uses 0 (`solve.py`);
+  V7 was not rerun.
+
+Older variants: inputs and build script at commit 82690b2 (restore as in "Run").
 `ieee5_market_data.json` / `ieee5_capacities.json` (built by
-`scripts/data/build_ieee5.py`; every number is in the JSON): lines 1-2, 1-4,
+`scripts/data/build_ieee5.py --variant current`; every number is in the JSON): lines 1-2, 1-4,
 2-3, 2-4, 3-5, 4-5; G1 thermal 250 MW at 52 EUR/MWh (N1), wind 250 MW (N2),
 G3 thermal 250 MW at 67 EUR/MWh (N3), PV 350 MW (N5); peak loads N1 96,
 N3 144, N4 120, N5 40 MW with the IEEE-9 hourly shapes. Reactances of 1-2, 2-3,
@@ -161,7 +271,7 @@ bound 10507. I3/I4 (owned generation) need that warm start too and are not
 proven (single-pocket design: gaps 5 % and 3 % after 120 s).
 
 ```powershell
-python scripts/data/build_ieee5.py .
+python scripts/data/build_ieee5.py . --variant current
 python model/run.py market --data model/input/ieee5_market_data.json --profile model/input/ieee5_capacities.json --output model/output/<new_dir>
 python model/run.py mpec --data model/input/ieee5_market_data.json --profile model/input/ieee5_capacities.json --investor I1 --nodes N1 N2 N3 N4 N5 --balancing-eps 1e-4 --seconds 600 --output model/output/<new_dir>
 ```
@@ -220,6 +330,78 @@ The settlement margin subtracts the owner's curtailment cost; `profit_linear`
 stays concave (MIQP). The standalone dual keeps generation as a free Dorn
 variable. `capacities_capex120_curtail.json` is `capacities_capex120.json`
 with slope 0.1 EUR/MWh per MW on both PV plants for I3 and I4.
+
+## Rising generation cost
+
+Market data key `generation_cost_slope` (EUR/MWh per MW, per plant, default 0):
+a plant costs cost * g + 0.5 * slope * g^2, so its marginal cost is cost +
+slope * g. One such unit can stand for a thermal merit order (the 5-bus G1):
+the price then rises continuously with residual load instead of jumping from
+plant to plant, and the market becomes a QP. Generator stationarity gains
+slope * generation; the dual keeps generation as a Dorn variable and
+subtracts `generation_dispatch_rent` = 0.5 * slope * g^2, the plant's rent from
+its rising cost. The strong-duality profit subtracts it as well and stays
+concave. An owned plant must have slope 0 (the owned margin is linear in its
+cost); `prepare_input` rejects an owned plant with a slope. Checked by
+`test_rising_generation_cost`.
+
+`ranges` handles this poorly: the optimal face becomes a quadratic constraint,
+and Gurobi's barrier stops with SUBOPTIMAL (status 13) on most coordinates,
+which `ranges` reports as unresolved. On the 5-bus system without storage at
+eps 1e-4, 121 of 124 ranges are unresolved (V7: 22); at eps 0, 46 of 48
+hub-price solves fail. While G1 is between its bounds the hub price 41 + 0.075 g
+is unique anyway. Not fixed: `BarQCPConvTol` 1e-4 resolves 47 of 48 at eps 1e-4
+but loosens the endpoints. A linear face would avoid the quadratic constraint:
+each separable quadratic variable has one value on the optimal face
+(Mangasarian 1988), so it can be fixed there.
+
+## Flexible demand in the pockets
+
+Market data key `flexible_demand` ({node: {max_mw, max_price_eur_per_mwh}},
+default none): a price-responsive load q, e.g. power-to-heat, whose
+willingness to pay falls linearly from max_price at 0 MW to 0 at max_mw. It is
+nobody's asset and bids truthfully. The ISO maximizes welfare: `market_cost`
+subtracts its benefit max_price * q - 0.5 * slope * q^2 (slope = max_price /
+max_mw), and the nodal balance withdraws q. Stationarity gives price =
+max_price - slope * q inside the bounds. The dual keeps q as a Dorn variable
+and subtracts `flexible_demand_surplus` = max_mw * mu_upper + 0.5 * slope * q^2,
+the load's consumer surplus at a KKT point; the strong-duality profit does the
+same and stays concave. Two SOS1 pairs per node and hour (relaxed products in
+`mpec_relaxed`). `run.py --flexible-demand-scale s` multiplies every max_mw by s
+at the same max_price; 0 removes the load. Checked by `test_flexible_demand`:
+storage that displaces the load raises the price along its curve (15 + 3X),
+and both MPECs find the interior optimum X = 23/6.
+
+Why: in a congested pocket nothing had a willingness to pay between the
+curtailment price (about 0) and the storage value (about 47 EUR/MWh at N5), so
+the pocket price, and every owner's profit, jumped at one storage size; only
+the balancing eps set the width (workflow/summary_2026-10-13_15-01.md). With
+the load, storage first displaces it and the price rises along its curve.
+max_price must exceed the storage value, or a vertical piece remains. The load
+is the demand-side counterpart of the rising G1 cost at the hub.
+
+Size (2026-10-14, `workflow/flexible_demand_2026-10-14.md`): one battery grown
+in each pocket, exact reclears at 0, 0.1, 0.25, 0.5, 1 and 2 times N2 20 /
+N5 50 MW. The pocket price plateaus at the battery's break-even (47.7 EUR/MWh
+at N5, 41-42 at N2) at every size; the size sets how early and how gradually
+it gets there, and how much cheap surplus the load takes from storage.
+
+| size (N2 / N5 MW) | N5 price ramp | N2 price ramp | merchant best, N5 / N2 (EUR/day) |
+|---|---|---|---|
+| none | 146.8 -> 147.0 MW (step) | none; day price collapses to 3.1 beyond 77 MW | 7 414 / 2 715 |
+| 5 / 12.5 | 130 -> 145 | 72 -> 75 | 6 745 / 2 553 |
+| **10 / 25 (chosen)** | **115 -> 140** | **60 -> 72** | **6 065 / 2 410** |
+| 20 / 50 | 80 -> 130 | 32 -> 64 | 4 167 / 2 025 |
+| 40 / 100 | price > 5 already at 0 MW | same | 1 384 / 490 |
+
+Ramp: battery MW where the mean surplus-hour price passes 5 EUR/MWh and 90 % of
+its plateau (N5 4 h, N2 6 h duration, no other storage). Without the load, N2
+has a second pathology: once a battery absorbs the whole night surplus, the
+line is congested in the day too, and the day price falls to the battery's
+break-even 3.1, selected by eps alone. Hub prices without storage move by at
+most 0.3 EUR/MWh across all sizes. 10 / 25 MW keeps ramps of 16-35 MW while
+merchants keep 82-89 % of their arbitrage; 20 / 50 MW is the sensitivity
+(`--flexible-demand-scale 2`).
 
 ## Storage dispatch cost
 
@@ -282,6 +464,38 @@ zero; exact profit in EUR/day, Ipopt 3.14.20, Gurobi 13.0.3.
 The relaxed MPEC reaches the proven merchant optima and the owners' best
 incumbents within a minute. It does not prove them: the owners' Gurobi bounds
 stay loose. Step starts are `scripts/diagnostics/step_candidates.py` outputs.
+
+## Ipopt candidates, Gurobi check
+
+Ipopt finds candidates in seconds; Gurobi improves, proves, or refutes them.
+
+1. Run `mpec_relaxed` from several starts (`--start-power` 20, 50, 150, and a
+   step-search `--start-profile`) and keep the best exact profit. One start is
+   not enough (V7 I2: 2238 from 20-50 MW, 1265 from 100-150 MW).
+2. Run `mpec --start-profile <relaxed run>/capacities.json`. The candidate
+   becomes a Gurobi MIP start: `complete_sos1_start` sets each slack from its
+   definition, fills the duals of storage absent from the start market, sets
+   the smaller member of each SOS1 pair to zero, and polishes the point (dual
+   simplex, FeasibilityTol 1e-9, zero members fixed, capacity free), because
+   Gurobi rejects a start that violates a constraint by more than 1e-6.
+   `gurobi.log` shows "Loaded user MIP start"; the run writes
+   `start_profile.json` and `mip_start` in `summary.json`. The start gives an
+   incumbent at once; it does not tighten the bound.
+3. `verify` checks a candidate equilibrium. Each investor's MPEC gets Gurobi
+   Cutoff = current profit + tolerance, so Gurobi searches only for gains;
+   a cutoff status proves that no deviation gains more than the tolerance. A
+   MIP start adds nothing there.
+4. `--nodes` restricts the active investor in `mpec` and `verify`. Dropping
+   nodes where Ipopt never invests saves time, but the result is then a proof
+   against deviations at those nodes only; `verify` records `deviation_nodes`
+   and refuses a profile with capacity outside them.
+5. `--mip-gap 0.01` is enough while exploring; tighten it for final results.
+
+```powershell
+python model/run.py mpec_relaxed --investor I2 --balancing-eps 1e-4 --start-power 20 --seconds 300 --output model/output/<relaxed_dir>
+python model/run.py mpec --investor I2 --balancing-eps 1e-4 --seconds 180 --mip-gap 0.01 --start-profile model/output/<relaxed_dir>/capacities.json --output model/output/<new_dir>
+python model/run.py verify --profile <candidate profile> --balancing-eps 1e-4 --nodes N2 N5 --seconds 600 --output model/output/<new_dir>
+```
 
 ## Strategic bids (`--strategic-bids`)
 
@@ -384,6 +598,26 @@ auction of hosting capacity in which investors are price takers. The energy
 market (LLP) is unchanged; the price is a linear fee in each MPEC
 (`capacity_price` in `prepare_input.py`, `investment_cost_rule` in `mpec.py`).
 
+Two other sharing rules use the same Gauss-Seidel loop (since 2026-10-14):
+
+- `clearing --first-come --hosting N=H`: first come, first served. Rivals' MW
+  reduce each investor's headroom, so whoever holds capacity keeps it; the
+  outcome can depend on `--order`. No price.
+- `--access-slope N=b` (`clearing`, `mpec`, `mpec_relaxed`, `verify`): a
+  quadratic access cost without a hard limit. Every MW at N pays
+  b * (total MW at N) [EUR/MW/day], the same fee for everyone, so no dual has
+  to be matched across investors. The investor sees that its own MW raise the
+  fee: its cost is b * (X + rivals) * X, concave in the objective
+  (`access_slope`, `rival_power` in `prepare_input.py`). Checked by
+  `test_quadratic_access_cost`. Interpretation: grid reinforcement cost rising
+  with the connected storage, charged per MW at its marginal rate.
+
+`scripts/diagnostics/auction_softlink.py` tests a uniform-price auction
+soft-linked to the market model: bid curves are best responses at a grid of
+capacity prices against the rivals' current holdings; the clearing price
+fills H; the allocation becomes the next round's holdings (Jacobi, no move
+order).
+
 `capacity_clearing.py`: at fixed prices, Gauss-Seidel best responses until a
 full round has no move worth more than `--gain-tolerance` in exact profit;
 bisection on the price of the one node that is over-full at zero prices. If the
@@ -432,8 +666,12 @@ MPEC runs with proven optimal status export the chosen `capacities.json`,
 embedded dispatch/prices, independently recleared dispatch/prices, settlement
 and strong-duality profit with their identity error, optimality residuals, the
 solver and its version, and the fixed-capacity profit interval.
-Time-limited runs report status and objective bounds and return a nonzero exit
-code; no unproven incumbent is presented as an optimal best response.
+Time-limited runs report status and objective bounds and return exit code 2.
+Since 2026-10-14 they also export Gurobi's incumbent (capacities, embedded and
+recleared market, exact profit) when there is one, labelled in
+`interpretation` as an incumbent, not a proven best response: its exact profit
+bounds the best response from below, and its capacities can serve as a start
+or a deviation. With strategic bids the incumbent's bids are not selected.
 
 The dual face has no artificial price or multiplier bounds, and neither has the
 MPEC. It is **optimistic**: it may choose the market optimum and supporting
@@ -453,14 +691,17 @@ duality and complementary-slackness basis, see
 - `prepare_input.py`: input loading/validation, sets, parameters and annualized costs.
 - `primal_llp.py`: named physical variables, explicit market equations and objective.
 - `dual_llp.py`: explicit stationarity, dual objective and fixed-capacity profit.
-- `mpec.py`: capacity investment and optional strategic bids, SOS1 complementarity, physical bounds, and settlement/strong-duality profit.
+- `mpec.py`: capacity investment and optional strategic bids, SOS1 complementarity, physical bounds, settlement/strong-duality profit, and the exact MIP start from a market KKT point.
 - `mpec_relaxed.py`: the same MPEC with relaxed complementarity, its start point, and the Ipopt epsilon continuation.
 - `solve.py`: Gurobi and Ipopt interfaces and numerical feasibility checks.
 - `solution_space.py`: optimal-face coordinate ranges; unique-price reclear and settlement with balancing.
-- `capacity_clearing.py`: hosting capacity shared by a uniform clearing price (Gauss-Seidel best responses, price bisection).
-- `run.py`: commands (`market`, `ranges`, `mpec`, `mpec_relaxed`, `clearing`) and results export.
+- `capacity_clearing.py`: hosting capacity shared by a uniform clearing price (Gauss-Seidel best responses, price bisection) and the Gurobi equilibrium check with Cutoff.
+- `run.py`: commands (`market`, `ranges`, `mpec`, `mpec_relaxed`, `clearing`, `verify`) and results export.
 - `../scripts/tests/test_core.py`: analytical cases that check signs, degeneracy, settlement,
-  physical storage constraints, the quadratic costs, independent reclearing, and
+  physical storage constraints, the quadratic costs (including a rising
+  generation cost), flexible demand, independent reclearing, the 5-bus market
+  value with and without flexible demand, the MIP
+  start and the `verify` cutoff, and
   that the settlement profit matches the strong-duality form, strategic bids
   (withholding at a step: 300 capacity-only vs 340 with bids), and that the
   relaxed MPEC reaches the SOS1 optima (skipped without Ipopt on `PATH`), the

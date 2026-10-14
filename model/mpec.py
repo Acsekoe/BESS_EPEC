@@ -39,11 +39,12 @@ from solve import make_solver, objective_bounds, solve
 
 
 def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0,
-               strategic_bids=False, capacity_price=None):
+               strategic_bids=False, capacity_price=None, access_slope=None):
     """balancing_eps > 0 makes LLP prices unique (see primal_llp.py). With
-    capacity_price the investor pays for hosting capacity (prepare_input.py)."""
+    capacity_price the investor pays for hosting capacity, with access_slope a
+    fee rising with the node's total MW (prepare_input.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
-                      balancing_eps=balancing_eps, capacity_price=capacity_price)
+                      balancing_eps=balancing_eps, capacity_price=capacity_price, access_slope=access_slope)
     m.name = f"{'Capacity and bid' if strategic_bids else 'Capacity'} MPEC: {investor}"
 
     # 1. Investor decisions: MW and MWh (and bids) of the active investor only.
@@ -70,13 +71,14 @@ def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balanc
     return m
 
 
-def solve_mpec(m, *, seconds=60, mip_gap=1e-6, solver=None, hold_tolerances=(1e-6, 1e-5, 1e-4)):
+def solve_mpec(m, *, seconds=60, mip_gap=1e-6, solver=None, hold_tolerances=(1e-6, 1e-5, 1e-4), warmstart=False):
     """Solve the MPEC with Gurobi; with strategic bids, then select the bids.
 
+    warmstart=True: the current values are a MIP start (complete_sos1_start).
     Returns the first solve's result, its (incumbent, bound), and the selection
     report (None without bids or without a proven optimum)."""
     solver = solver or make_solver()
-    result = solve(m, seconds=seconds, mip_gap=mip_gap, solver=solver)
+    result = solve(m, seconds=seconds, mip_gap=mip_gap, solver=solver, warmstart=warmstart)
     bounds = objective_bounds(solver)
     selection = None
     if m.component("X_charge_bid") is not None and result.solver.termination_condition == pyo.TerminationCondition.optimal:
@@ -175,6 +177,7 @@ def add_sos1_complementarity(m):
     variables themselves."""
     m.slack_gen_upper = pyo.Var(m.generators, m.timesteps, domain=pyo.NonNegativeReals)
     m.slack_shed_upper = pyo.Var(m.nodes, m.timesteps, domain=pyo.NonNegativeReals)
+    m.slack_flex_upper = pyo.Var(m.flexible_nodes, m.timesteps, domain=pyo.NonNegativeReals)
     m.slack_line_upper = pyo.Var(m.lines, m.timesteps, domain=pyo.NonNegativeReals)
     m.slack_line_lower = pyo.Var(m.lines, m.timesteps, domain=pyo.NonNegativeReals)
     m.slack_power = pyo.Var(m.storage_pairs, m.timesteps, domain=pyo.NonNegativeReals)
@@ -182,6 +185,7 @@ def add_sos1_complementarity(m):
 
     m.slack_gen_upper_definition = pyo.Constraint(m.generators, m.timesteps, rule=slack_gen_upper_rule)
     m.slack_shed_upper_definition = pyo.Constraint(m.nodes, m.timesteps, rule=slack_shed_upper_rule)
+    m.slack_flex_upper_definition = pyo.Constraint(m.flexible_nodes, m.timesteps, rule=slack_flex_upper_rule)
     m.slack_line_upper_definition = pyo.Constraint(m.lines, m.timesteps, rule=slack_line_upper_rule)
     m.slack_line_lower_definition = pyo.Constraint(m.lines, m.timesteps, rule=slack_line_lower_rule)
     m.slack_power_definition = pyo.Constraint(m.storage_pairs, m.timesteps, rule=slack_power_rule)
@@ -191,6 +195,8 @@ def add_sos1_complementarity(m):
     m.sos_gen_upper = pyo.SOSConstraint(m.generators, m.timesteps, rule=sos_gen_upper_rule, sos=1)
     m.sos_shed_lower = pyo.SOSConstraint(m.nodes, m.timesteps, rule=sos_shed_lower_rule, sos=1)
     m.sos_shed_upper = pyo.SOSConstraint(m.nodes, m.timesteps, rule=sos_shed_upper_rule, sos=1)
+    m.sos_flex_lower = pyo.SOSConstraint(m.flexible_nodes, m.timesteps, rule=sos_flex_lower_rule, sos=1)
+    m.sos_flex_upper = pyo.SOSConstraint(m.flexible_nodes, m.timesteps, rule=sos_flex_upper_rule, sos=1)
     m.sos_line_upper = pyo.SOSConstraint(m.lines, m.timesteps, rule=sos_line_upper_rule, sos=1)
     m.sos_line_lower = pyo.SOSConstraint(m.lines, m.timesteps, rule=sos_line_lower_rule, sos=1)
     m.sos_charge_lower = pyo.SOSConstraint(m.storage_pairs, m.timesteps, rule=sos_charge_lower_rule, sos=1)
@@ -207,6 +213,8 @@ def add_physical_bounds(m):
         charge.setub(m.power_max[i, n])
     for (i, n, t), discharge in m.discharge.items():
         discharge.setub(m.power_max[i, n])
+    for (n, t), flexible in m.flexible_demand.items():
+        flexible.setub(m.flexible_demand_max[n])
 
 
 # Investment constraints and capacities seen by the ISO.
@@ -275,6 +283,10 @@ def slack_shed_upper_rule(m, n, t):
     return m.slack_shed_upper[n, t] == m.demand[n, t] - m.load_shed[n, t]
 
 
+def slack_flex_upper_rule(m, n, t):
+    return m.slack_flex_upper[n, t] == m.flexible_demand_max[n] - m.flexible_demand[n, t]
+
+
 def slack_line_upper_rule(m, line, t):
     return m.slack_line_upper[line, t] == m.line_limit[line] - m.line_flow[line, t]
 
@@ -307,6 +319,15 @@ def sos_shed_lower_rule(m, n, t):
 
 def sos_shed_upper_rule(m, n, t):
     return [m.slack_shed_upper[n, t], m.mu_shed_upper[n, t]]
+
+
+# Flexible demand: 0 <= flexible_demand <= max_mw.
+def sos_flex_lower_rule(m, n, t):
+    return [m.flexible_demand[n, t], m.mu_flex_lower[n, t]]
+
+
+def sos_flex_upper_rule(m, n, t):
+    return [m.slack_flex_upper[n, t], m.mu_flex_upper[n, t]]
 
 
 # Transmission: -line_limit <= line_flow <= line_limit.
@@ -375,9 +396,13 @@ def generation_margin_rule(m):
 
 
 def investment_cost_rule(m):
-    """Daily capex plus the hosting capacity price per MW (0 unless priced)."""
+    """Daily capex plus the hosting capacity price per MW (0 unless priced) plus
+    the access fee slope * (own + rival MW) per own MW: quadratic in own MW, so
+    the investor sees that its own MW raise the fee (concave in the objective)."""
     i = m.active_investor
-    return sum((m.cost_power_daily[i] + m.capacity_price[n]) * m.X_power[n] + m.cost_energy_daily[i] * m.X_energy[n]
+    return sum((m.cost_power_daily[i] + m.capacity_price[n]
+                + m.access_slope[n] * (m.X_power[n] + m.rival_power[n])) * m.X_power[n]
+               + m.cost_energy_daily[i] * m.X_energy[n]
                for n in m.investment_nodes)
 
 
@@ -406,6 +431,13 @@ def profit_linear_rule(m):
     slope * curtailment^2). Per plant the generation^2 coefficient is
     -slope * (1 - share) - 0.5 * share * owner slope <= 0: still concave.
 
+    With a rising generation cost, strong duality also subtracts each plant's
+    rent 0.5 * slope * generation^2 (concave; owned plants have no slope).
+
+    With flexible demand, the market cost holds -benefit and strong duality
+    subtracts the load's consumer surplus max_mw * mu_upper + 0.5 * slope * q^2.
+    The q^2 coefficient is then -slope: still concave.
+
     With a dispatch cost, strong duality subtracts every storage's dispatch rent
     0.5 * slope * (charge^2 + discharge^2); the rivals' rents are removed as
     their other rents are. The active storage's charge^2 coefficient is then
@@ -421,13 +453,84 @@ def profit_linear_rule(m):
     market_cost_at_true_cost = (
         m.generation_cost_total + m.load_shed_cost_total + m.storage_degradation
         + sum(m.storage_bid_cost[j] for j in m.investors if j != i)
-        + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total)
+        + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total
+        - m.flexible_demand_benefit_total)
     return (m.demand_payment - market_cost_at_true_cost - m.balancing_dual_term + m.curtailment_dual_term
-            - m.generation_scarcity_rent
-            - m.shedding_scarcity_rent - m.transmission_scarcity_rent
+            - m.generation_scarcity_rent - m.generation_dispatch_rent
+            - m.shedding_scarcity_rent - m.flexible_demand_surplus - m.transmission_scarcity_rent
             - sum(m.storage_scarcity_rent[j] + m.storage_dispatch_rent[j]
                   for j in m.investors if j != i)
             + m.owned_generation_rent[i] - m.capex)
+
+
+def complete_sos1_start(m, seconds=60):
+    """Turn a fixed-capacity market KKT point (mpec_relaxed.initialize_from_market)
+    into an exact MIP start. The market is solved by Ipopt, an interior-point
+    method, so both members of an SOS1 pair are slightly positive, while Gurobi
+    counts members above IntFeasTol (1e-9) as nonzero and rejects starts that
+    violate a constraint by more than 1e-6.
+
+    1. Set each explicit slack from its definition; fill the free duals of
+       storage that is absent from the start market (zero start capacity).
+    2. In every SOS1 set, put the smaller member to zero (the active set).
+    3. Polish: with those zeros fixed and the SOS1 sets off, Gurobi solves the
+       remaining convex QP by dual simplex (a basic solution; barrier left 3e-6
+       balance errors on V7 I4). This gives an exact KKT point with Ipopt's
+       active set; capacity may move within it (with capacity fixed as well,
+       V7 I4 was infeasible at 1e-9). Then the zeros are freed again.
+    Returns the polish status ("optimal" = exact start; otherwise the
+    unpolished values stay and Gurobi may reject them)."""
+    for definition in (m.slack_gen_upper_definition, m.slack_shed_upper_definition, m.slack_flex_upper_definition,
+                       m.slack_line_upper_definition, m.slack_line_lower_definition, m.slack_power_definition,
+                       m.slack_soc_upper_definition):
+        for constraint in definition.values():
+            slack, value = constraint.expr.args  # slack == value
+            slack.set_value(max(0.0, pyo.value(value)), skip_validation=True)
+    # Storage absent from the start market (zero start capacity) has no duals
+    # there, and all of them are free: soc_value = cyclic_value = 0, and
+    # mu_power, mu_charge_lower, mu_discharge_lower close the charge and
+    # discharge stationarity (both read r + mu_power - mu_lower = 0).
+    for i, n in m.storage_pairs:
+        if m.soc_value[i, n, m.timesteps.first()].value is not None:
+            continue
+        m.cyclic_value[i, n].set_value(0.0)
+        for t in m.soc_timesteps:
+            m.mu_soc_upper[i, n, t].set_value(0.0)
+            m.mu_soc_lower[i, n, t].set_value(0.0)
+        for t in m.timesteps:
+            m.soc_value[i, n, t].set_value(0.0)
+            for mu in (m.mu_power, m.mu_charge_lower, m.mu_discharge_lower):
+                mu[i, n, t].set_value(0.0)
+            r_charge = pyo.value(m.stationarity_charge[i, n, t].body)
+            r_discharge = pyo.value(m.stationarity_discharge[i, n, t].body)
+            mu_power = max(0.0, -r_charge, -r_discharge)
+            m.mu_power[i, n, t].set_value(mu_power)
+            m.mu_charge_lower[i, n, t].set_value(mu_power + r_charge)
+            m.mu_discharge_lower[i, n, t].set_value(mu_power + r_discharge)
+    for sos in m.component_data_objects(pyo.SOSConstraint, active=True):
+        members = list(sos.get_variables())
+        values = [max(0.0, pyo.value(v, exception=False) or 0.0) for v in members]
+        values[values.index(min(values))] = 0.0
+        for variable, value in zip(members, values):
+            if not variable.fixed:
+                variable.set_value(value, skip_validation=True)
+    held = [v for sos in m.component_data_objects(pyo.SOSConstraint, active=True)
+            for v in sos.get_variables() if v.value == 0 and not v.fixed]
+    sos_blocks = list(m.component_objects(pyo.SOSConstraint, active=True))
+    for v in held:
+        v.fix()
+    for block in sos_blocks:
+        block.deactivate()
+    solver = make_solver()
+    solver.options.update({"Method": 1, "FeasibilityTol": 1e-9})
+    try:
+        status = str(solve(m, seconds=seconds, solver=solver).solver.termination_condition)
+    finally:
+        for v in held:
+            v.unfix()
+        for block in sos_blocks:
+            block.activate()
+    return status
 
 
 def complementarity_pairs(m):
@@ -440,6 +543,10 @@ def complementarity_pairs(m):
         for t in m.timesteps:
             yield m.load_shed[n, t], m.mu_shed_lower[n, t]
             yield m.demand[n, t] - m.load_shed[n, t], m.mu_shed_upper[n, t]
+    for n in m.flexible_nodes:
+        for t in m.timesteps:
+            yield m.flexible_demand[n, t], m.mu_flex_lower[n, t]
+            yield m.flexible_demand_max[n] - m.flexible_demand[n, t], m.mu_flex_upper[n, t]
     for line in m.lines:
         for t in m.timesteps:
             yield m.line_limit[line] - m.line_flow[line, t], m.mu_line_upper[line, t]

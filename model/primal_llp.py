@@ -14,6 +14,20 @@ offers its last MW at generation_cost - slope * u. Below a congestion step the
 price is then negative and rises continuously as curtailment falls. Slope 0
 omits the term.
 
+Optional rising generation cost (market data key generation_cost_slope, EUR/MWh
+per MW): a plant costs generation_cost * g + 0.5 * slope * g^2, so its marginal
+cost rises by slope per MW. One such unit can stand for a thermal merit order:
+the price then rises continuously with residual load instead of jumping from
+plant to plant. Slope 0 omits the term.
+
+Optional flexible demand (market data key flexible_demand, per node max_mw and
+max_price_eur_per_mwh): a price-responsive load q (e.g. power-to-heat) whose
+willingness to pay falls linearly from max_price at 0 MW to 0 at max_mw. Its
+benefit max_price * q - 0.5 * slope * q^2 (slope = max_price / max_mw) is
+subtracted from the market cost, so the ISO maximizes welfare. In a congested
+pocket the price then follows the demand curve between 0 and max_price instead
+of jumping from the curtailment price to the storage value.
+
 Optional dispatch cost (profile key dispatch_cost_slope_eur_per_mwh_per_mw):
 charging or discharging p MW for one hour costs 0.5 * slope * p^2 on top of
 the linear degradation, so the marginal cost rises by slope per MW (losses
@@ -89,6 +103,12 @@ def add_primal(m):
         domain=pyo.Reals,
         doc="Net injection into the network [MW]",
     )
+    m.flexible_demand = pyo.Var(
+        m.flexible_nodes,
+        m.timesteps,
+        domain=pyo.NonNegativeReals,
+        doc="Price-responsive flexible demand [MW]",
+    )
 
     if pyo.value(m.balancing_eps) > 0:
         m.balancing = pyo.Var(
@@ -106,6 +126,7 @@ def add_primal(m):
     m.system_balance = pyo.Constraint(m.timesteps, rule=system_balance_rule)
     m.generation_limit = pyo.Constraint(m.generators, m.timesteps, rule=generation_limit_rule)
     m.load_shed_limit = pyo.Constraint(m.nodes, m.timesteps, rule=load_shed_limit_rule)
+    m.flexible_demand_limit = pyo.Constraint(m.flexible_nodes, m.timesteps, rule=flexible_demand_limit_rule)
     m.line_upper_limit = pyo.Constraint(m.lines, m.timesteps, rule=line_upper_limit_rule)
     m.line_lower_limit = pyo.Constraint(m.lines, m.timesteps, rule=line_lower_limit_rule)
     m.storage_power_limit = pyo.Constraint(
@@ -123,6 +144,7 @@ def add_primal(m):
     m.dispatch_cost_total = pyo.Expression(rule=dispatch_cost_rule)
     m.curtailment_cost_total = pyo.Expression(rule=curtailment_cost_rule)
     m.balancing_cost_total = pyo.Expression(rule=balancing_cost_rule)
+    m.flexible_demand_benefit_total = pyo.Expression(rule=flexible_demand_benefit_rule)
     m.market_cost = pyo.Expression(rule=market_cost_rule)
 
 
@@ -143,12 +165,14 @@ def fixed_discharge_offer_rule(m, i, n, t):
 
 
 def nodal_balance_rule(m, n, t):
-    """Generation + discharge - charge + shedding + balancing - injection = demand."""
+    """Generation + discharge - charge + shedding + balancing - flexible demand
+    - injection = demand."""
     balancing = m.balancing[n, t] if pyo.value(m.balancing_eps) > 0 else 0
+    flexible = m.flexible_demand[n, t] if n in m.flexible_nodes else 0
     return (
         sum(m.generation[g, t] for g in m.generators_at_node[n])
         + sum(m.discharge[i, n, t] - m.charge[i, n, t] for i in m.storage_at_node[n])
-        + m.load_shed[n, t] + balancing - m.net_injection[n, t]
+        + m.load_shed[n, t] + balancing - flexible - m.net_injection[n, t]
         == m.demand[n, t]
     )
 
@@ -164,6 +188,10 @@ def generation_limit_rule(m, g, t):
 
 def load_shed_limit_rule(m, n, t):
     return m.load_shed[n, t] <= m.demand[n, t]
+
+
+def flexible_demand_limit_rule(m, n, t):
+    return m.flexible_demand[n, t] <= m.flexible_demand_max[n]
 
 
 def line_flow_rule(m, line, t):
@@ -206,7 +234,12 @@ def soc_cyclic_rule(m, i, n):
 
 
 def generation_cost_rule(m):
-    return sum(m.generation_cost[g] * m.generation[g, t] for g in m.generators for t in m.timesteps)
+    """cost * generation + 0.5 * slope * generation^2: the marginal cost is
+    cost + slope * generation (slope 0 for most plants)."""
+    linear = sum(m.generation_cost[g] * m.generation[g, t] for g in m.generators for t in m.timesteps)
+    rising = sum(0.5 * m.generation_slope[g] * m.generation[g, t] ** 2
+                 for g in m.generators if pyo.value(m.generation_slope[g]) > 0 for t in m.timesteps)
+    return linear + rising
 
 
 def load_shed_cost_rule(m):
@@ -239,9 +272,18 @@ def balancing_cost_rule(m):
     return sum(m.balancing[n, t] ** 2 / (2 * m.balancing_eps) for n in m.nodes for t in m.timesteps)
 
 
+def flexible_demand_benefit_rule(m):
+    """Area under the demand curve max_price - slope * q: max_price * q - 0.5 * slope * q^2."""
+    return sum(m.flexible_demand_price[n] * m.flexible_demand[n, t]
+               - 0.5 * m.flexible_demand_slope[n] * m.flexible_demand[n, t] ** 2
+               for n in m.flexible_nodes for t in m.timesteps)
+
+
 def market_cost_rule(m):
+    """Market cost less the flexible demand's benefit (welfare with a minus sign)."""
     return (m.generation_cost_total + m.load_shed_cost_total + sum(m.storage_bid_cost[i] for i in m.investors)
-            + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total)
+            + m.dispatch_cost_total + m.curtailment_cost_total + m.balancing_cost_total
+            - m.flexible_demand_benefit_total)
 
 
 def dispatch_variables(m):
@@ -259,6 +301,8 @@ def dispatch_variables(m):
         yield f"discharge|{i}|{n}|{t}", m.discharge[i, n, t]
     for i, n, t in m.soc:
         yield f"soc|{i}|{n}|{t}", m.soc[i, n, t]
+    for n, t in m.flexible_demand:
+        yield f"flexible|{n}|{t}", m.flexible_demand[n, t]
     if pyo.value(m.balancing_eps) > 0:
         for n, t in m.balancing:
             yield f"balancing|{n}|{t}", m.balancing[n, t]

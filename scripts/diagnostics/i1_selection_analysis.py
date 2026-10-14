@@ -12,13 +12,13 @@ import pyomo.environ as pyo
 
 import mpec
 from dual_llp import dual_profit
-from prepare_input import load_case, prepare_input
+from prepare_input import INPUT, load_case, prepare_input
 from primal_llp import add_primal, build_primal
 from solution_space import extrema, face_models
 from solve import require_optimal
 
 INV = "I1"
-data, base_profile = load_case()
+data, base_profile = load_case(INPUT / "market_data.json", INPUT / "capacities.json")  # IEEE-9 case
 chosen = json.loads((RUN / "capacities.json").read_text())
 summary = json.loads((RUN / "summary.json").read_text())
 

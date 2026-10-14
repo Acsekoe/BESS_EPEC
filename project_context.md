@@ -62,7 +62,8 @@ The existing Overleaf documents are historical and have not yet been rewritten.
 - The 1000 MW default shared nodal investment bound is retained as an explicit
   strategy bound; it is not assumed nonbinding without checking the solution.
 - I1/I2 are merchants at 8%/12% WACC. I3 owns 80% of wind and 20% of PV; I4 owns
-  the remainder. Lifetime 15 years, power cost 6600 EUR/MW, energy cost 18800
+  the remainder. Since 2026-10-14 the 5-bus profile has no I2: it never entered
+  an equilibrium and only cost computation. Lifetime 15 years, power cost 6600 EUR/MW, energy cost 18800
   EUR/MWh, and degradation 15 EUR/MWh are carried over from the previous core.
   Capital recovery is divided by 365.25.
 - The inherited costs have no source and are about 5-7x too low (about
@@ -112,6 +113,21 @@ The existing Overleaf documents are historical and have not yet been rewritten.
   reproduces the system without it. The load also draws power when the pocket
   is not congested (about 13 % of its size at 52 EUR/MWh) and competes with
   storage for surplus RES.
+
+- Scarce hosting capacity (`run.py clearing`, since 2026-10-14) is shared by
+  first come, first served (status quo), a uniform price per MW (variational
+  equilibrium; no clearing price exists at N5 = 100 MW because owners' demand
+  jumps, so rationing is still to be added), or allocated hosting rights
+  (`--allocation`, lots of an auction). The planner with the limit is the
+  benchmark. The quadratic access cost and the soft-linked auction were
+  removed the same day (commit b0b74b8). With truthful dispatch the pocket
+  price depends only on the node's total MW/MWh, not on who holds them, but a
+  right caps MW only and holders choose different MWh. First lot runs
+  (N5 = 100 MW, 2026-10-14, local): I1 and I3 build about 417-419 MWh and value
+  the whole right at about 6 000 EUR/day against a rival holding it; I4 (80 %
+  of the N5 PV) builds 477 MWh and values it at about 23 400, yet its holding
+  has the highest social cost of the three (planner +2 196 against +1 541 for
+  I3). The planner values one more MW at N5 at 34.6 EUR/MW/day.
 
 ## Readable model structure and interpretation
 

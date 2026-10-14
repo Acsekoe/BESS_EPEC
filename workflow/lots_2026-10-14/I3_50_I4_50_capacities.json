@@ -1,0 +1,79 @@
+{
+  "I1": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {},
+    "energy_mwh": {},
+    "owned_generation_shares": {},
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I3": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 2.6468314859675575e-10,
+      "N2": 71.57432127738063,
+      "N3": 2.6468657446602233e-10,
+      "N4": 2.646854485313766e-10,
+      "N5": 49.99999998276958
+    },
+    "energy_mwh": {
+      "N1": 1.028180903192897e-09,
+      "N2": 432.14485385186964,
+      "N3": 1.0283237827783484e-09,
+      "N4": 1.0282834674793239e-09,
+      "N5": 231.01292058961067
+    },
+    "owned_generation_shares": {
+      "RES_Wind_N2": 0.8,
+      "RES_PV_N5": 0.2
+    },
+    "curtailment_slope_eur_per_mwh_per_mw": {
+      "RES_Wind_N2": 0.1,
+      "RES_PV_N5": 0.1
+    },
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  },
+  "I4": {
+    "wacc": 0.08,
+    "lifetime_years": 15,
+    "cost_power_eur_per_mw": 1.0,
+    "cost_energy_eur_per_mwh": 120000.0,
+    "degradation_eur_per_mwh": 3.0,
+    "ratio_min": 2.0,
+    "ratio_max": 8.0,
+    "power_mw": {
+      "N1": 3.728625933639744e-11,
+      "N2": 3.650804184182144e-11,
+      "N3": 3.728625873477312e-11,
+      "N4": 3.7286258687894893e-11,
+      "N5": 49.9999999998234
+    },
+    "energy_mwh": {
+      "N1": 7.763917232904299e-11,
+      "N2": 7.592816165570157e-11,
+      "N3": 7.763917094796783e-11,
+      "N4": 7.763917090528095e-11,
+      "N5": 245.64631085417236
+    },
+    "owned_generation_shares": {
+      "RES_Wind_N2": 0.2,
+      "RES_PV_N5": 0.8
+    },
+    "curtailment_slope_eur_per_mwh_per_mw": {
+      "RES_Wind_N2": 0.1,
+      "RES_PV_N5": 0.1
+    },
+    "dispatch_cost_slope_eur_per_mwh_per_mw": 0.0001
+  }
+}

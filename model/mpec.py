@@ -39,12 +39,12 @@ from solve import make_solver, objective_bounds, solve
 
 
 def build_mpec(data, profile, investor, *, nodes=None, node_limit=1000.0, balancing_eps=0.0,
-               strategic_bids=False, capacity_price=None, access_slope=None):
+               strategic_bids=False, capacity_price=None, own_limit=None):
     """balancing_eps > 0 makes LLP prices unique (see primal_llp.py). With
-    capacity_price the investor pays for hosting capacity, with access_slope a
-    fee rising with the node's total MW (prepare_input.py)."""
+    capacity_price the investor pays for hosting capacity; own_limit caps its
+    own MW at a node, e.g. an allocated hosting right (prepare_input.py)."""
     m = prepare_input(data, profile, active_investor=investor, investment_nodes=nodes, node_limit=node_limit,
-                      balancing_eps=balancing_eps, capacity_price=capacity_price, access_slope=access_slope)
+                      balancing_eps=balancing_eps, capacity_price=capacity_price, own_limit=own_limit)
     m.name = f"{'Capacity and bid' if strategic_bids else 'Capacity'} MPEC: {investor}"
 
     # 1. Investor decisions: MW and MWh (and bids) of the active investor only.
@@ -396,12 +396,9 @@ def generation_margin_rule(m):
 
 
 def investment_cost_rule(m):
-    """Daily capex plus the hosting capacity price per MW (0 unless priced) plus
-    the access fee slope * (own + rival MW) per own MW: quadratic in own MW, so
-    the investor sees that its own MW raise the fee (concave in the objective)."""
+    """Daily capex plus the hosting capacity price per MW (0 unless priced)."""
     i = m.active_investor
-    return sum((m.cost_power_daily[i] + m.capacity_price[n]
-                + m.access_slope[n] * (m.X_power[n] + m.rival_power[n])) * m.X_power[n]
+    return sum((m.cost_power_daily[i] + m.capacity_price[n]) * m.X_power[n]
                + m.cost_energy_daily[i] * m.X_energy[n]
                for n in m.investment_nodes)
 

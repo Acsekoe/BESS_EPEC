@@ -167,9 +167,11 @@ marginal cost rises with output, in place of G1 600 MW at 52 and G3 at 67.
 - Load: peaks N1 120, N3 180, N4 150, N5 40 MW, none at N2; IEEE-9 hourly shapes.
 - Flexible demand (since 2026-10-14, section "Flexible demand in the pockets"):
   N2 10 MW and N5 25 MW, willingness to pay 60 EUR/MWh at 0 MW falling to 0.
-- Investors as in V6: I1/I2 merchants (WACC 8 % / 12 %), I3 80 % wind / 20 % PV,
-  I4 the rest; 120 000 EUR/MWh, 1 EUR/MW, d = 3 EUR/MWh, dispatch slope 1e-4,
-  curtailment slope 0.1 on both plants.
+- Investors: I1 merchant (WACC 8 %), I3 80 % wind / 20 % PV, I4 the rest;
+  120 000 EUR/MWh, 1 EUR/MW, d = 3 EUR/MWh, dispatch slope 1e-4, curtailment
+  slope 0.1 on both plants. The second merchant I2 (as I1 at 12 % WACC) was
+  dropped on 2026-10-14: it never entered and only cost a best response per
+  round. Results before that date include it at zero capacity.
 - Without storage (eps 1e-4): N1/N3/N4 follow residual load, from 52.16 EUR/MWh
   (hour 16) to 66.65 (hour 20). N2 down to -5.0 at night (370 MWh wind
   curtailed), N5 down to -12.2 at midday (482 MWh PV curtailed); the flexible
@@ -603,20 +605,21 @@ Two other sharing rules use the same Gauss-Seidel loop (since 2026-10-14):
 - `clearing --first-come --hosting N=H`: first come, first served. Rivals' MW
   reduce each investor's headroom, so whoever holds capacity keeps it; the
   outcome can depend on `--order`. No price.
-- `--access-slope N=b` (`clearing`, `mpec`, `mpec_relaxed`, `verify`): a
-  quadratic access cost without a hard limit. Every MW at N pays
-  b * (total MW at N) [EUR/MW/day], the same fee for everyone, so no dual has
-  to be matched across investors. The investor sees that its own MW raise the
-  fee: its cost is b * (X + rivals) * X, concave in the objective
-  (`access_slope`, `rival_power` in `prepare_input.py`). Checked by
-  `test_quadratic_access_cost`. Interpretation: grid reinforcement cost rising
-  with the connected storage, charged per MW at its marginal rate.
+- `clearing --allocation I3:N=50 I4:N=50` (also `verify`): hosting rights,
+  e.g. lots of an auction. At every node named there each investor builds at
+  most its own right, 0 without one (`own_limit` in `prepare_input.py`,
+  `own_limits` in `capacity_clearing.py`); `I3:N=0` closes N. Running every
+  assignment of the lots gives each investor's profit when it wins and when a
+  rival wins, so willingness to pay and auction outcomes follow without a
+  price search. Checked by `test_hosting_rights`.
 
-`scripts/diagnostics/auction_softlink.py` tests a uniform-price auction
-soft-linked to the market model: bid curves are best responses at a grid of
-capacity prices against the rivals' current holdings; the clearing price
-fills H; the allocation becomes the next round's holdings (Jacobi, no move
-order).
+Removed on 2026-10-14 (code and results at commit b0b74b8,
+`workflow/scarce_capacity_2026-10-14/`): the quadratic access cost
+`--access-slope` (no slope reached the limit; the same jump in owners'
+demand as the uniform price) and the soft-linked auction
+`auction_softlink.py` (Jacobi rounds cycled; bid curves at fixed rivals
+include the owners' price uplift, which they also get when a rival fills the
+node).
 
 `capacity_clearing.py`: at fixed prices, Gauss-Seidel best responses until a
 full round has no move worth more than `--gain-tolerance` in exact profit;

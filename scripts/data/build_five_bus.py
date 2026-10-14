@@ -153,15 +153,16 @@ data = {
 }
 (root / "model/input/five_bus_market_data.json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-# Investors start at zero capacity. I1/I2 merchants (WACC 8 % / 12 %); I3 owns
+# Investors start at zero capacity. I1 merchant (WACC 8 %; the second merchant
+# I2, the same at 12 %, was dropped 2026-10-14: it never entered); I3 owns
 # 80 % wind / 20 % PV, I4 the rest, both with curtailment slope 0.1 EUR/MWh per
 # MW. Energy cost 120 000 EUR/MWh (BESS system, IRENA 2026 at the ECB 2025 rate),
 # power cost 1 EUR/MW (grid-access placeholder), degradation 3 EUR/MWh, dispatch
 # slope 1e-4 (project_context.md). Lifetime and WACC are not sourced.
-ownership = {"I1": {}, "I2": {}, "I3": {"RES_Wind_N2": 0.8, "RES_PV_N5": 0.2},
+ownership = {"I1": {}, "I3": {"RES_Wind_N2": 0.8, "RES_PV_N5": 0.2},
              "I4": {"RES_Wind_N2": 0.2, "RES_PV_N5": 0.8}}
 profile = {}
-for i, wacc in {"I1": 0.08, "I2": 0.12, "I3": 0.08, "I4": 0.08}.items():
+for i, wacc in {"I1": 0.08, "I3": 0.08, "I4": 0.08}.items():
     profile[i] = dict(wacc=wacc, lifetime_years=15, cost_power_eur_per_mw=1.0, cost_energy_eur_per_mwh=120000.0,
                       degradation_eur_per_mwh=3.0, ratio_min=2.0, ratio_max=8.0, power_mw={}, energy_mwh={},
                       owned_generation_shares=ownership[i])

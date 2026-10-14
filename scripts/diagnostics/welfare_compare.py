@@ -7,7 +7,10 @@ is re-cleared with unique prices (balancing eps, Ipopt).
 
 The planner chooses storage MW and MWh at every node to minimize the same
 social cost, with one investor's cost parameters (--planner-costs, default I1,
-WACC 8 %) and the hosting limits --hosting: a convex QP (Gurobi, proven).
+WACC 8 %) and the hosting limits --hosting: a convex QP (Gurobi, proven). The
+dual of each hosting limit is the social value of one more MW of hosting
+capacity at that node [EUR/MW/day] (power limit plus ratio_max times the
+energy limit it implies).
 
 python scripts/diagnostics/welfare_compare.py . --hosting N5=100 --profiles "queue, owners first=model/output/scarce_N5/fcfs_owners_first/capacities.json"
 """
@@ -69,9 +72,14 @@ i = args.planner_costs
 m.planner_capex = pyo.Expression(expr=sum(m.cost_power_daily[i] * m.X_power[n] + m.cost_energy_daily[i] * m.X_energy[n]
                                           for n in m.investment_nodes))
 m.objective = pyo.Objective(expr=m.market_cost + m.planner_capex, sense=pyo.minimize)
+m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
 require_optimal(m, seconds=600)
 results = {"social planner": evaluate(chosen_profile(m))}
 results["social planner"]["planner_objective_eur"] = pyo.value(m.objective)
+# Minimization with X <= H: the dual is <= 0, so relaxing H by 1 MW saves -dual.
+results["social planner"]["hosting_value_eur_per_mw_day"] = {
+    n: -(m.dual[m.investment_power_limit[n]] + m.ratio_max[i] * m.dual[m.investment_energy_limit[n]])
+    for n in hosting}
 results["no storage"] = evaluate(empty)
 for item in args.profiles:
     label, path = item.rsplit("=", 1)
@@ -79,9 +87,9 @@ for item in args.profiles:
 
 planner = results["social planner"]["social_cost_eur"]
 print(f"{'allocation':32s} {'social cost':>12s} {'vs planner':>11s} {'N2 MW':>7s} {'N5 MW':>7s} "
-      f"{'curt. N2':>9s} {'curt. N5':>9s}  market profits I1 I2 I3 I4")
+      f"{'curt. N2':>9s} {'curt. N5':>9s}  market profits")
 for label, r in results.items():
-    profits = " ".join(f"{v:9.0f}" for v in r["market_profit"].values())
+    profits = " ".join(f"{i} {v:.0f}" for i, v in r["market_profit"].items())
     print(f"{label:32s} {r['social_cost_eur']:12.0f} {r['social_cost_eur'] - planner:+11.0f} {r['storage_mw']['N2']:7.1f} "
           f"{r['storage_mw']['N5']:7.1f} {r['curtailed_mwh'].get('RES_Wind_N2', 0):9.1f} "
           f"{r['curtailed_mwh'].get('RES_PV_N5', 0):9.1f}  {profits}")

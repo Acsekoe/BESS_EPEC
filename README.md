@@ -19,7 +19,9 @@ python model/mpec.py --investor I1 --nodes N5 --balancing-eps 1e-4 --seconds 60 
 
 These run fixed-capacity market clearing, lower-level solution-space analysis,
 and one investor's capacity best response independently. The MPEC command above
-restricts investment to N5. There is currently no multi-investor equilibrium loop.
+restricts investment to N5. `run.py clearing` runs Gauss-Seidel best responses of
+all investors under a hosting limit (uniform price, first come, first served, or
+allocated rights); a converged loop is local, not a proven equilibrium.
 
 The October 2026 restart deletes the previous model trees. `Overleaf/` retains
 historical thesis/presentation material; it has not yet been updated to this core.

@@ -93,7 +93,7 @@ def capital_recovery_factor(wacc, years):
 
 
 def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
-                  node_limit=1000.0, balancing_eps=0.0, capacity_price=None, access_slope=None):
+                  node_limit=1000.0, balancing_eps=0.0, capacity_price=None, own_limit=None):
     """Return a model containing only input sets and numerical parameters.
 
     For a fixed-capacity market, omit active_investor. For an MPEC, include all
@@ -108,11 +108,10 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     that price per MW and may alone build up to the limit; the price shares the
     node instead (capacity_clearing.py).
 
-    access_slope {node: EUR/MW/day per MW} (missing nodes 0): a quadratic access
-    cost. Every MW at the node pays slope * (total MW at the node), the same
-    fee for all investors; the active investor's own MW raise it too. As with
-    capacity_price, the fee shares the node, so rivals' MW do not reduce the
-    headroom.
+    own_limit {node: MW} (missing nodes: no own limit) caps the active
+    investor's own power at the node, e.g. the hosting right it was allocated
+    (capacity_clearing.py). Its headroom is the smaller of that cap and what
+    the shared limit leaves.
     """
     validate(data, profile)
     if not math.isfinite(balancing_eps) or balancing_eps < 0:
@@ -132,9 +131,9 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
         prices = capacity_price or {}
         if set(prices) - set(nodes) or not all(math.isfinite(v) and v >= 0 for v in prices.values()):
             raise ValueError("Capacity prices must be finite and nonnegative at valid nodes.")
-        slopes = access_slope or {}
-        if set(slopes) - set(nodes) or not all(math.isfinite(v) and v >= 0 for v in slopes.values()):
-            raise ValueError("Access cost slopes must be finite and nonnegative at valid nodes.")
+        own = own_limit or {}
+        if set(own) - set(nodes) or not all(math.isfinite(v) and v >= 0 for v in own.values()):
+            raise ValueError("Own power limits must be finite and nonnegative at valid nodes.")
 
     generation_capacity = {(r["generator"], r["hour"]): r["capacity_mw"]
                            for r in data["generation_capacity"]}
@@ -158,11 +157,11 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
     headroom = {}
     if active_investor is not None:
         for n in nodes:
-            priced = capacity_price is not None or access_slope is not None
-            rivals = 0.0 if priced else sum(power[i, n] for i in profile if i != active_investor)
+            rivals = 0.0 if capacity_price is not None else sum(power[i, n] for i in profile if i != active_investor)
             headroom[n] = limits[n] - rivals
             if headroom[n] < 0:
                 raise ValueError("Rival power exceeds the shared nodal investment limit.")
+            headroom[n] = min(headroom[n], own.get(n, headroom[n]))
             power_max[active_investor, n] = headroom[n] if n in investment_nodes else 0.0
             energy_max[active_investor, n] = profile[active_investor]["ratio_max"] * power_max[active_investor, n]
     storage_pairs = [pair for pair in power if power_max[pair] > 0]
@@ -265,9 +264,4 @@ def prepare_input(data, profile, *, active_investor=None, investment_nodes=None,
         m.headroom = pyo.Param(m.nodes, initialize=headroom)
         m.capacity_price = pyo.Param(m.nodes, initialize={n: prices.get(n, 0.0) for n in nodes},
                                      doc="Price of hosting capacity paid per MW of power [EUR/MW/day]")
-        m.access_slope = pyo.Param(m.nodes, initialize={n: slopes.get(n, 0.0) for n in nodes},
-                                   doc="Access fee per MW per MW installed at the node [EUR/MW/day per MW]")
-        m.rival_power = pyo.Param(m.nodes, initialize={
-            n: sum(power[i, n] for i in profile if i != active_investor) for n in nodes},
-            doc="Rivals' installed power at the node [MW]")
     return m

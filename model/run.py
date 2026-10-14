@@ -1,7 +1,8 @@
 """Independent commands: market, ranges, the one-investor capacity mpec (SOS1
 complementarity, Gurobi), mpec_relaxed (relaxed complementarity, Ipopt,
-local), clearing (hosting capacity shared by a uniform price, all investors), and
-verify (Gurobi check that a capacity profile is an equilibrium).
+local), clearing (scarce hosting capacity shared by a uniform price, first come,
+first served, or allocated rights; all investors), and verify (Gurobi check that
+a capacity profile is an equilibrium).
 --strategic-bids adds the investor's hourly charge bids and discharge offers;
 mpec then selects the bids closest to truthful before the reclear."""
 import argparse
@@ -113,9 +114,9 @@ def main(argv=None):
     parser.add_argument("--first-come", action="store_true",
                         help="clearing: share the --hosting limit first come, first served (rivals' MW reduce the "
                              "headroom) instead of by a uniform price.")
-    parser.add_argument("--access-slope", nargs="+", default=[], metavar="NODE=SLOPE",
-                        help="mpec, mpec_relaxed, clearing, verify: quadratic access cost; every MW at NODE pays "
-                             "SLOPE [EUR/MW/day per MW] times the node's total MW.")
+    parser.add_argument("--allocation", nargs="+", default=[], metavar="INVESTOR:NODE=MW",
+                        help="clearing, verify: hosting rights. At every NODE named here each investor may build "
+                             "only its own MW (0 without a right), e.g. I3:N5=50 I4:N5=50; I3:N5=0 closes N5.")
     parser.add_argument("--order", nargs="+", help="clearing: best-response order (default: profile order).")
     parser.add_argument("--price-start", type=float, default=50, help="clearing: first price tried [EUR/MW/day].")
     parser.add_argument("--price-tolerance", type=float, default=0.5, help="clearing: final bracket width [EUR/MW/day].")
@@ -139,9 +140,13 @@ def main(argv=None):
         parser.error("The flexible demand scale must be nonnegative.")
     data, profile = load_case(args.data, args.profile)
     data = scale_flexible_demand(data, args.flexible_demand_scale)
-    access_slope = {k: float(v) for k, v in (item.split("=") for item in args.access_slope)} or None
-    if access_slope and set(access_slope) - set(data["nodes"]):
-        parser.error("Unknown access slope node.")
+    allocation = {}
+    for item in args.allocation:
+        investor, right = item.split(":")
+        node, mw = right.split("=")
+        if investor not in profile or node not in data["nodes"] or float(mw) < 0:
+            parser.error(f"Invalid hosting right {item}.")
+        allocation.setdefault(investor, {})[node] = float(mw)
     if args.output.exists() and any(args.output.iterdir()):
         parser.error("Choose an empty output directory so a new run cannot leave stale results.")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -178,43 +183,47 @@ def main(argv=None):
         if set(hosting) - set(data["nodes"]):
             parser.error("Unknown hosting node.")
         order = args.order or list(profile)
-        if args.first_come:
-            print(f"First come, first served: hosting {hosting}, order {order}", flush=True)
+        for n in hosting:
+            if sum(rights.get(n, 0.0) for rights in allocation.values()) > hosting[n] + 1e-9:
+                parser.error(f"The hosting rights at {n} exceed its hosting capacity.")
+        if args.first_come or allocation:
+            mechanism = "allocated hosting rights" if allocation else "first come, first served"
+            print(f"{mechanism}: hosting {hosting}, rights {allocation}, order {order}", flush=True)
             limits = {n: hosting.get(n, args.node_limit) for n in data["nodes"]}
             current, converged, history = inner_equilibrium(
                 data, profile, limits, None, order=order, balancing_eps=args.balancing_eps,
                 strategic_bids=args.strategic_bids, rounds=args.rounds, seconds=args.seconds,
-                gain_tolerance=args.gain_tolerance, access_slope=access_slope,
+                gain_tolerance=args.gain_tolerance, allocation=allocation or None,
                 log=lambda text: print(text, flush=True))
-            result = dict(mechanism="first come, first served", hosting_mw=hosting, profile=current,
-                          inner_converged=converged,
-                          profits=exact_profits(data, current, None, args.balancing_eps, access_slope))
+            result = dict(mechanism=mechanism, hosting_mw=hosting, allocation=allocation, profile=current,
+                          inner_converged=converged, profits=exact_profits(data, current, None, args.balancing_eps))
             evaluations = [dict(prices=None, converged=converged, history=history, profile=current)]
         else:
-            print(f"Clearing hosting capacity {hosting}, order {order}, access slope {access_slope}", flush=True)
+            print(f"Clearing hosting capacity {hosting}, order {order}", flush=True)
             result, evaluations = clear_capacity(
                 data, profile, hosting, order=order, balancing_eps=args.balancing_eps, node_limit=args.node_limit,
                 strategic_bids=args.strategic_bids,
                 price_start=args.price_start, price_tolerance=args.price_tolerance, rounds=args.rounds,
-                seconds=args.seconds, gain_tolerance=args.gain_tolerance, access_slope=access_slope,
+                seconds=args.seconds, gain_tolerance=args.gain_tolerance,
                 log=lambda text: print(text, flush=True))
         write_json(args.output / "capacities.json", result.pop("profile"))
         write_json(args.output / "clearing_log.json", evaluations)
-        summary = dict(result, investors=order, strategic_bids=args.strategic_bids, access_slope=access_slope,
+        gauss_seidel = ("Gauss-Seidel best responses in the given order. inner_converged: a full round without "
+                        "profitable deviation found (capacity only: by a local method).")
+        summary = dict(result, investors=order, strategic_bids=args.strategic_bids,
             best_response="bid MPEC, Gurobi SOS1 (proven)" if args.strategic_bids
                           else "relaxed capacity MPEC, Ipopt (local), and building nothing",
             evaluation_count=len(evaluations),
-            interpretation=("First come, first served: Gauss-Seidel best responses in the given order, rivals' MW "
-                            "reduce each investor's headroom. inner_converged: a full round without profitable "
-                            "deviation found (capacity only: by a local method). Depends on the order; not proven "
-                            "unique." if args.first_come else
+            interpretation=(f"Allocated hosting rights: at each allocated node every investor builds at most its "
+                            f"own right. {gauss_seidel} Not proven unique." if allocation else
+                            f"First come, first served: rivals' MW reduce each investor's headroom. {gauss_seidel} "
+                            "Depends on the order; not proven unique." if args.first_come else
                             "Uniform hosting-capacity price (variational equilibrium of the shared node limit), "
                             "found by bisection on the price with Gauss-Seidel bid-MPEC best responses. "
                             "inner_converged: a full round without profitable deviation found at the final price "
                             "(capacity only: by a local method). "
                             "unused_mw > 0 at a narrow bracket means demand jumps across the limit (no clearing "
-                            "price). With access_slope every MW also pays slope * node total. "
-                            "One start and order; not proven unique."))
+                            "price). One start and order; not proven unique."))
         summary["verification_passed"] = summary["inner_converged"]
     elif args.command == "verify":
         if args.balancing_eps <= 0:
@@ -223,7 +232,7 @@ def main(argv=None):
         overall, records = verify_equilibrium(
             data, profile, balancing_eps=args.balancing_eps, node_limit=args.node_limit,
             strategic_bids=args.strategic_bids, nodes=args.nodes, seconds=args.seconds, mip_gap=args.mip_gap,
-            threads=args.threads, tolerance=args.gain_tolerance, access_slope=access_slope,
+            threads=args.threads, tolerance=args.gain_tolerance, allocation=allocation or None,
             log=lambda text: print(text, flush=True))
         summary = dict(equilibrium=overall, investors=records, strategic_bids=args.strategic_bids,
             deviation_nodes=args.nodes or data["nodes"],
@@ -238,7 +247,7 @@ def main(argv=None):
     elif args.command == "mpec_relaxed":
         m = build_mpec_relaxed(data, profile, args.investor, nodes=args.nodes, node_limit=args.node_limit,
                                balancing_eps=args.balancing_eps, strategic_bids=args.strategic_bids,
-                               epsilon=args.epsilons[0], access_slope=access_slope)
+                               epsilon=args.epsilons[0])
         source = None if args.start_profile is None else load_case(args.data, args.start_profile)[1]
         start = start_profile(m, profile, start_power=args.start_power, source=source)
         write_json(args.output / "start_profile.json", start)
@@ -270,7 +279,7 @@ def main(argv=None):
             and abs(summary["primal_dual_gap_eur"]) <= summary["complementarity_pair_count"] * args.epsilons[-1] + 1e-6)
     else:
         m = build_mpec(data, profile, args.investor, nodes=args.nodes, node_limit=args.node_limit,
-                       balancing_eps=args.balancing_eps, strategic_bids=args.strategic_bids, access_slope=access_slope)
+                       balancing_eps=args.balancing_eps, strategic_bids=args.strategic_bids)
         market_variable_count = sum(1 for _ in dispatch_variables(m))
         sos_count = sum(1 for _ in m.component_data_objects(pyo.SOSConstraint))
         print(f"Solving one-investor MPEC: {market_variable_count} market variables, {sos_count} SOS1 sets", flush=True)

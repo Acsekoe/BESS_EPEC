@@ -14,7 +14,7 @@ from solve import make_nlp_solver, make_solver, require_optimal, residual
 from mpec import build_mpec, chosen_profile, complementarity_pairs, complete_sos1_start, solve_mpec
 from mpec_relaxed import build_mpec_relaxed, initialize_from_market, solve_relaxed, start_profile
 from solution_space import extrema, face_models
-from capacity_clearing import exact_profits, verify_equilibrium
+from capacity_clearing import inner_equilibrium, own_limits, verify_equilibrium
 
 IPOPT = make_nlp_solver().available(exception_flag=False)
 
@@ -314,27 +314,33 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(pyo.value(build_mpec(data, profile, "I", node_limit=10).headroom["N"]), 6.)
         self.assertEqual(pyo.value(build_mpec(data, profile, "I", node_limit=10, capacity_price={}).headroom["N"]), 10.)
 
-    @unittest.skipUnless(IPOPT, "Ipopt is not on PATH")
-    def test_quadratic_access_cost(self):
-        # The toy storage earns 30 per MW below 5 MW (charge at 10, sell at 40)
-        # and pays capex 2 per MW. Rival J holds 1 MW, so 4 MW of cheap energy
-        # are left. Access slope 4: I pays 4 * (X + 1) per MW, so profit
-        # 28 X - 4 (X + 1) X is largest at X = 3 (profit 36, fee 16 per MW).
+    def test_hosting_rights(self):
+        # Toy: each MW earns 28 up to 5 MW. A 3 MW right caps the investor at
+        # 3 MW (profit 84). With a rival's 4 MW the shared limit of 10 leaves 6,
+        # so a right of 8 MW still allows only 6.
         data, profile = case(two_hours=True)
-        profile["J"] = copy.deepcopy(profile["I"])
-        profile["J"]["power_mw"], profile["J"]["energy_mwh"] = {"N": 1.}, {"N": 1.}
-        m = build_mpec(data, profile, "I", node_limit=10, access_slope={"N": 4.})
+        m = build_mpec(data, profile, "I", node_limit=10, own_limit={"N": 3.})
         require_optimal(m)
-        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 3., places=4)
-        self.assertAlmostEqual(pyo.value(m.profit), 36., places=4)
-        self.assertAlmostEqual(pyo.value(m.profit_linear), 36., places=4)
-        relaxed = build_mpec_relaxed(data, profile, "I", node_limit=10, access_slope={"N": 4.})
-        self.assertEqual(solve_relaxed_from(relaxed, data, profile, start_power=1.), "optimal")
-        self.assertAlmostEqual(pyo.value(relaxed.X_power["N"]), 3., places=3)
-        profile["I"]["power_mw"], profile["I"]["energy_mwh"] = {"N": 3.}, {"N": 3.}
-        payments = {i: v["capacity_payment"] for i, v in exact_profits(data, profile, None, 1e-4, {"N": 4.}).items()}
-        self.assertAlmostEqual(payments["I"], 48., places=6)
-        self.assertAlmostEqual(payments["J"], 16., places=6)
+        self.assertAlmostEqual(pyo.value(m.X_power["N"]), 3., places=5)
+        self.assertAlmostEqual(pyo.value(m.profit_linear), 84., places=5)
+        rival = copy.deepcopy(profile)
+        rival["R"] = copy.deepcopy(profile["I"])
+        rival["R"]["power_mw"], rival["R"]["energy_mwh"] = {"N": 4.}, {"N": 4.}
+        self.assertEqual(pyo.value(build_mpec(data, rival, "I", node_limit=10, own_limit={"N": 8.}).headroom["N"]), 6.)
+        # At an allocated node an investor without a right may build nothing.
+        rights = {"I": {"N": 2.}, "R": {"N": 2.}}
+        self.assertEqual(own_limits({"I": {"N": 3.}}, "R"), {"N": 0.})
+        self.assertIsNone(own_limits({}, "R"))
+        if not IPOPT:
+            return
+        # Gauss-Seidel within the rights: both fill their 2 MW (4 MW < 5 MW).
+        profile["R"] = copy.deepcopy(profile["I"])
+        result, converged, _ = inner_equilibrium(data, profile, {"N": 10.}, None, order=["I", "R"],
+                                                 balancing_eps=1e-4, strategic_bids=False, rounds=3, seconds=60,
+                                                 allocation=rights, log=lambda text: None)
+        self.assertTrue(converged)
+        for i in ("I", "R"):
+            self.assertAlmostEqual(result[i]["power_mw"]["N"], 2., places=3)
 
     def test_relaxed_mpec_reaches_the_sos1_optimum(self):
         data, profile = case(two_hours=True)

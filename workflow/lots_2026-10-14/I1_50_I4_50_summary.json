@@ -1,0 +1,39 @@
+{
+  "mechanism": "allocated hosting rights",
+  "hosting_mw": {
+    "N5": 100.0
+  },
+  "allocation": {
+    "I1": {
+      "N5": 50.0
+    },
+    "I4": {
+      "N5": 50.0
+    }
+  },
+  "inner_converged": true,
+  "profits": {
+    "I1": {
+      "market_profit": 2390.461402209313,
+      "capacity_payment": 0.0
+    },
+    "I3": {
+      "market_profit": 112969.01972802509,
+      "capacity_payment": 0.0
+    },
+    "I4": {
+      "market_profit": 65136.64506159088,
+      "capacity_payment": 0.0
+    }
+  },
+  "investors": [
+    "I3",
+    "I4",
+    "I1"
+  ],
+  "strategic_bids": false,
+  "best_response": "relaxed capacity MPEC, Ipopt (local), and building nothing",
+  "evaluation_count": 1,
+  "interpretation": "Allocated hosting rights: at each allocated node every investor builds at most its own right. Gauss-Seidel best responses in the given order. inner_converged: a full round without profitable deviation found (capacity only: by a local method). Not proven unique.",
+  "verification_passed": true
+}

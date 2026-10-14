@@ -1,0 +1,50 @@
+{
+  "command": "clearing",
+  "data": "D:\\Alexander\\Studium\\EEG\\VS_Code\\BESS_EPEC\\model\\input\\five_bus_market_data.json",
+  "profile": "D:\\Alexander\\Studium\\EEG\\VS_Code\\BESS_EPEC\\model\\input\\five_bus_capacities.json",
+  "output": "model\\output\\lots_N5\\I1_50_I4_50",
+  "investor": "I1",
+  "nodes": null,
+  "node_limit": 1000,
+  "seconds": 120.0,
+  "mip_gap": 1e-06,
+  "face_tolerance": 1e-06,
+  "dispatch": "storage",
+  "balancing_eps": 0.0001,
+  "flexible_demand_scale": 1.0,
+  "strategic_bids": false,
+  "epsilons": [
+    1,
+    0.1,
+    0.01,
+    0.001,
+    0.0001,
+    1e-05,
+    1e-06
+  ],
+  "start_power": 50,
+  "start_profile": null,
+  "hosting": [
+    "N5=100"
+  ],
+  "first_come": false,
+  "allocation": [
+    "I1:N5=50",
+    "I4:N5=50"
+  ],
+  "order": [
+    "I3",
+    "I4",
+    "I1"
+  ],
+  "price_start": 50,
+  "price_tolerance": 0.5,
+  "rounds": 6,
+  "gain_tolerance": 1.0,
+  "threads": null,
+  "data_sha256": "33b99c1b92d845bc84e755c5be562c66a6b7455f1060ba4284e262071080d5ea",
+  "solver": "gurobi",
+  "solver_version": "13.0.3.0",
+  "nlp_solver": "ipopt",
+  "nlp_solver_version": "3.13.2.0"
+}
